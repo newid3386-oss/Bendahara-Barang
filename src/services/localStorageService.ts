@@ -1,0 +1,1939 @@
+import {
+  Config,
+  User,
+  Supplier,
+  Item,
+  BarangMasuk,
+  BarangKeluar,
+  Asset,
+  Mutasi,
+  StockOpnameSession,
+  StockOpnameScan,
+  Pemeliharaan,
+  Penghapusan,
+  PengambilanATK,
+  StockLedgerEntry,
+  StockSummaryItem,
+  ProcurementPlan,
+  ProcurementPlanDetail,
+  DocumentIndex,
+  AuditTrail,
+  NotificationItem,
+  AppTask,
+  ARKASAccount,
+  AssetDepreciation,
+  SchoolUnitConsolidation,
+  QRStickerPreset,
+} from '../types';
+import {
+  DATASET_VERSION,
+  OFFICIAL_CONFIG,
+  OFFICIAL_USERS,
+  OFFICIAL_SUPPLIERS,
+  OFFICIAL_ITEMS,
+  OFFICIAL_BARANG_MASUK,
+  OFFICIAL_BARANG_KELUAR,
+  OFFICIAL_ASSETS,
+  OFFICIAL_ARKAS_ACCOUNTS,
+} from '../data/officialSchoolData';
+
+const STORAGE_KEYS = {
+  CONFIG: 'BB_CONFIG',
+  USERS: 'BB_USERS',
+  SUPPLIERS: 'BB_SUPPLIERS',
+  ITEMS: 'BB_ITEMS',
+  BARANG_MASUK: 'BB_BARANG_MASUK',
+  BARANG_KELUAR: 'BB_BARANG_KELUAR',
+  ASSETS: 'BB_ASSETS',
+  MUTASI: 'BB_MUTASI',
+  STOCK_OPNAME_SESSIONS: 'BB_STOCK_OPNAME_SESSIONS',
+  STOCK_OPNAME_SCANS: 'BB_STOCK_OPNAME_SCANS',
+  PEMELIHARAAN: 'BB_PEMELIHARAAN',
+  PENGHAPUSAN: 'BB_PENGHAPUSAN',
+  PENGAMBILAN_ATK: 'BB_PENGAMBILAN_ATK',
+  STOCK_LEDGER: 'BB_STOCK_LEDGER',
+  PROCUREMENT_PLANS: 'BB_PROCUREMENT_PLANS',
+  PROCUREMENT_PLAN_DETAILS: 'BB_PROCUREMENT_PLAN_DETAILS',
+  DOCUMENTS: 'BB_DOCUMENTS',
+  AUDIT: 'BB_AUDIT',
+  NOTIFICATIONS: 'BB_NOTIFICATIONS',
+  ACTIVE_USER: 'BB_ACTIVE_USER',
+  GOOGLE_CLIENT_ID: 'BB_GOOGLE_CLIENT_ID',
+  GOOGLE_SHEET_ID: 'BB_GOOGLE_SHEET_ID',
+  GOOGLE_ACCESS_TOKEN: 'BB_GOOGLE_ACCESS_TOKEN',
+  APPS_SCRIPT_URL: 'BB_APPS_SCRIPT_URL',
+  LAST_SYNC: 'BB_LAST_SYNC',
+  ARKAS_ACCOUNTS: 'BB_ARKAS_ACCOUNTS',
+  CONSOLIDATED_SCHOOLS: 'BB_CONSOLIDATED_SCHOOLS',
+  THERMAL_SETTINGS: 'BB_THERMAL_SETTINGS',
+  QR_STICKER_PRESETS: 'BB_QR_STICKER_PRESETS',
+  DATASET_VERSION: 'BB_DATASET_VERSION',
+};
+
+const DEFAULT_CONFIG: Config = OFFICIAL_CONFIG;
+const DEFAULT_USERS: User[] = OFFICIAL_USERS;
+const DEFAULT_SUPPLIERS: Supplier[] = OFFICIAL_SUPPLIERS;
+const DEFAULT_ITEMS: Item[] = OFFICIAL_ITEMS;
+const DEFAULT_BARANG_MASUK: BarangMasuk[] = OFFICIAL_BARANG_MASUK;
+const DEFAULT_BARANG_KELUAR: BarangKeluar[] = OFFICIAL_BARANG_KELUAR;
+const DEFAULT_ASSETS: Asset[] = OFFICIAL_ASSETS;
+const DEFAULT_ARKAS_ACCOUNTS: ARKASAccount[] = OFFICIAL_ARKAS_ACCOUNTS;
+
+class LocalStorageService {
+  private getItem<T>(key: string, defaultValue: T): T {
+    try {
+      const data = localStorage.getItem(key);
+      if (!data) return defaultValue;
+      return JSON.parse(data) as T;
+    } catch {
+      return defaultValue;
+    }
+  }
+
+  private setItem<T>(key: string, value: T, notify = true): void {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      if (notify && typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('bb_storage_sync', { detail: { key } }));
+        }, 0);
+      }
+    } catch (e) {
+      console.error(`Error saving to localStorage [${key}]:`, e);
+    }
+  }
+
+  public subscribe(callback: (key: string) => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<{ key: string }>;
+      callback(custom.detail?.key || '');
+    };
+    window.addEventListener('bb_storage_sync', handler);
+    return () => {
+      window.removeEventListener('bb_storage_sync', handler);
+    };
+  }
+
+  // --- Initialization & Reset ---
+  public initDatabase(): void {
+    const currentDatasetVersion = localStorage.getItem(STORAGE_KEYS.DATASET_VERSION);
+    const existingConfig = this.getConfig();
+
+    // Auto-migrate if first run, or if previous dataset was placeholder 'SD Negeri 1 Nusantara' or older version
+    if (
+      !currentDatasetVersion ||
+      currentDatasetVersion !== DATASET_VERSION ||
+      existingConfig.SCHOOL_NAME === 'SD Negeri 1 Nusantara' ||
+      !existingConfig.HEADMASTER_NIP ||
+      existingConfig.HEADMASTER_NIP.includes('19680412') // Old demo NIP
+    ) {
+      this.loadOfficialSchoolData(false);
+      return;
+    }
+
+    if (!localStorage.getItem(STORAGE_KEYS.CONFIG)) {
+      this.setItem(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
+      this.setItem(STORAGE_KEYS.USERS, DEFAULT_USERS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.SUPPLIERS)) {
+      this.setItem(STORAGE_KEYS.SUPPLIERS, DEFAULT_SUPPLIERS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.ITEMS)) {
+      this.setItem(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.BARANG_MASUK)) {
+      this.setItem(STORAGE_KEYS.BARANG_MASUK, DEFAULT_BARANG_MASUK);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.BARANG_KELUAR)) {
+      this.setItem(STORAGE_KEYS.BARANG_KELUAR, DEFAULT_BARANG_KELUAR);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.ASSETS)) {
+      this.setItem(STORAGE_KEYS.ASSETS, DEFAULT_ASSETS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.ARKAS_ACCOUNTS)) {
+      this.setItem(STORAGE_KEYS.ARKAS_ACCOUNTS, DEFAULT_ARKAS_ACCOUNTS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.ACTIVE_USER)) {
+      this.setItem(STORAGE_KEYS.ACTIVE_USER, DEFAULT_USERS[3] || DEFAULT_USERS[0]);
+    }
+    this.rebuildStockLedger();
+  }
+
+  public loadOfficialSchoolData(notify = true): void {
+    this.setItem(STORAGE_KEYS.CONFIG, OFFICIAL_CONFIG, notify);
+    this.setItem(STORAGE_KEYS.USERS, OFFICIAL_USERS, notify);
+    this.setItem(STORAGE_KEYS.SUPPLIERS, OFFICIAL_SUPPLIERS, notify);
+    this.setItem(STORAGE_KEYS.ITEMS, OFFICIAL_ITEMS, notify);
+    this.setItem(STORAGE_KEYS.BARANG_MASUK, OFFICIAL_BARANG_MASUK, notify);
+    this.setItem(STORAGE_KEYS.BARANG_KELUAR, OFFICIAL_BARANG_KELUAR, notify);
+    this.setItem(STORAGE_KEYS.ASSETS, OFFICIAL_ASSETS, notify);
+    this.setItem(STORAGE_KEYS.ARKAS_ACCOUNTS, OFFICIAL_ARKAS_ACCOUNTS, notify);
+    this.setItem(STORAGE_KEYS.ACTIVE_USER, OFFICIAL_USERS[3] || OFFICIAL_USERS[0], notify);
+    localStorage.setItem(STORAGE_KEYS.DATASET_VERSION, DATASET_VERSION);
+    this.rebuildStockLedger();
+    this.logAudit('IMPORT', 'DATABASE', 'OFFICIAL_DATA_SEED', { version: DATASET_VERSION });
+  }
+
+  // --- Active User ---
+  public getActiveUser(): User {
+    return this.getItem<User>(STORAGE_KEYS.ACTIVE_USER, DEFAULT_USERS[4]);
+  }
+
+  public setActiveUser(user: User): void {
+    this.setItem(STORAGE_KEYS.ACTIVE_USER, user);
+  }
+
+  // --- Config ---
+  public getConfig(): Config {
+    return this.getItem<Config>(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
+  }
+
+  public saveConfig(config: Partial<Config>): Config {
+    const current = this.getConfig();
+    const updated = { ...current, ...config };
+    this.setItem(STORAGE_KEYS.CONFIG, updated);
+    this.logAudit('UPDATE', 'CONFIG', 'APP_CONFIG', updated);
+    return updated;
+  }
+
+  // --- Users ---
+  public getUsers(): User[] {
+    return this.getItem<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
+  }
+
+  public saveUser(user: Partial<User>): User {
+    const users = this.getUsers();
+    let saved: User;
+    if (user.ID) {
+      const idx = users.findIndex((u) => u.ID === user.ID);
+      if (idx >= 0) {
+        users[idx] = { ...users[idx], ...user } as User;
+        saved = users[idx];
+      } else {
+        saved = { ...user, ID: user.ID } as User;
+        users.push(saved);
+      }
+    } else {
+      const nextNum = users.length + 1;
+      saved = {
+        ID: `USR-${String(nextNum).padStart(4, '0')}`,
+        NIP: user.NIP || '',
+        NAMA: user.NAMA || '',
+        EMAIL: user.EMAIL || '',
+        ROLE: user.ROLE || 'GURU',
+        STATUS: user.STATUS || 'AKTIF',
+        JABATAN: user.JABATAN || 'Guru',
+      };
+      users.push(saved);
+    }
+    this.setItem(STORAGE_KEYS.USERS, users);
+    this.logAudit(user.ID ? 'UPDATE' : 'CREATE', 'USERS', saved.ID, saved);
+    return saved;
+  }
+
+  public deleteUser(id: string): void {
+    const users = this.getUsers().filter((u) => u.ID !== id);
+    this.setItem(STORAGE_KEYS.USERS, users);
+    this.logAudit('DELETE', 'USERS', id, { deletedId: id });
+  }
+
+  // --- Suppliers ---
+  public getSuppliers(): Supplier[] {
+    return this.getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, DEFAULT_SUPPLIERS);
+  }
+
+  public saveSupplier(supplier: Partial<Supplier>): Supplier {
+    const list = this.getSuppliers();
+    let saved: Supplier;
+    if (supplier.ID) {
+      const idx = list.findIndex((s) => s.ID === supplier.ID);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...supplier } as Supplier;
+        saved = list[idx];
+      } else {
+        saved = { ...supplier, ID: supplier.ID } as Supplier;
+        list.push(saved);
+      }
+    } else {
+      const nextNum = list.length + 1;
+      saved = {
+        ID: `SUP-${String(nextNum).padStart(4, '0')}`,
+        NAMA_TOKO: supplier.NAMA_TOKO || '',
+        ALAMAT: supplier.ALAMAT || '',
+        TELEPON: supplier.TELEPON || '',
+        NARAHUBUNG: supplier.NARAHUBUNG || '',
+        STATUS: supplier.STATUS || 'AKTIF',
+      };
+      list.push(saved);
+    }
+    this.setItem(STORAGE_KEYS.SUPPLIERS, list);
+    this.logAudit(supplier.ID ? 'UPDATE' : 'CREATE', 'SUPPLIERS', saved.ID, saved);
+    return saved;
+  }
+
+  public deleteSupplier(id: string): void {
+    const list = this.getSuppliers().filter((s) => s.ID !== id);
+    this.setItem(STORAGE_KEYS.SUPPLIERS, list);
+    this.logAudit('DELETE', 'SUPPLIERS', id, { id });
+  }
+
+  // --- Items (Master Barang) ---
+  public getItems(): Item[] {
+    return this.getItem<Item[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
+  }
+
+  public saveItem(item: Partial<Item>): Item {
+    const list = this.getItems();
+    let saved: Item;
+    if (item.ID) {
+      const idx = list.findIndex((i) => i.ID === item.ID);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...item } as Item;
+        saved = list[idx];
+      } else {
+        saved = { ...item, ID: item.ID } as Item;
+        list.push(saved);
+      }
+    } else {
+      const nextNum = list.length + 1;
+      saved = {
+        ID: `ITM-${String(nextNum).padStart(4, '0')}`,
+        KODE_BARANG: item.KODE_BARANG || `BRG-${String(nextNum).padStart(4, '0')}`,
+        NAMA_BARANG: item.NAMA_BARANG || '',
+        KATEGORI: item.KATEGORI || 'Umum',
+        JENIS_SATUAN: item.JENIS_SATUAN || 'Pcs',
+        TIPE: item.TIPE || 'Habis Pakai',
+        KODE_REKENING_RKAS: item.KODE_REKENING_RKAS || '',
+        BATAS_MINIMUM: Number(item.BATAS_MINIMUM) || 5,
+        LOKASI_DEFAULT: item.LOKASI_DEFAULT || 'Gudang Utama',
+        STATUS: item.STATUS || 'AKTIF',
+      };
+      list.push(saved);
+    }
+    this.setItem(STORAGE_KEYS.ITEMS, list);
+    this.logAudit(item.ID ? 'UPDATE' : 'CREATE', 'ITEMS', saved.ID, saved);
+    this.rebuildStockLedger();
+    return saved;
+  }
+
+  public deleteItem(id: string): void {
+    const list = this.getItems().filter((i) => i.ID !== id);
+    this.setItem(STORAGE_KEYS.ITEMS, list);
+    this.logAudit('DELETE', 'ITEMS', id, { id });
+    this.rebuildStockLedger();
+  }
+
+  // --- Barang Masuk ---
+  public getBarangMasuk(): BarangMasuk[] {
+    return this.getItem<BarangMasuk[]>(STORAGE_KEYS.BARANG_MASUK, DEFAULT_BARANG_MASUK);
+  }
+
+  public createBarangMasuk(data: Partial<BarangMasuk>): BarangMasuk {
+    const list = this.getBarangMasuk();
+    const nextNum = list.length + 1;
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    const id = `BM-${now.getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+
+    const jumlah = Number(data.JUMLAH) || 0;
+    const harga = Number(data.HARGA_SATUAN) || 0;
+    const total = jumlah * harga;
+
+    const saved: BarangMasuk = {
+      ID: id,
+      TIMESTAMP: timestamp,
+      TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+      BULAN_PENGADAAN: data.BULAN_PENGADAAN || now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }),
+      NAMA_TOKO: data.NAMA_TOKO || '',
+      KODE_BARANG: data.KODE_BARANG || '',
+      NAMA_BARANG: data.NAMA_BARANG || '',
+      JUMLAH: jumlah,
+      JENIS_SATUAN: data.JENIS_SATUAN || 'Pcs',
+      HARGA_SATUAN: harga,
+      TOTAL_PENGADAAN: total,
+      NAMA_SEKOLAH: data.NAMA_SEKOLAH || this.getConfig().SCHOOL_NAME,
+      SUMBER_ANGGARAN: data.SUMBER_ANGGARAN || 'BOS Reguler',
+      KODE_REKENING_RKAS: data.KODE_REKENING_RKAS || '',
+      NOMOR_BKU: data.NOMOR_BKU || '',
+      NOMOR_KWITANSI: data.NOMOR_KWITANSI || '',
+      FOTO_LINK: data.FOTO_LINK || '',
+      PETUGAS: data.PETUGAS || this.getActiveUser().NAMA,
+      KETERANGAN: data.KETERANGAN || '',
+      STOCK_SYNC_STATUS: 'SYNCED',
+      STOCK_SYNC_AT: timestamp,
+    };
+
+    list.push(saved);
+    this.setItem(STORAGE_KEYS.BARANG_MASUK, list);
+    this.logAudit('CREATE', 'BARANG_MASUK', saved.ID, saved);
+    this.rebuildStockLedger();
+    return saved;
+  }
+
+  // --- Barang Keluar (with approval and stock deduction) ---
+  public getBarangKeluar(): BarangKeluar[] {
+    return this.getItem<BarangKeluar[]>(STORAGE_KEYS.BARANG_KELUAR, DEFAULT_BARANG_KELUAR);
+  }
+
+  public createBarangKeluar(data: {
+    TANGGAL: string;
+    PENERIMA: string;
+    PENERIMA_NIP?: string;
+    UNIT_RUANGAN: string;
+    TUJUAN_PENGGUNAAN: string;
+    KETERANGAN?: string;
+    FOTO_LINK?: string;
+    PARAF_LINK?: string;
+    ITEMS: Array<{
+      KODE_BARANG: string;
+      NAMA_BARANG: string;
+      JUMLAH: number;
+      JENIS_SATUAN: string;
+    }>;
+  }): { count: number; docNo: string; items: BarangKeluar[] } {
+    const config = this.getConfig();
+    const requireApproval = config.REQUIRE_APPROVAL === 'YA';
+    const status = requireApproval ? 'MENUNGGU_PERSETUJUAN' : 'DISETUJUI';
+    const activeUser = this.getActiveUser();
+
+    const now = new Date();
+    const dateCode = (data.TANGGAL || now.toISOString().slice(0, 10)).replace(/-/g, '');
+    const currentList = this.getBarangKeluar();
+    const docSeq = String(currentList.length + 1).padStart(4, '0');
+    const docNo = `BK-${dateCode}-${docSeq}`;
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+
+    const createdItems: BarangKeluar[] = [];
+
+    // Stock verification
+    const currentStockMap = this.getStockMap();
+    for (const item of data.ITEMS) {
+      const avail = currentStockMap[item.KODE_BARANG] || 0;
+      if (item.JUMLAH > avail) {
+        throw new Error(
+          `Stok untuk ${item.NAMA_BARANG} (${item.KODE_BARANG}) tidak mencukupi! Tersedia: ${avail} ${item.JENIS_SATUAN}, diminta: ${item.JUMLAH}`
+        );
+      }
+    }
+
+    for (let i = 0; i < data.ITEMS.length; i++) {
+      const itm = data.ITEMS[i];
+      const id = `BK-${now.getFullYear()}-${String(currentList.length + i + 1).padStart(4, '0')}`;
+      const record: BarangKeluar = {
+        ID: id,
+        TIMESTAMP: timestamp,
+        TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+        KODE_BARANG: itm.KODE_BARANG,
+        NAMA_BARANG: itm.NAMA_BARANG,
+        JUMLAH: Number(itm.JUMLAH) || 1,
+        JENIS_SATUAN: itm.JENIS_SATUAN,
+        PENERIMA: data.PENERIMA,
+        PENERIMA_NIP: data.PENERIMA_NIP || '',
+        UNIT_RUANGAN: data.UNIT_RUANGAN,
+        TUJUAN_PENGGUNAAN: data.TUJUAN_PENGGUNAAN,
+        PETUGAS: activeUser.NAMA,
+        FOTO_LINK: data.FOTO_LINK || '',
+        PARAF_LINK: data.PARAF_LINK || '',
+        KETERANGAN: data.KETERANGAN || '',
+        STATUS_TRANSAKSI: status,
+        NOMOR_DOKUMEN: docNo,
+        DISETUJUI_OLEH: !requireApproval ? activeUser.NAMA : undefined,
+        WAKTU_PERSETUJUAN: !requireApproval ? timestamp : undefined,
+        STOCK_SYNC_STATUS: status === 'DISETUJUI' ? 'SYNCED' : 'PENDING',
+        STOCK_SYNC_AT: timestamp,
+      };
+      createdItems.push(record);
+      currentList.push(record);
+    }
+
+    this.setItem(STORAGE_KEYS.BARANG_KELUAR, currentList);
+    this.logAudit('CREATE', 'BARANG_KELUAR', docNo, { docNo, itemsCount: createdItems.length, status });
+    this.rebuildStockLedger();
+
+    return { count: createdItems.length, docNo, items: createdItems };
+  }
+
+  public approveBarangKeluar(nomorDokumen: string, catatan = ''): void {
+    const list = this.getBarangKeluar();
+    const activeUser = this.getActiveUser();
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    let updated = 0;
+    list.forEach((item) => {
+      if (item.NOMOR_DOKUMEN === nomorDokumen || item.ID === nomorDokumen) {
+        item.STATUS_TRANSAKSI = 'DISETUJUI';
+        item.DISETUJUI_OLEH = activeUser.NAMA;
+        item.WAKTU_PERSETUJUAN = now;
+        item.CATATAN_PERSETUJUAN = catatan;
+        item.STOCK_SYNC_STATUS = 'SYNCED';
+        item.STOCK_SYNC_AT = now;
+        updated++;
+      }
+    });
+
+    if (updated > 0) {
+      this.setItem(STORAGE_KEYS.BARANG_KELUAR, list);
+      this.logAudit('APPROVE', 'BARANG_KELUAR', nomorDokumen, { nomorDokumen, catatan });
+      this.rebuildStockLedger();
+    }
+  }
+
+  public rejectBarangKeluar(nomorDokumen: string, catatan = ''): void {
+    const list = this.getBarangKeluar();
+    list.forEach((item) => {
+      if (item.NOMOR_DOKUMEN === nomorDokumen || item.ID === nomorDokumen) {
+        item.STATUS_TRANSAKSI = 'DITOLAK';
+        item.CATATAN_PERSETUJUAN = catatan;
+      }
+    });
+    this.setItem(STORAGE_KEYS.BARANG_KELUAR, list);
+    this.logAudit('REJECT', 'BARANG_KELUAR', nomorDokumen, { nomorDokumen, catatan });
+    this.rebuildStockLedger();
+  }
+
+  // --- Pengambilan ATK (Special Teacher Receipts) ---
+  public getPengambilanATK(): PengambilanATK[] {
+    return this.getItem<PengambilanATK[]>(STORAGE_KEYS.PENGAMBILAN_ATK, []);
+  }
+
+  public createPengambilanATK(data: {
+    TANGGAL: string;
+    NIP: string;
+    NAMA_LENGKAP: string;
+    JABATAN: string;
+    KETERANGAN?: string;
+    FOTO_BUKTI_LINK?: string;
+    PARAF_LINK?: string;
+    ITEMS: Array<{ NAMA_BARANG: string }>;
+  }): { count: number; no: number } {
+    const list = this.getPengambilanATK();
+    const nextNo = list.length > 0 ? Math.max(...list.map((r) => r.NO)) + 1 : 1;
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    const activeUser = this.getActiveUser();
+
+    for (let i = 0; i < data.ITEMS.length; i++) {
+      const itm = data.ITEMS[i];
+      const entry: PengambilanATK = {
+        NO: nextNo,
+        ID: `ATK-${now.getFullYear()}-${String(list.length + i + 1).padStart(4, '0')}`,
+        TIMESTAMP: timestamp,
+        TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+        NIP: data.NIP,
+        NAMA_LENGKAP: data.NAMA_LENGKAP,
+        JABATAN: data.JABATAN,
+        NAMA_BARANG: itm.NAMA_BARANG,
+        FOTO_BUKTI_LINK: data.FOTO_BUKTI_LINK || '',
+        PARAF_LINK: data.PARAF_LINK || '',
+        PETUGAS: activeUser.NAMA,
+        KETERANGAN: data.KETERANGAN || '',
+      };
+      list.push(entry);
+    }
+
+    this.setItem(STORAGE_KEYS.PENGAMBILAN_ATK, list);
+    this.logAudit('CREATE', 'PENGAMBILAN_ATK', String(nextNo), { no: nextNo, itemsCount: data.ITEMS.length });
+    return { count: data.ITEMS.length, no: nextNo };
+  }
+
+  // --- Assets & Inventory ---
+  public getAssets(): Asset[] {
+    return this.getItem<Asset[]>(STORAGE_KEYS.ASSETS, DEFAULT_ASSETS);
+  }
+
+  public saveAsset(asset: Partial<Asset>): Asset {
+    const list = this.getAssets();
+    let saved: Asset;
+    const now = new Date();
+    if (asset.ID) {
+      const idx = list.findIndex((a) => a.ID === asset.ID);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...asset } as Asset;
+        saved = list[idx];
+      } else {
+        saved = { ...asset, ID: asset.ID } as Asset;
+        list.push(saved);
+      }
+    } else {
+      const nextNum = list.length + 1;
+      const code = asset.KODE_ASET || `ASET-${now.getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+      const qty = Number(asset.JUMLAH) || 1;
+      const harga = Number(asset.HARGA_SATUAN) || 0;
+      saved = {
+        ID: `AST-${String(nextNum).padStart(4, '0')}`,
+        KODE_ASET: code,
+        KODE_BARANG: asset.KODE_BARANG || '',
+        NAMA_BARANG: asset.NAMA_BARANG || '',
+        SUB_KEGIATAN: asset.SUB_KEGIATAN || 'Pengadaan Sarana & Prasarana',
+        KODE_REKENING: asset.KODE_REKENING || '',
+        KODE_LOKASI: asset.KODE_LOKASI || '',
+        TANGGAL_BKU: asset.TANGGAL_BKU || now.toISOString().slice(0, 10),
+        NOMOR_BKU: asset.NOMOR_BKU || '',
+        NOMOR_KWITANSI: asset.NOMOR_KWITANSI || '',
+        NAMA_TOKO: asset.NAMA_TOKO || '',
+        NAMA_BARANG_RKAS: asset.NAMA_BARANG_RKAS || '',
+        MERK: asset.MERK || '',
+        SPESIFIKASI: asset.SPESIFIKASI || '',
+        JUMLAH: qty,
+        JENIS_SATUAN: asset.JENIS_SATUAN || 'Unit',
+        HARGA_SATUAN: harga,
+        TOTAL_NILAI: qty * harga,
+        LOKASI: asset.LOKASI || 'Gudang Utama',
+        PENANGGUNG_JAWAB: asset.PENANGGUNG_JAWAB || this.getConfig().WAREHOUSE_OFFICER,
+        KONDISI: asset.KONDISI || 'BAIK',
+        STATUS: asset.STATUS || 'AKTIF',
+        FOTO_LINK: asset.FOTO_LINK || '',
+        KETERANGAN: asset.KETERANGAN || '',
+        QR_TOKEN: code,
+        QR_TYPE: 'DETAIL_ASSET',
+      };
+      list.push(saved);
+    }
+    this.setItem(STORAGE_KEYS.ASSETS, list);
+    this.logAudit(asset.ID ? 'UPDATE' : 'CREATE', 'ASET', saved.KODE_ASET, saved);
+    return saved;
+  }
+
+  public deleteAsset(id: string): void {
+    const list = this.getAssets().filter((a) => a.ID !== id && a.KODE_ASET !== id);
+    this.setItem(STORAGE_KEYS.ASSETS, list);
+    this.logAudit('DELETE', 'ASET', id, { id });
+  }
+
+  // --- Mutasi Aset ---
+  public getMutasi(): Mutasi[] {
+    return this.getItem<Mutasi[]>(STORAGE_KEYS.MUTASI, []);
+  }
+
+  public createMutasi(data: Partial<Mutasi>): Mutasi {
+    const list = this.getMutasi();
+    const now = new Date();
+    const id = `MUT-${now.getFullYear()}-${String(list.length + 1).padStart(4, '0')}`;
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+
+    const record: Mutasi = {
+      ID: id,
+      TIMESTAMP: timestamp,
+      TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+      KODE_BARANG: data.KODE_BARANG || '',
+      KODE_ASET: data.KODE_ASET || '',
+      NAMA_BARANG: data.NAMA_BARANG || '',
+      DARI_LOKASI: data.DARI_LOKASI || '',
+      KE_LOKASI: data.KE_LOKASI || '',
+      DARI_PJ: data.DARI_PJ || '',
+      KE_PJ: data.KE_PJ || '',
+      PETUGAS: data.PETUGAS || this.getActiveUser().NAMA,
+      FOTO_LINK: data.FOTO_LINK || '',
+      ALASAN: data.ALASAN || '',
+      KETERANGAN: data.KETERANGAN || '',
+    };
+
+    list.push(record);
+    this.setItem(STORAGE_KEYS.MUTASI, list);
+
+    // Update asset location and custodian if KODE_ASET provided
+    if (data.KODE_ASET) {
+      const assets = this.getAssets();
+      const ast = assets.find((a) => a.KODE_ASET === data.KODE_ASET);
+      if (ast) {
+        if (data.KE_LOKASI) ast.LOKASI = data.KE_LOKASI;
+        if (data.KE_PJ) ast.PENANGGUNG_JAWAB = data.KE_PJ;
+        this.setItem(STORAGE_KEYS.ASSETS, assets);
+      }
+    }
+
+    this.logAudit('CREATE', 'MUTASI', id, record);
+    return record;
+  }
+
+  // --- Stock Opname Sessions & Scans ---
+  public getStockOpnameSessions(): StockOpnameSession[] {
+    return this.getItem<StockOpnameSession[]>(STORAGE_KEYS.STOCK_OPNAME_SESSIONS, []);
+  }
+
+  public getStockOpnameScans(sessionId?: string): StockOpnameScan[] {
+    const list = this.getItem<StockOpnameScan[]>(STORAGE_KEYS.STOCK_OPNAME_SCANS, []);
+    if (sessionId) {
+      return list.filter((s) => s.SESSION_ID === sessionId);
+    }
+    return list;
+  }
+
+  public startOpnameSession(lokasi = 'Semua Ruang', catatan = ''): StockOpnameSession {
+    const sessions = this.getStockOpnameSessions();
+    const now = new Date();
+    const ym = now.toISOString().slice(0, 7).replace('-', '');
+    const nomor = `SO-${ym}-${String(sessions.length + 1).padStart(4, '0')}`;
+    const id = `SOS-${Date.now()}`;
+    const session: StockOpnameSession = {
+      ID: id,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      NOMOR_OPNAME: nomor,
+      TANGGAL: now.toISOString().slice(0, 10),
+      LOKASI: lokasi,
+      PETUGAS: this.getActiveUser().NAMA,
+      STATUS: 'DRAFT',
+      JUMLAH_ITEM: 0,
+      TOTAL_SELSIH: 0,
+      CATATAN: catatan,
+    };
+    sessions.push(session);
+    this.setItem(STORAGE_KEYS.STOCK_OPNAME_SESSIONS, sessions);
+    this.logAudit('CREATE', 'STOCK_OPNAME_SESSION', nomor, session);
+    return session;
+  }
+
+  public recordOpnameScan(data: {
+    SESSION_ID: string;
+    KODE_BARANG: string;
+    NAMA_BARANG: string;
+    STOK_FISIK: number;
+    JENIS_SATUAN: string;
+    LOKASI?: string;
+    KETERANGAN?: string;
+  }): StockOpnameScan {
+    const scans = this.getStockOpnameScans();
+    const stockMap = this.getStockMap();
+    const stokSistem = stockMap[data.KODE_BARANG] || 0;
+    const selisih = Number(data.STOK_FISIK) - stokSistem;
+
+    const record: StockOpnameScan = {
+      ID: `SCAN-${Date.now()}`,
+      SESSION_ID: data.SESSION_ID,
+      TIMESTAMP: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      KODE_BARANG: data.KODE_BARANG,
+      NAMA_BARANG: data.NAMA_BARANG,
+      STOK_SISTEM: stokSistem,
+      STOK_FISIK: Number(data.STOK_FISIK),
+      SELISIH: selisih,
+      JENIS_SATUAN: data.JENIS_SATUAN,
+      LOKASI: data.LOKASI || 'Gudang',
+      PETUGAS: this.getActiveUser().NAMA,
+      STATUS: 'DRAFT',
+      KETERANGAN: data.KETERANGAN || '',
+    };
+
+    scans.push(record);
+    this.setItem(STORAGE_KEYS.STOCK_OPNAME_SCANS, scans);
+
+    // update session aggregates
+    const sessions = this.getStockOpnameSessions();
+    const sess = sessions.find((s) => s.ID === data.SESSION_ID);
+    if (sess) {
+      const sessionScans = scans.filter((s) => s.SESSION_ID === data.SESSION_ID);
+      sess.JUMLAH_ITEM = sessionScans.length;
+      sess.TOTAL_SELSIH = sessionScans.reduce((sum, s) => sum + s.SELISIH, 0);
+      this.setItem(STORAGE_KEYS.STOCK_OPNAME_SESSIONS, sessions);
+    }
+
+    return record;
+  }
+
+  public finalizeOpnameSession(sessionId: string): StockOpnameSession {
+    const sessions = this.getStockOpnameSessions();
+    const sess = sessions.find((s) => s.ID === sessionId);
+    if (!sess) throw new Error('Sesi opname tidak ditemukan.');
+    sess.STATUS = 'FINAL';
+    this.setItem(STORAGE_KEYS.STOCK_OPNAME_SESSIONS, sessions);
+    this.logAudit('FINALIZE', 'STOCK_OPNAME_SESSION', sess.NOMOR_OPNAME, sess);
+    return sess;
+  }
+
+  // --- Pemeliharaan & Penghapusan ---
+  public getPemeliharaan(): Pemeliharaan[] {
+    return this.getItem<Pemeliharaan[]>(STORAGE_KEYS.PEMELIHARAAN, []);
+  }
+
+  public createPemeliharaan(data: Partial<Pemeliharaan>): Pemeliharaan {
+    const list = this.getPemeliharaan();
+    const now = new Date();
+    const id = `MNT-${now.getFullYear()}-${String(list.length + 1).padStart(4, '0')}`;
+    const record: Pemeliharaan = {
+      ID: id,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+      KODE_ASET: data.KODE_ASET || '',
+      NAMA_BARANG: data.NAMA_BARANG || '',
+      JENIS_PEMELIHARAAN: data.JENIS_PEMELIHARAAN || 'Servis Rutin',
+      BIAYA: Number(data.BIAYA) || 0,
+      PENYEDIA: data.PENYEDIA || '',
+      STATUS: data.STATUS || 'SELESAI',
+      PETUGAS: data.PETUGAS || this.getActiveUser().NAMA,
+      KETERANGAN: data.KETERANGAN || '',
+    };
+    list.push(record);
+    this.setItem(STORAGE_KEYS.PEMELIHARAAN, list);
+    this.logAudit('CREATE', 'PEMELIHARAAN', id, record);
+    return record;
+  }
+
+  public getPenghapusan(): Penghapusan[] {
+    return this.getItem<Penghapusan[]>(STORAGE_KEYS.PENGHAPUSAN, []);
+  }
+
+  public createPenghapusan(data: Partial<Penghapusan>): Penghapusan {
+    const list = this.getPenghapusan();
+    const now = new Date();
+    const id = `DEL-${now.getFullYear()}-${String(list.length + 1).padStart(4, '0')}`;
+    const record: Penghapusan = {
+      ID: id,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      TANGGAL: data.TANGGAL || now.toISOString().slice(0, 10),
+      KODE_ASET: data.KODE_ASET || '',
+      NAMA_BARANG: data.NAMA_BARANG || '',
+      ALASAN: data.ALASAN || 'Rusak Berat & Usang',
+      KONDISI_AKHIR: data.KONDISI_AKHIR || 'RUSAK BERAT',
+      DOKUMEN: data.DOKUMEN || '',
+      STATUS: 'DISETUJUI',
+      PETUGAS: data.PETUGAS || this.getActiveUser().NAMA,
+      KETERANGAN: data.KETERANGAN || '',
+    };
+    list.push(record);
+    this.setItem(STORAGE_KEYS.PENGHAPUSAN, list);
+
+    // Update asset status
+    if (data.KODE_ASET) {
+      const assets = this.getAssets();
+      const ast = assets.find((a) => a.KODE_ASET === data.KODE_ASET);
+      if (ast) {
+        ast.STATUS = 'DIHAPUS';
+        ast.KONDISI = 'RUSAK BERAT';
+        this.setItem(STORAGE_KEYS.ASSETS, assets);
+      }
+    }
+
+    this.logAudit('CREATE', 'PENGHAPUSAN', id, record);
+    return record;
+  }
+
+  // --- Procurement Plans ---
+  public getProcurementPlans(): ProcurementPlan[] {
+    return this.getItem<ProcurementPlan[]>(STORAGE_KEYS.PROCUREMENT_PLANS, []);
+  }
+
+  public getProcurementPlanDetails(): ProcurementPlanDetail[] {
+    return this.getItem<ProcurementPlanDetail[]>(STORAGE_KEYS.PROCUREMENT_PLAN_DETAILS, []);
+  }
+
+  public createProcurementPlan(data: {
+    PERIODE: string;
+    CATATAN?: string;
+    ITEMS: Array<{
+      KODE_BARANG: string;
+      NAMA_BARANG: string;
+      STOK_SAAT_INI: number;
+      BATAS_MINIMUM: number;
+      RATA2_KELUAR_BULANAN: number;
+      LEAD_TIME_HARI: number;
+      TARGET_STOK: number;
+      REKOMENDASI_QTY: number;
+      ESTIMASI_HARGA: number;
+      JENIS_SATUAN: string;
+      CATATAN?: string;
+    }>;
+  }): { id: string; nomorRencana: string } {
+    const plans = this.getProcurementPlans();
+    const details = this.getProcurementPlanDetails();
+    const now = new Date();
+    const ym = now.toISOString().slice(0, 7).replace('-', '');
+    const nomor = `RN-${ym}-${String(plans.length + 1).padStart(4, '0')}`;
+    const planId = `PLN-${Date.now()}`;
+
+    const plan: ProcurementPlan = {
+      ID: planId,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      NOMOR_RENCANA: nomor,
+      PERIODE: data.PERIODE || now.toISOString().slice(0, 7),
+      STATUS: 'DIAJUKAN',
+      DIAJUKAN_OLEH: this.getActiveUser().NAMA,
+      CATATAN: data.CATATAN || '',
+    };
+    plans.push(plan);
+
+    for (const itm of data.ITEMS) {
+      const detail: ProcurementPlanDetail = {
+        ID: `PND-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        PLAN_ID: planId,
+        KODE_BARANG: itm.KODE_BARANG,
+        NAMA_BARANG: itm.NAMA_BARANG,
+        STOK_SAAT_INI: itm.STOK_SAAT_INI,
+        BATAS_MINIMUM: itm.BATAS_MINIMUM,
+        RATA2_KELUAR_BULANAN: itm.RATA2_KELUAR_BULANAN,
+        LEAD_TIME_HARI: itm.LEAD_TIME_HARI,
+        TARGET_STOK: itm.TARGET_STOK,
+        REKOMENDASI_QTY: itm.REKOMENDASI_QTY,
+        ESTIMASI_HARGA: itm.ESTIMASI_HARGA,
+        ESTIMASI_TOTAL: itm.REKOMENDASI_QTY * itm.ESTIMASI_HARGA,
+        CATATAN: itm.CATATAN || '',
+        JENIS_SATUAN: itm.JENIS_SATUAN,
+      };
+      details.push(detail);
+    }
+
+    this.setItem(STORAGE_KEYS.PROCUREMENT_PLANS, plans);
+    this.setItem(STORAGE_KEYS.PROCUREMENT_PLAN_DETAILS, details);
+    this.logAudit('CREATE', 'PROCUREMENT_PLAN', nomor, { nomor, itemsCount: data.ITEMS.length });
+    return { id: planId, nomorRencana: nomor };
+  }
+
+  // --- Document Index ---
+  public getDocuments(): DocumentIndex[] {
+    return this.getItem<DocumentIndex[]>(STORAGE_KEYS.DOCUMENTS, []);
+  }
+
+  public recordDocument(doc: Partial<DocumentIndex>): DocumentIndex {
+    const list = this.getDocuments();
+    const now = new Date();
+    const record: DocumentIndex = {
+      ID: `DOC-${Date.now()}`,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      JENIS_DOKUMEN: doc.JENIS_DOKUMEN || 'BERITA_ACARA',
+      NOMOR_DOKUMEN: doc.NOMOR_DOKUMEN || `BA-${Date.now()}`,
+      PERIODE: doc.PERIODE || now.toISOString().slice(0, 7),
+      MODULE: doc.MODULE || 'GENERAL',
+      RECORD_ID: doc.RECORD_ID || '',
+      FILE_ID: doc.FILE_ID || '',
+      FILE_URL: doc.FILE_URL || '',
+      STATUS: 'FINAL',
+      DIBUAT_OLEH: this.getActiveUser().NAMA,
+      KETERANGAN: doc.KETERANGAN || '',
+    };
+    list.push(record);
+    this.setItem(STORAGE_KEYS.DOCUMENTS, list);
+    return record;
+  }
+
+  // --- Stock Ledger & Materialized Summary Calculation ---
+  public calculateStockLedgerAndSummary(): { ledgerEntries: StockLedgerEntry[]; summary: StockSummaryItem[] } {
+    const items = this.getItems();
+    const incoming = this.getBarangMasuk();
+    const outgoing = this.getBarangKeluar();
+
+    interface EventItem {
+      date: string;
+      timestamp: string;
+      code: string;
+      name: string;
+      unit: string;
+      qtyIn: number;
+      qtyOut: number;
+      refType: string;
+      refId: string;
+      docNo: string;
+      status: string;
+    }
+
+    const events: EventItem[] = [];
+
+    // Collect incoming
+    incoming.forEach((bm) => {
+      if (bm.JUMLAH > 0) {
+        events.push({
+          date: bm.TANGGAL,
+          timestamp: bm.TIMESTAMP,
+          code: bm.KODE_BARANG,
+          name: bm.NAMA_BARANG,
+          unit: bm.JENIS_SATUAN,
+          qtyIn: bm.JUMLAH,
+          qtyOut: 0,
+          refType: 'BARANG_MASUK',
+          refId: bm.ID,
+          docNo: bm.NOMOR_KWITANSI || bm.NOMOR_BKU || bm.ID,
+          status: 'DISETUJUI',
+        });
+      }
+    });
+
+    // Collect outgoing (only approved)
+    outgoing.forEach((bk) => {
+      if (bk.JUMLAH > 0 && bk.STATUS_TRANSAKSI === 'DISETUJUI') {
+        events.push({
+          date: bk.TANGGAL,
+          timestamp: bk.TIMESTAMP,
+          code: bk.KODE_BARANG,
+          name: bk.NAMA_BARANG,
+          unit: bk.JENIS_SATUAN,
+          qtyIn: 0,
+          qtyOut: bk.JUMLAH,
+          refType: 'BARANG_KELUAR',
+          refId: bk.ID,
+          docNo: bk.NOMOR_DOKUMEN || bk.ID,
+          status: 'DISETUJUI',
+        });
+      }
+    });
+
+    // Sort chronologically: Date ASC -> IN before OUT -> ID ASC
+    events.sort((a, b) => {
+      const dDiff = a.date.localeCompare(b.date);
+      if (dDiff !== 0) return dDiff;
+      if (a.qtyIn > 0 && b.qtyOut > 0) return -1;
+      if (a.qtyOut > 0 && b.qtyIn > 0) return 1;
+      return a.timestamp.localeCompare(b.timestamp);
+    });
+
+    const runningBalance: Record<string, number> = {};
+    const ledgerEntries: StockLedgerEntry[] = [];
+    const summaryMap: Record<
+      string,
+      {
+        in: number;
+        out: number;
+        adj: number;
+        lastMovement: string;
+      }
+    > = {};
+
+    events.forEach((ev) => {
+      const code = ev.code;
+      const current = runningBalance[code] || 0;
+      const newBal = current + ev.qtyIn - ev.qtyOut;
+      runningBalance[code] = newBal;
+
+      if (!summaryMap[code]) {
+        summaryMap[code] = { in: 0, out: 0, adj: 0, lastMovement: ev.date };
+      }
+      summaryMap[code].in += ev.qtyIn;
+      summaryMap[code].out += ev.qtyOut;
+      summaryMap[code].lastMovement = ev.date;
+
+      ledgerEntries.push({
+        LEDGER_ID: `LED-${ledgerEntries.length + 1}`,
+        TIMESTAMP: ev.timestamp,
+        TANGGAL: ev.date,
+        KODE_BARANG: ev.code,
+        NAMA_BARANG: ev.name,
+        JENIS_SATUAN: ev.unit,
+        QTY_IN: ev.qtyIn,
+        QTY_OUT: ev.qtyOut,
+        SALDO_SESUDAH: newBal,
+        REF_TYPE: ev.refType,
+        REF_ID: ev.refId,
+        NOMOR_DOKUMEN: ev.docNo,
+        STATUS: ev.status,
+        SOURCE: 'REBUILD',
+        LEDGER_KEY: `${ev.refType}|${ev.refId}|${ev.code}`,
+      });
+    });
+
+    // Build complete summary for all master items
+    const summaryList: StockSummaryItem[] = items.map((itm) => {
+      const st = summaryMap[itm.KODE_BARANG] || { in: 0, out: 0, adj: 0, lastMovement: '' };
+      const currentStock = runningBalance[itm.KODE_BARANG] || 0;
+      return {
+        KODE_BARANG: itm.KODE_BARANG,
+        NAMA_BARANG: itm.NAMA_BARANG,
+        JENIS_SATUAN: itm.JENIS_SATUAN,
+        TOTAL_MASUK: st.in,
+        TOTAL_KELUAR: st.out,
+        TOTAL_ADJUSTMENT: st.adj,
+        STOK: currentStock,
+        BATAS_MINIMUM: itm.BATAS_MINIMUM,
+        LAST_MOVEMENT: st.lastMovement,
+        UPDATED_AT: new Date().toISOString(),
+        STATUS: currentStock <= itm.BATAS_MINIMUM ? 'MINIMUM' : 'AMAN',
+      };
+    });
+
+    return { ledgerEntries, summary: summaryList };
+  }
+
+  public rebuildStockLedger(): { ledgerCount: number; summary: StockSummaryItem[] } {
+    const res = this.calculateStockLedgerAndSummary();
+    this.setItem(STORAGE_KEYS.STOCK_LEDGER, res.ledgerEntries, false);
+    return { ledgerCount: res.ledgerEntries.length, summary: res.summary };
+  }
+
+  public getStockLedger(kodeBarang?: string): StockLedgerEntry[] {
+    const res = this.calculateStockLedgerAndSummary();
+    if (!kodeBarang) return res.ledgerEntries;
+    return res.ledgerEntries.filter((l) => l.KODE_BARANG === kodeBarang);
+  }
+
+  public getStockSummary(): StockSummaryItem[] {
+    return this.calculateStockLedgerAndSummary().summary;
+  }
+
+  public getStockMap(): Record<string, number> {
+    const summary = this.getStockSummary();
+    const map: Record<string, number> = {};
+    summary.forEach((s) => {
+      map[s.KODE_BARANG] = s.STOK;
+    });
+    return map;
+  }
+
+  // --- Audit Trail ---
+  public getAuditTrail(): AuditTrail[] {
+    return this.getItem<AuditTrail[]>(STORAGE_KEYS.AUDIT, []);
+  }
+
+  public logAudit(aksi: string, modul: string, recordId: string, data: unknown): void {
+    const list = this.getAuditTrail();
+    const now = new Date();
+    const entry: AuditTrail = {
+      ID: `AUD-${Date.now()}`,
+      TIMESTAMP: now.toISOString().replace('T', ' ').substring(0, 19),
+      AKSI: aksi,
+      MODUL: modul,
+      RECORD_ID: recordId,
+      USER_EMAIL: this.getActiveUser().EMAIL || 'admin@school.id',
+      DATA_JSON: JSON.stringify(data),
+    };
+    list.unshift(entry);
+    if (list.length > 500) list.pop();
+    this.setItem(STORAGE_KEYS.AUDIT, list);
+  }
+
+  // --- Notifications ---
+  public getNotifications(): NotificationItem[] {
+    return this.getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  }
+
+  public markNotificationRead(id: string): void {
+    const list = this.getNotifications();
+    const notif = list.find((n) => n.ID === id);
+    if (notif) {
+      notif.STATUS = 'READ';
+      notif.READ_AT = new Date().toISOString();
+      this.setItem(STORAGE_KEYS.NOTIFICATIONS, list);
+    }
+  }
+
+  public markAllNotificationsRead(): void {
+    const list = this.getNotifications();
+    const now = new Date().toISOString();
+    list.forEach((n) => {
+      n.STATUS = 'READ';
+      n.READ_AT = now;
+    });
+    this.setItem(STORAGE_KEYS.NOTIFICATIONS, list);
+  }
+
+  // --- Today's Tasks ---
+  public getTodayTasks(): AppTask[] {
+    const tasks: AppTask[] = [];
+    const today = new Date().toISOString().slice(0, 10);
+    const bkList = this.getBarangKeluar();
+    const stockSummary = this.getStockSummary();
+
+    // 1. Pending approvals
+    const pendingBk = bkList.filter((bk) => bk.STATUS_TRANSAKSI === 'MENUNGGU_PERSETUJUAN');
+    const groupedPending: Record<string, BarangKeluar[]> = {};
+    pendingBk.forEach((bk) => {
+      groupedPending[bk.NOMOR_DOKUMEN] = groupedPending[bk.NOMOR_DOKUMEN] || [];
+      groupedPending[bk.NOMOR_DOKUMEN].push(bk);
+    });
+
+    Object.keys(groupedPending).forEach((docNo) => {
+      const items = groupedPending[docNo];
+      tasks.push({
+        ID: `TSK-APP-${docNo}`,
+        TYPE: 'APPROVAL',
+        TITLE: `Persetujuan Dokumen ${docNo}`,
+        DESCRIPTION: `${items.length} item dimohon oleh ${items[0].PENERIMA} (${items[0].UNIT_RUANGAN})`,
+        MODULE: 'barang_keluar',
+        RECORD_ID: docNo,
+        DUE_DATE: today,
+        PRIORITY: 'HIGH',
+        STATUS: 'OPEN',
+      });
+    });
+
+    // 2. Minimum stock alerts
+    stockSummary
+      .filter((s) => s.STATUS === 'MINIMUM')
+      .forEach((s) => {
+        tasks.push({
+          ID: `TSK-STK-${s.KODE_BARANG}`,
+          TYPE: 'STOCK',
+          TITLE: `Stok Kritis: ${s.NAMA_BARANG}`,
+          DESCRIPTION: `Sisa ${s.STOK} ${s.JENIS_SATUAN} (Batas minimum: ${s.BATAS_MINIMUM}). Perlu pengadaan.`,
+          MODULE: 'procurement_planner',
+          RECORD_ID: s.KODE_BARANG,
+          DUE_DATE: today,
+          PRIORITY: 'MEDIUM',
+          STATUS: 'OPEN',
+        });
+      });
+
+    return tasks;
+  }
+
+  // --- Google Sheets Integration State ---
+  public getGoogleClientId(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.GOOGLE_CLIENT_ID);
+  }
+
+  public setGoogleClientId(clientId: string | null): void {
+    if (clientId && clientId.trim()) {
+      localStorage.setItem(STORAGE_KEYS.GOOGLE_CLIENT_ID, clientId.trim());
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.GOOGLE_CLIENT_ID);
+    }
+  }
+
+  public getAppsScriptUrl(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL);
+  }
+
+  public setAppsScriptUrl(url: string | null): void {
+    if (url && url.trim()) {
+      localStorage.setItem(STORAGE_KEYS.APPS_SCRIPT_URL, url.trim());
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.APPS_SCRIPT_URL);
+    }
+  }
+
+  public getConnectedGoogleSheetId(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.GOOGLE_SHEET_ID);
+  }
+
+  public setConnectedGoogleSheetId(id: string | null): void {
+    if (id) {
+      localStorage.setItem(STORAGE_KEYS.GOOGLE_SHEET_ID, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.GOOGLE_SHEET_ID);
+    }
+  }
+
+  public getGoogleAccessToken(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.GOOGLE_ACCESS_TOKEN);
+  }
+
+  public setGoogleAccessToken(token: string | null): void {
+    if (token) {
+      localStorage.setItem(STORAGE_KEYS.GOOGLE_ACCESS_TOKEN, token);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.GOOGLE_ACCESS_TOKEN);
+    }
+  }
+
+  public getLastSyncTime(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+  }
+
+  public setLastSyncTime(): void {
+    localStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+  }
+
+  // --- Full Database Export & Import ---
+  public exportFullJson(): string {
+    const payload = {
+      version: '8.1.6',
+      exportedAt: new Date().toISOString(),
+      config: this.getConfig(),
+      users: this.getUsers(),
+      suppliers: this.getSuppliers(),
+      items: this.getItems(),
+      barangMasuk: this.getBarangMasuk(),
+      barangKeluar: this.getBarangKeluar(),
+      assets: this.getAssets(),
+      mutasi: this.getMutasi(),
+      stockOpnameSessions: this.getStockOpnameSessions(),
+      stockOpnameScans: this.getStockOpnameScans(),
+      pemeliharaan: this.getPemeliharaan(),
+      penghapusan: this.getPenghapusan(),
+      pengambilanATK: this.getPengambilanATK(),
+      procurementPlans: this.getProcurementPlans(),
+      procurementPlanDetails: this.getProcurementPlanDetails(),
+      documents: this.getDocuments(),
+      auditTrail: this.getAuditTrail(),
+    };
+    return JSON.stringify(payload, null, 2);
+  }
+
+  public importFullJson(jsonStr: string): void {
+    const data = JSON.parse(jsonStr);
+    if (data.config) this.setItem(STORAGE_KEYS.CONFIG, data.config);
+    if (data.users) this.setItem(STORAGE_KEYS.USERS, data.users);
+    if (data.suppliers) this.setItem(STORAGE_KEYS.SUPPLIERS, data.suppliers);
+    if (data.items) this.setItem(STORAGE_KEYS.ITEMS, data.items);
+    if (data.barangMasuk) this.setItem(STORAGE_KEYS.BARANG_MASUK, data.barangMasuk);
+    if (data.barangKeluar) this.setItem(STORAGE_KEYS.BARANG_KELUAR, data.barangKeluar);
+    if (data.assets) this.setItem(STORAGE_KEYS.ASSETS, data.assets);
+    if (data.mutasi) this.setItem(STORAGE_KEYS.MUTASI, data.mutasi);
+    if (data.stockOpnameSessions) this.setItem(STORAGE_KEYS.STOCK_OPNAME_SESSIONS, data.stockOpnameSessions);
+    if (data.stockOpnameScans) this.setItem(STORAGE_KEYS.STOCK_OPNAME_SCANS, data.stockOpnameScans);
+    if (data.pemeliharaan) this.setItem(STORAGE_KEYS.PEMELIHARAAN, data.pemeliharaan);
+    if (data.penghapusan) this.setItem(STORAGE_KEYS.PENGHAPUSAN, data.penghapusan);
+    if (data.pengambilanATK) this.setItem(STORAGE_KEYS.PENGAMBILAN_ATK, data.pengambilanATK);
+    if (data.procurementPlans) this.setItem(STORAGE_KEYS.PROCUREMENT_PLANS, data.procurementPlans);
+    if (data.procurementPlanDetails) this.setItem(STORAGE_KEYS.PROCUREMENT_PLAN_DETAILS, data.procurementPlanDetails);
+    if (data.documents) this.setItem(STORAGE_KEYS.DOCUMENTS, data.documents);
+    this.rebuildStockLedger();
+    this.logAudit('IMPORT', 'DATABASE', 'FULL_RESTORE', { importedAt: new Date().toISOString() });
+  }
+
+  public exportAllDataAsJSON(): string {
+    return this.exportFullJson();
+  }
+
+  public importAllDataFromJSON(jsonStr: string): void {
+    this.importFullJson(jsonStr);
+  }
+
+  public resetToSampleData(): void {
+    Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    this.initDatabase();
+    this.rebuildStockLedger();
+  }
+
+  public getMutasiAset(): any[] {
+    return this.getMutasi().map((m) => ({
+      ...m,
+      ASET_ID: m.ID,
+      LOKASI_LAMA: m.DARI_LOKASI,
+      LOKASI_BARU: m.KE_LOKASI,
+      PJ_LAMA: m.DARI_PJ,
+      PJ_BARU: m.KE_PJ,
+      NOMOR_BA_MUTASI: m.ID,
+      ALASAN_MUTASI: m.ALASAN,
+    }));
+  }
+
+  public createMutasiAset(data: any): string {
+    const res = this.createMutasi({
+      KODE_ASET: data.KODE_ASET,
+      NAMA_BARANG: data.NAMA_BARANG,
+      DARI_LOKASI: data.LOKASI_LAMA,
+      KE_LOKASI: data.LOKASI_BARU,
+      DARI_PJ: data.PJ_LAMA,
+      KE_PJ: data.PJ_BARU,
+      ALASAN: data.ALASAN_MUTASI,
+      TANGGAL: data.TANGGAL,
+    });
+    return res.ID;
+  }
+
+  public getPemeliharaanAset(): any[] {
+    return this.getPemeliharaan().map((p) => ({
+      ...p,
+      ASET_ID: p.ID,
+      URAIAN_KERUSAKAN: p.KETERANGAN,
+      BENGKEL_PELAKSANA: p.PENYEDIA,
+      KONDISI_SETELAH: 'BAIK',
+    }));
+  }
+
+  public createPemeliharaanAset(data: any): void {
+    this.createPemeliharaan({
+      KODE_ASET: data.KODE_ASET,
+      NAMA_BARANG: data.NAMA_BARANG,
+      JENIS_PEMELIHARAAN: data.JENIS_PEMELIHARAAN,
+      BIAYA: data.BIAYA,
+      PENYEDIA: data.BENGKEL_PELAKSANA,
+      KETERANGAN: data.URAIAN_KERUSAKAN,
+      TANGGAL: data.TANGGAL,
+      STATUS: 'SELESAI',
+    });
+  }
+
+  public getPenghapusanAset(): any[] {
+    return this.getPenghapusan().map((d) => ({
+      ...d,
+      ASET_ID: d.ID,
+      NOMOR_BA_PENGHAPUSAN: d.ID,
+      ALASAN_PENGHAPUSAN: d.ALASAN,
+      METODE: 'PEMUSNAHAN',
+      STATUS_PERSETUJUAN: d.STATUS,
+    }));
+  }
+
+  public createPenghapusanAset(data: any): string {
+    const res = this.createPenghapusan({
+      KODE_ASET: data.KODE_ASET,
+      NAMA_BARANG: data.NAMA_BARANG,
+      ALASAN: data.ALASAN_PENGHAPUSAN,
+      TANGGAL: data.TANGGAL,
+      STATUS: 'SELESAI',
+    });
+    return res.ID;
+  }
+
+  public getStockOpname(): any[] {
+    return this.getStockOpnameScans().map((s) => ({
+      ...s,
+      NOMOR_OPNAME: s.SESSION_ID,
+    }));
+  }
+
+  public createStockOpname(data: { TANGGAL: string; PETUGAS: string; ITEMS: any[] }): string {
+    const session = this.startOpnameSession('Gudang Utama', 'Stock Opname Fisik');
+    const allItems = this.getItems();
+    data.ITEMS.forEach((item) => {
+      const itm = allItems.find((i) => i.KODE_BARANG === item.KODE_BARANG);
+      this.recordOpnameScan({
+        SESSION_ID: session.NOMOR_OPNAME,
+        KODE_BARANG: item.KODE_BARANG,
+        NAMA_BARANG: itm?.NAMA_BARANG || item.NAMA_BARANG || 'Item Persediaan',
+        JENIS_SATUAN: itm?.JENIS_SATUAN || 'Pcs',
+        STOK_FISIK: Number(item.STOK_FISIK) || 0,
+        KETERANGAN: item.KETERANGAN || '',
+      });
+    });
+    return session.NOMOR_OPNAME;
+  }
+
+  public getAuditLogs(): any[] {
+    return this.getAuditTrail().map((a) => ({
+      ...a,
+      ACTION: a.AKSI,
+      MODULE: a.MODUL,
+      USER_NAME: a.USER_EMAIL,
+      DETAILS: a.DATA_JSON,
+    }));
+  }
+
+  public createDocument(data: any): string {
+    const list = this.getDocuments();
+    const docId = `DOC-${Date.now()}`;
+    list.push({
+      ID: docId,
+      TIMESTAMP: new Date().toISOString(),
+      JENIS_DOKUMEN: data.JENIS_DOKUMEN || 'BERITA_ACARA',
+      NOMOR_DOKUMEN: data.NOMOR_DOKUMEN || docId,
+      PERIODE: new Date().getFullYear().toString(),
+      MODULE: 'document_center',
+      RECORD_ID: docId,
+      STATUS: 'TERBIT',
+      DIBUAT_OLEH: this.getActiveUser().NAMA,
+      KETERANGAN: data.KETERANGAN || '',
+    });
+    this.setItem(STORAGE_KEYS.DOCUMENTS, list);
+    return docId;
+  }
+
+  // --- FASE 2: KODE REKENING BELANJA ARKAS & SIPLAH ---
+  public getARKASAccounts(): ARKASAccount[] {
+    const saved = this.getItem<ARKASAccount[]>(STORAGE_KEYS.ARKAS_ACCOUNTS, []);
+    if (saved && saved.length > 0) return saved;
+
+    const defaults: ARKASAccount[] = [
+      {
+        KODE_REKENING: '5.1.02.01.01.0024',
+        NAMA_REKENING: 'Belanja Alat/Bahan untuk Kegiatan Kantor - Alat Tulis Kantor (ATK)',
+        KATEGORI_BELANJA: 'OPERASIONAL',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 18500000,
+        REALISASI: 11250000,
+        SISA_ANGGARAN: 7250000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.1.02.01.01.0026',
+        NAMA_REKENING: 'Belanja Bahan Cetak dan Penggandaan Formulir / Ujian',
+        KATEGORI_BELANJA: 'OPERASIONAL',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 12000000,
+        REALISASI: 8400000,
+        SISA_ANGGARAN: 3600000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.1.02.01.01.0029',
+        NAMA_REKENING: 'Belanja Bahan Praktik Sekolah / Laboratorium IPA & Komputer',
+        KATEGORI_BELANJA: 'OPERASIONAL',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 9500000,
+        REALISASI: 4200000,
+        SISA_ANGGARAN: 5300000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.1.02.01.01.0030',
+        NAMA_REKENING: 'Belanja Bahan Kebersihan dan Sanitasi Lingkungan Sekolah',
+        KATEGORI_BELANJA: 'OPERASIONAL',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 6500000,
+        REALISASI: 3900000,
+        SISA_ANGGARAN: 2600000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.2.02.10.01.0002',
+        NAMA_REKENING: 'Belanja Modal Komputer, Laptop & Chromebook Peserta Didik',
+        KATEGORI_BELANJA: 'MODAL_ASET',
+        SUMBER_DANA: 'BOS Kinerja / Afirmasi',
+        PAGU_ANGGARAN: 45000000,
+        REALISASI: 38500000,
+        SISA_ANGGARAN: 6500000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.2.02.10.02.0003',
+        NAMA_REKENING: 'Belanja Modal Peralatan Jaringan Internet, Wifi & Access Point',
+        KATEGORI_BELANJA: 'MODAL_ASET',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 8000000,
+        REALISASI: 7500000,
+        SISA_ANGGARAN: 500000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.2.02.08.01.0005',
+        NAMA_REKENING: 'Belanja Modal Buku Teks Utama Kurikulum Merdeka & Perpustakaan',
+        KATEGORI_BELANJA: 'MODAL_ASET',
+        SUMBER_DANA: 'BOS Reguler',
+        PAGU_ANGGARAN: 22000000,
+        REALISASI: 19800000,
+        SISA_ANGGARAN: 2200000,
+        STATUS: 'AKTIF',
+      },
+      {
+        KODE_REKENING: '5.2.02.05.01.0001',
+        NAMA_REKENING: 'Belanja Modal Mebelair Meja & Kursi Kelas Siswa',
+        KATEGORI_BELANJA: 'MODAL_ASET',
+        SUMBER_DANA: 'Komite Sekolah',
+        PAGU_ANGGARAN: 15000000,
+        REALISASI: 14200000,
+        SISA_ANGGARAN: 800000,
+        STATUS: 'AKTIF',
+      },
+    ];
+
+    this.setItem(STORAGE_KEYS.ARKAS_ACCOUNTS, defaults);
+    return defaults;
+  }
+
+  public saveARKASAccount(account: ARKASAccount): void {
+    const list = this.getARKASAccounts();
+    const idx = list.findIndex((a) => a.KODE_REKENING === account.KODE_REKENING);
+    account.SISA_ANGGARAN = Math.max(0, account.PAGU_ANGGARAN - (account.REALISASI || 0));
+    if (idx >= 0) {
+      list[idx] = account;
+    } else {
+      list.push(account);
+    }
+    this.setItem(STORAGE_KEYS.ARKAS_ACCOUNTS, list);
+    this.logAudit('SIMPAN_REKENING_ARKAS', 'arkas', account.KODE_REKENING, account);
+  }
+
+  // --- FASE 3: PENYUSUTAN NILAI ASET (DEPRESIASI STANDAR SAP) ---
+  public getAssetDepreciations(): AssetDepreciation[] {
+    const assets = this.getAssets().filter((a) => a.STATUS !== 'DIHAPUS');
+    const now = new Date();
+
+    return assets.map((a) => {
+      // Determine SAP asset category & useful life (Masa Manfaat)
+      const nameUpper = (a.NAMA_BARANG + ' ' + (a.SPESIFIKASI || '')).toUpperCase();
+      let category: AssetDepreciation['KATEGORI_SAP'] = 'PERALATAN_MESIN';
+      let usefulYears = 5;
+
+      if (nameUpper.includes('LAPTOP') || nameUpper.includes('KOMPUTER') || nameUpper.includes('PC') || nameUpper.includes('PRINTER') || nameUpper.includes('PROJECTOR') || nameUpper.includes('INFOCUS')) {
+        category = 'PERALATAN_MESIN';
+        usefulYears = 4;
+      } else if (nameUpper.includes('MOTOR') || nameUpper.includes('MOBIL') || nameUpper.includes('KENDARAAN')) {
+        category = 'KENDARAAN';
+        usefulYears = 7;
+      } else if (nameUpper.includes('MEJA') || nameUpper.includes('KURSI') || nameUpper.includes('LEMARI') || nameUpper.includes('RAK')) {
+        category = 'MEBELAIR';
+        usefulYears = 5;
+      } else if (nameUpper.includes('BUKU') || nameUpper.includes('ENSIKLOPEDIA') || nameUpper.includes('MODUL')) {
+        category = 'BUKU';
+        usefulYears = 5;
+      } else if (nameUpper.includes('GEDUNG') || nameUpper.includes('RUANG') || nameUpper.includes('BANGUNAN')) {
+        category = 'GEDUNG_BANGUNAN';
+        usefulYears = 50;
+      } else {
+        category = 'ASET_LAIN';
+        usefulYears = 5;
+      }
+
+      const acquisitionDate = a.TANGGAL_BKU ? new Date(a.TANGGAL_BKU) : new Date(now.getFullYear() - 1, 0, 1);
+      const diffMonths = Math.max(1, (now.getFullYear() - acquisitionDate.getFullYear()) * 12 + (now.getMonth() - acquisitionDate.getMonth()));
+      const totalCost = Number(a.TOTAL_NILAI) || (Number(a.JUMLAH) * Number(a.HARGA_SATUAN)) || 0;
+      
+      const depreciationPerYear = totalCost / usefulYears;
+      const depreciationPerMonth = depreciationPerYear / 12;
+      const maxMonths = usefulYears * 12;
+      const effectiveMonths = Math.min(diffMonths, maxMonths);
+      
+      const accumulatedDepreciation = Math.min(totalCost - 1, Math.round(effectiveMonths * depreciationPerMonth));
+      const bookValue = Math.max(1, totalCost - accumulatedDepreciation);
+      const isFullyDepreciated = diffMonths >= maxMonths;
+
+      return {
+        ID: a.ID,
+        KODE_ASET: a.KODE_ASET || a.ID,
+        NAMA_BARANG: a.NAMA_BARANG,
+        KATEGORI_SAP: category,
+        TANGGAL_PEROLEHAN: a.TANGGAL_BKU || '2023-01-15',
+        HARGA_PEROLEHAN: totalCost,
+        MASA_MANFAAT_TAHUN: usefulYears,
+        PERSENTASE_PENYUSUTAN: Math.round((1 / usefulYears) * 100 * 10) / 10,
+        NILAI_RESIDU: 1,
+        UMUR_BERJALAN_BULAN: diffMonths,
+        PENYUSUTAN_PER_TAHUN: Math.round(depreciationPerYear),
+        AKUMULASI_PENYUSUTAN: accumulatedDepreciation,
+        NILAI_BUKU: bookValue,
+        STATUS_PENYUSUTAN: isFullyDepreciated ? 'HABIS_MANFAAT' : 'BERJALAN',
+        LOKASI: a.LOKASI || 'Gudang Sekolah',
+        KONDISI: a.KONDISI || 'BAIK',
+      };
+    });
+  }
+
+  // --- FASE 3: KONSOLIDASI MULTI-SEKOLAH / KORWIL DINAS ---
+  public getConsolidatedSchools(): SchoolUnitConsolidation[] {
+    const saved = this.getItem<SchoolUnitConsolidation[]>(STORAGE_KEYS.CONSOLIDATED_SCHOOLS, []);
+    if (saved && saved.length > 0) return saved;
+
+    const totalAssets = this.getAssets().reduce((acc, cur) => acc + (cur.TOTAL_NILAI || 0), 0);
+    const totalInventory = this.getItems().length * 1500000;
+
+    const defaults: SchoolUnitConsolidation[] = [
+      {
+        ID: 'SCH-001',
+        NPSN: '20606016',
+        NAMA_SEKOLAH: 'SD Negeri Tangerang 6 (Unit Ini)',
+        JENJANG: 'SD',
+        KECAMATAN: 'Tangerang',
+        KEPALA_SEKOLAH: 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+        BENDAHARA: 'Siti Rahmawati, S.Pd.',
+        TOTAL_NILAI_ASET: totalAssets || 184500000,
+        TOTAL_NILAI_PERSEDIAAN: totalInventory || 12600000,
+        TOTAL_ITEM_ASET: this.getAssets().length || 15,
+        TOTAL_ITEM_PERSEDIAAN: this.getItems().length || 15,
+        STATUS_SINKRON: 'TERHUBUNG',
+        TERAKHIR_SINKRON: new Date().toISOString(),
+        KONDISI_BAIK_PCT: 95,
+        KONDISI_RUSAK_PCT: 5,
+        PENYERAPAN_BOS_PCT: 92.4,
+      },
+      {
+        ID: 'SCH-002',
+        NPSN: '20601552',
+        NAMA_SEKOLAH: 'SMP Negeri 2 Harapan Bangsa',
+        JENJANG: 'SMP',
+        KECAMATAN: 'Cipondoh',
+        KEPALA_SEKOLAH: 'Dra. Hj. Nurhayati, M.M.',
+        BENDAHARA: 'Agus Setiawan, S.E.',
+        TOTAL_NILAI_ASET: 245000000,
+        TOTAL_NILAI_PERSEDIAAN: 22800000,
+        TOTAL_ITEM_ASET: 88,
+        TOTAL_ITEM_PERSEDIAAN: 35,
+        STATUS_SINKRON: 'TERHUBUNG',
+        TERAKHIR_SINKRON: new Date(Date.now() - 3600000 * 2).toISOString(),
+        KONDISI_BAIK_PCT: 88,
+        KONDISI_RUSAK_PCT: 12,
+        PENYERAPAN_BOS_PCT: 91.2,
+      },
+      {
+        ID: 'SCH-003',
+        NPSN: '20602198',
+        NAMA_SEKOLAH: 'SMK Negeri 1 Unggulan Vokasi',
+        JENJANG: 'SMK',
+        KECAMATAN: 'Tangerang',
+        KEPALA_SEKOLAH: 'Ir. Hendra Gunawan, M.T.',
+        BENDAHARA: 'Rina Kusuma, S.Ak.',
+        TOTAL_NILAI_ASET: 612000000,
+        TOTAL_NILAI_PERSEDIAAN: 48500000,
+        TOTAL_ITEM_ASET: 164,
+        TOTAL_ITEM_PERSEDIAAN: 62,
+        STATUS_SINKRON: 'TERHUBUNG',
+        TERAKHIR_SINKRON: new Date(Date.now() - 3600000 * 5).toISOString(),
+        KONDISI_BAIK_PCT: 95,
+        KONDISI_RUSAK_PCT: 5,
+        PENYERAPAN_BOS_PCT: 78.5,
+      },
+      {
+        ID: 'SCH-004',
+        NPSN: '20603810',
+        NAMA_SEKOLAH: 'SD Negeri 3 Cendikia Cerdas',
+        JENJANG: 'SD',
+        KECAMATAN: 'Pinang',
+        KEPALA_SEKOLAH: 'H. Bambang Irawan, S.Pd.',
+        BENDAHARA: 'Dewi Lestari, S.Pd.',
+        TOTAL_NILAI_ASET: 94000000,
+        TOTAL_NILAI_PERSEDIAAN: 9800000,
+        TOTAL_ITEM_ASET: 31,
+        TOTAL_ITEM_PERSEDIAAN: 14,
+        STATUS_SINKRON: 'MENUNGGU',
+        TERAKHIR_SINKRON: new Date(Date.now() - 86400000).toISOString(),
+        KONDISI_BAIK_PCT: 84,
+        KONDISI_RUSAK_PCT: 16,
+        PENYERAPAN_BOS_PCT: 82.0,
+      },
+      {
+        ID: 'SCH-005',
+        NPSN: 'KORWIL-CIP',
+        NAMA_SEKOLAH: 'Gudang Cadangan Logistik Korwil Pendidikan',
+        JENJANG: 'DINAS',
+        KECAMATAN: 'Cipondoh',
+        KEPALA_SEKOLAH: 'Drs. Supardi, M.Si. (Koordinator Wilayah)',
+        BENDAHARA: 'Eko Wahyudi, S.Sos.',
+        TOTAL_NILAI_ASET: 180000000,
+        TOTAL_NILAI_PERSEDIAAN: 65000000,
+        TOTAL_ITEM_ASET: 52,
+        TOTAL_ITEM_PERSEDIAAN: 40,
+        STATUS_SINKRON: 'TERHUBUNG',
+        TERAKHIR_SINKRON: new Date(Date.now() - 3600000 * 12).toISOString(),
+        KONDISI_BAIK_PCT: 98,
+        KONDISI_RUSAK_PCT: 2,
+        PENYERAPAN_BOS_PCT: 95.0,
+      },
+    ];
+
+    this.setItem(STORAGE_KEYS.CONSOLIDATED_SCHOOLS, defaults);
+    return defaults;
+  }
+
+  public saveConsolidatedSchool(school: SchoolUnitConsolidation): void {
+    const list = this.getConsolidatedSchools();
+    const idx = list.findIndex((s) => s.ID === school.ID || s.NPSN === school.NPSN);
+    if (idx >= 0) {
+      list[idx] = school;
+    } else {
+      list.push(school);
+    }
+    this.setItem(STORAGE_KEYS.CONSOLIDATED_SCHOOLS, list);
+    this.logAudit('UPDATE_KONSOLIDASI_UNIT', 'konsolidasi', school.NPSN, school);
+  }
+
+  // --- FASE 1: PENGATURAN CETAK THERMAL ---
+  public getThermalSettings(): {
+    paperSize: '50x30' | '40x20' | '58mm' | '80mm';
+    showQr: boolean;
+    showLogo: boolean;
+    showNip: boolean;
+    customHeader: string;
+  } {
+    const saved = this.getItem<any>(STORAGE_KEYS.THERMAL_SETTINGS, null);
+    if (saved) return saved;
+    return {
+      paperSize: '50x30',
+      showQr: true,
+      showLogo: true,
+      showNip: true,
+      customHeader: 'INVENTARIS SEKOLAH',
+    };
+  }
+
+  public saveThermalSettings(settings: any): void {
+    this.setItem(STORAGE_KEYS.THERMAL_SETTINGS, settings);
+  }
+
+  // --- PRESET TATA LETAK STIKER QR (CUSTOM LAYOUT PRESETS) ---
+  public getDefaultQRStickerPresets(): QRStickerPreset[] {
+    return [
+      {
+        ID: 'preset_official',
+        NAME: 'Kedinasan Lengkap (Standar Permendagri)',
+        DESCRIPTION: 'Format formal lengkap: Kop instansi, Kategori KIB, Spesifikasi, Lokasi, PJ & NIP resmi',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'standard',
+        LAYOUT_MODE: 'landscape_left',
+        COLOR_THEME: 'emerald',
+        BORDER_STYLE: 'double',
+        FONT_SIZE_SCALE: 1.0,
+        QR_SIZE_RATIO: 'normal',
+        SHOW_KOP: true,
+        KOP_TEXT: 'UPT SATUAN PENDIDIKAN',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: true,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: true,
+        SHOW_SPECIFICATION: true,
+        SHOW_LOCATION: true,
+        SHOW_PJ: true,
+        SHOW_NIP: true,
+        SHOW_YEAR: true,
+        SHOW_CONDITION: true,
+        SHOW_PRICE: false,
+      },
+      {
+        ID: 'preset_pj_nip',
+        NAME: 'Fokus Akuntabilitas (PJ & NIP Tegas)',
+        DESCRIPTION: 'Menonjolkan Nama & NIP Penanggung Jawab dan lokasi ruangan dengan tema biru pemerintahan',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'standard',
+        LAYOUT_MODE: 'landscape_left',
+        COLOR_THEME: 'navy',
+        BORDER_STYLE: 'double',
+        FONT_SIZE_SCALE: 1.05,
+        QR_SIZE_RATIO: 'normal',
+        SHOW_KOP: true,
+        KOP_TEXT: 'UPT SATUAN PENDIDIKAN',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: true,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: true,
+        SHOW_SPECIFICATION: false,
+        SHOW_LOCATION: true,
+        SHOW_PJ: true,
+        SHOW_NIP: true,
+        SHOW_YEAR: true,
+        SHOW_CONDITION: true,
+        SHOW_PRICE: false,
+      },
+      {
+        ID: 'preset_badge_bmd',
+        NAME: 'Kartu BMD / Badge Properti Daerah',
+        DESCRIPTION: 'Header solid bergaya plat aset daerah dengan nomor register besar',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'large',
+        LAYOUT_MODE: 'badge',
+        COLOR_THEME: 'emerald',
+        BORDER_STYLE: 'rounded',
+        FONT_SIZE_SCALE: 1.0,
+        QR_SIZE_RATIO: 'large',
+        SHOW_KOP: true,
+        KOP_TEXT: 'PEMERINTAH KOTA / KABUPATEN',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: true,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: true,
+        SHOW_SPECIFICATION: true,
+        SHOW_LOCATION: true,
+        SHOW_PJ: true,
+        SHOW_NIP: true,
+        SHOW_YEAR: true,
+        SHOW_CONDITION: true,
+        SHOW_PRICE: false,
+      },
+      {
+        ID: 'preset_compact_mini',
+        NAME: 'Label Ringkas & Mini (Barang Kecil/Laptop)',
+        DESCRIPTION: 'Hanya Nama Barang, Kode Aset, Lokasi & QR untuk label permukaan sempit',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'small',
+        LAYOUT_MODE: 'landscape_left',
+        COLOR_THEME: 'slate',
+        BORDER_STYLE: 'single',
+        FONT_SIZE_SCALE: 0.9,
+        QR_SIZE_RATIO: 'compact',
+        SHOW_KOP: false,
+        KOP_TEXT: '',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: false,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: false,
+        SHOW_SPECIFICATION: false,
+        SHOW_LOCATION: true,
+        SHOW_PJ: false,
+        SHOW_NIP: false,
+        SHOW_YEAR: false,
+        SHOW_CONDITION: false,
+        SHOW_PRICE: false,
+      },
+      {
+        ID: 'preset_monochrome_eco',
+        NAME: 'Monokrom B/W (Hemat Tinta Printer)',
+        DESCRIPTION: 'Hitam-putih tajam 100% kontras tinggi tanpa blok warna tebal',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'standard',
+        LAYOUT_MODE: 'landscape_left',
+        COLOR_THEME: 'monochrome',
+        BORDER_STYLE: 'single',
+        FONT_SIZE_SCALE: 1.0,
+        QR_SIZE_RATIO: 'normal',
+        SHOW_KOP: true,
+        KOP_TEXT: 'UPT SATUAN PENDIDIKAN',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: true,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: true,
+        SHOW_SPECIFICATION: true,
+        SHOW_LOCATION: true,
+        SHOW_PJ: true,
+        SHOW_NIP: true,
+        SHOW_YEAR: true,
+        SHOW_CONDITION: true,
+        SHOW_PRICE: false,
+      },
+      {
+        ID: 'preset_vertical_door',
+        NAME: 'Vertikal / Pintu Lemari & Ruangan',
+        DESCRIPTION: 'Orientasi tegak (portrait) dengan QR di atas untuk pintu lemari, meja, atau rak',
+        IS_SYSTEM: true,
+        CREATED_AT: new Date('2026-01-01').toISOString(),
+        SIZE: 'standard',
+        LAYOUT_MODE: 'portrait_top',
+        COLOR_THEME: 'amber',
+        BORDER_STYLE: 'rounded',
+        FONT_SIZE_SCALE: 1.0,
+        QR_SIZE_RATIO: 'normal',
+        SHOW_KOP: true,
+        KOP_TEXT: 'UPT SATUAN PENDIDIKAN',
+        SHOW_SCHOOL_NAME: true,
+        SHOW_NPSN: true,
+        SHOW_ASSET_CODE: true,
+        SHOW_ASSET_NAME: true,
+        SHOW_CATEGORY: true,
+        SHOW_SPECIFICATION: false,
+        SHOW_LOCATION: true,
+        SHOW_PJ: true,
+        SHOW_NIP: true,
+        SHOW_YEAR: true,
+        SHOW_CONDITION: true,
+        SHOW_PRICE: false,
+      },
+    ];
+  }
+
+  public getQRStickerPresets(): QRStickerPreset[] {
+    const saved = this.getItem<QRStickerPreset[]>(STORAGE_KEYS.QR_STICKER_PRESETS, null);
+    if (!saved || saved.length === 0) {
+      const defaults = this.getDefaultQRStickerPresets();
+      this.setItem(STORAGE_KEYS.QR_STICKER_PRESETS, defaults);
+      return defaults;
+    }
+    return saved;
+  }
+
+  public saveQRStickerPreset(preset: Omit<QRStickerPreset, 'ID' | 'CREATED_AT'> & { ID?: string; CREATED_AT?: string }): QRStickerPreset {
+    const list = this.getQRStickerPresets();
+    const existingIndex = preset.ID ? list.findIndex((p) => p.ID === preset.ID) : -1;
+
+    const finalPreset: QRStickerPreset = {
+      ...preset,
+      ID: preset.ID || `custom_preset_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      CREATED_AT: preset.CREATED_AT || new Date().toISOString(),
+      IS_SYSTEM: false,
+    };
+
+    if (existingIndex >= 0) {
+      list[existingIndex] = finalPreset;
+    } else {
+      list.push(finalPreset);
+    }
+
+    this.setItem(STORAGE_KEYS.QR_STICKER_PRESETS, list);
+    this.logAudit('SIMPAN_PRESET_STIKER', 'aset', finalPreset.ID, { name: finalPreset.NAME });
+    return finalPreset;
+  }
+
+  public deleteQRStickerPreset(id: string): boolean {
+    const list = this.getQRStickerPresets();
+    const target = list.find((p) => p.ID === id);
+    if (!target || target.IS_SYSTEM) return false;
+
+    const filtered = list.filter((p) => p.ID !== id);
+    this.setItem(STORAGE_KEYS.QR_STICKER_PRESETS, filtered);
+    this.logAudit('HAPUS_PRESET_STIKER', 'aset', id, { name: target.NAME });
+    return true;
+  }
+
+  public resetDefaultQRStickerPresets(): QRStickerPreset[] {
+    const defaults = this.getDefaultQRStickerPresets();
+    this.setItem(STORAGE_KEYS.QR_STICKER_PRESETS, defaults);
+    return defaults;
+  }
+}
+
+export const db = new LocalStorageService();
+
