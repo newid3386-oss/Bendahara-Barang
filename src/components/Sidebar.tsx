@@ -24,6 +24,7 @@ import {
   Network,
   Sparkles,
   Printer,
+  School,
 } from 'lucide-react';
 import { ActivePage } from '../types';
 import { db } from '../services/localStorageService';
@@ -31,6 +32,7 @@ import { db } from '../services/localStorageService';
 interface SidebarProps {
   activePage: ActivePage | string;
   onNavigate: (page: ActivePage | string) => void;
+  onOpenSchoolWebsite?: () => void;
   isOpen?: boolean;
   isMobileOpen?: boolean;
   onClose?: () => void;
@@ -40,6 +42,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   activePage,
   onNavigate,
+  onOpenSchoolWebsite,
   isOpen,
   isMobileOpen,
   onClose,
@@ -68,6 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'UTAMA',
       items: [
         { id: 'dashboard', label: 'Dashboard Utama', icon: LayoutDashboard },
+        { id: 'website_sekolah', label: 'Website Sekolah SDN 6', icon: School },
       ],
     },
     {

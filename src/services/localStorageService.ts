@@ -24,6 +24,8 @@ import {
   AssetDepreciation,
   SchoolUnitConsolidation,
   QRStickerPreset,
+  BATemplate,
+  BATemplateVersion,
 } from '../types';
 import {
   DATASET_VERSION,
@@ -67,6 +69,8 @@ const STORAGE_KEYS = {
   CONSOLIDATED_SCHOOLS: 'BB_CONSOLIDATED_SCHOOLS',
   THERMAL_SETTINGS: 'BB_THERMAL_SETTINGS',
   QR_STICKER_PRESETS: 'BB_QR_STICKER_PRESETS',
+  BA_TEMPLATES: 'BB_BA_TEMPLATES',
+  BA_TEMPLATE_VERSIONS: 'BB_BA_TEMPLATE_VERSIONS',
   DATASET_VERSION: 'BB_DATASET_VERSION',
 };
 
@@ -1932,6 +1936,532 @@ class LocalStorageService {
     const defaults = this.getDefaultQRStickerPresets();
     this.setItem(STORAGE_KEYS.QR_STICKER_PRESETS, defaults);
     return defaults;
+  }
+
+  // --- BERITA ACARA DOCUMENT TEMPLATES MANAGER ---
+  public getDefaultBATemplates(): BATemplate[] {
+    const cfg = this.getConfig();
+    const city = cfg.BA_DEFAULT_CITY || cfg.REPORT_SIGNATURE_CITY || 'Tangerang';
+    const schoolName = cfg.SCHOOL_NAME || 'SD NEGERI TANGERANG 6';
+    const npsn = cfg.SCHOOL_NPSN || '20606621';
+    const addr = cfg.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6';
+
+    return [
+      {
+        id: 'tpl_bast_pengadaan',
+        name: 'BAST Pengadaan Belanja Modal & Operasional (BOS/BOP)',
+        category: 'PENGADAAN',
+        description: 'Format baku Berita Acara Serah Terima hasil belanja barang masuk dari pihak penyedia/toko rekanan ke sekolah.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA SERAH TERIMA HASIL PENGADAAN BARANG (BAST)',
+        docNumberPattern: `020/{NO}/BAST-INV/${new Date().getFullYear()}`,
+        openingClause: `Pada hari ini, tanggal ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}, bertempat di lingkungan UPT Satuan Pendidikan ${schoolName}, yang bertanda tangan di bawah ini telah melaksanakan serah terima dan pemeriksaan barang hasil pengadaan inventaris:`,
+        closingClause: 'Demikian Berita Acara Serah Terima ini dibuat dengan sebenarnya dalam rangkap 2 (dua) untuk dapat dipergunakan sebagaimana mestinya.',
+        defaultHeaders: ['No', 'Kode Barang', 'Nama Barang / Spesifikasi', 'Volume', 'Satuan', 'Harga Satuan (Rp)', 'Total (Rp)', 'Kondisi'],
+        defaultSampleRows: [
+          [1, 'BRG-ATK-001', 'Kertas HVS A4 75gr Sinar Dunia (Rim)', 20, 'Rim', '52.000', '1.040.000', 'Baik / Baru'],
+          [2, 'BRG-ELK-002', 'Toner Printer HP LaserJet Original 85A', 2, 'Pcs', '450.000', '900.000', 'Baik / Baru'],
+        ],
+        leftSignerTitle: 'Pihak Pertama (Penyedia / Toko Rekanan),',
+        leftSignerName: 'CV. Multi Sarana Mandiri',
+        leftSignerNip: '-',
+        rightSignerTitle: 'Pihak Kedua (Pengurus Barang Sekolah),',
+        rightSignerName: cfg.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.',
+        rightSignerNip: cfg.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'a4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'emerald',
+        fontFamily: 'helvetica',
+        tableDensity: 'normal',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Dokumen Berita Acara Serah Terima (BAST) — SIPERSEDA',
+        runningFooterText: `Arsip Sah UPT Satuan Pendidikan ${schoolName}`,
+      },
+      {
+        id: 'tpl_serah_terima_guru',
+        name: 'Berita Acara Pendistribusian & Pengambilan ATK Guru/Staf',
+        category: 'SERAH_TERIMA',
+        description: 'Format serah terima pemakaian barang habis pakai (ATK/Peralatan) untuk menunjang kegiatan belajar mengajar.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA SERAH TERIMA PENDISTRIBUSIAN ATK & PERLENGKAPAN KERJA',
+        docNumberPattern: `021/{NO}/BA-ATK/${new Date().getFullYear()}`,
+        openingClause: `Pada hari ini telah diserahkan sejumlah barang inventaris/alat tulis kantor (ATK) persediaan sekolah untuk keperluan operasional kedinasan/pembelajaran guru dan staf:`,
+        closingClause: 'Barang tersebut telah diterima dalam keadaan baik, lengkap, dan siap dipergunakan sesuai kebutuhan unit kerja.',
+        defaultHeaders: ['No', 'Kode Barang', 'Nama Barang / Merk', 'Jumlah', 'Satuan', 'Peruntukan / Ruangan', 'Keterangan'],
+        defaultSampleRows: [
+          [1, 'BRG-ATK-003', 'Spidol Whiteboard Snowman Hitam', 12, 'Pcs', 'Ruang Kelas 1 s/d 6', 'Pemakaian Reguler'],
+          [2, 'BRG-ATK-004', 'Penghapus Papan Tulis Magnetik', 6, 'Pcs', 'Ruang Guru & Kelas', 'Pemakaian Reguler'],
+        ],
+        leftSignerTitle: 'Yang Menyerahkan (Pengurus Barang),',
+        leftSignerName: cfg.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.',
+        leftSignerNip: cfg.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008',
+        rightSignerTitle: 'Yang Menerima (Perwakilan Guru/Staf),',
+        rightSignerName: 'H. Bambang Irawan, S.Pd.',
+        rightSignerNip: '19790514 200801 1 012',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'a4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'navy',
+        fontFamily: 'helvetica',
+        tableDensity: 'compact',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Bukti Serah Terima Distribusi Perlengkapan',
+        runningFooterText: `Sistem Inventaris Sekolah — ${schoolName}`,
+      },
+      {
+        id: 'tpl_pemeriksaan_barang',
+        name: 'Berita Acara Pemeriksaan Fisik & Uji Fungsi Barang Masuk',
+        category: 'PEMERIKSAAN',
+        description: 'Format berita acara panitia/petugas pemeriksa hasil pekerjaan pengadaan barang dan jasa sekolah.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA HASIL PEMERIKSAAN DAN PENGUJIAN FISIK BARANG (BAP)',
+        docNumberPattern: `022/{NO}/BAP-FISIK/${new Date().getFullYear()}`,
+        openingClause: `Berdasarkan Surat Pesanan dan Faktur Pembelian, Tim Pemeriksa Barang Sekolah telah melaksanakan pengujian kualitas, spesifikasi teknis, kelengkapan, dan fungsi fisik terhadap barang belanja inventaris:`,
+        closingClause: 'Berdasarkan hasil uji fisik dan kesesuaian dokumen pesanan, barang dinyatakan 100% SESUAI spesifikasi dan LAYAK diterima.',
+        defaultHeaders: ['No', 'Nama Barang / Model', 'Kuantitas', 'Satuan', 'Kesesuaian Spek', 'Uji Fungsi', 'Hasil Akhir'],
+        defaultSampleRows: [
+          [1, 'Laptop Asus Core i5 RAM 8GB', 3, 'Unit', 'Sesuai Spesifikasi', 'Berfungsi Normal', 'DITERIMA'],
+          [2, 'Proyektor Epson EB-X500 3600 Lumens', 2, 'Unit', 'Sesuai Spesifikasi', 'Berfungsi Normal', 'DITERIMA'],
+        ],
+        leftSignerTitle: 'Ketua Tim Pemeriksa Barang,',
+        leftSignerName: cfg.TREASURER || 'Siti Rahmawati, S.Pd.',
+        leftSignerNip: cfg.TREASURER_NIP || '19870921 201001 2 005',
+        rightSignerTitle: 'Pengurus Barang / Pengelola Gudang,',
+        rightSignerName: cfg.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.',
+        rightSignerNip: cfg.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'f4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'emerald',
+        fontFamily: 'times',
+        tableDensity: 'normal',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Dokumen Pemeriksaan Fisik Barang Inventaris',
+        runningFooterText: `Standar Kedinasan UPT Satuan Pendidikan ${schoolName}`,
+      },
+      {
+        id: 'tpl_stock_opname',
+        name: 'Berita Acara Hasil Inventarisasi Fisik / Stock Opname Persediaan',
+        category: 'STOCK_OPNAME',
+        description: 'Dokumen resmi penetapan saldo fisik akhir periode dan rekonsiliasi selisih persediaan sekolah.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA HASIL INVENTARISASI FISIK (STOCK OPNAME) PERSEDIAAN',
+        docNumberPattern: `023/{NO}/BA-OPNAME/${new Date().getFullYear()}`,
+        openingClause: `Telah dilaksanakan pencacahan dan verifikasi fisik secara menyeluruh atas saldo persediaan barang pakai habis di seluruh unit ruangan dan gudang sekolah per akhir periode:`,
+        closingClause: 'Demikian Berita Acara Inventarisasi Fisik ini dibuat sebagai bukti pertanggungjawaban penatausahaan persediaan sekolah dan lampiran laporan keuangan semesteran.',
+        defaultHeaders: ['No', 'Kode', 'Nama Barang', 'Satuan', 'Stok Sistem', 'Stok Fisik', 'Selisih', 'Kondisi / Analisis'],
+        defaultSampleRows: [
+          [1, 'BRG-ATK-001', 'Kertas HVS A4 75gr', 'Rim', 45, 45, 0, 'Sesuai / Baik'],
+          [2, 'BRG-ATK-002', 'Buku Tulis Ekspedisi 100 Lembar', 'Buku', 18, 18, 0, 'Sesuai / Baik'],
+        ],
+        leftSignerTitle: 'Petugas / Tim Pencacah Fisik,',
+        leftSignerName: cfg.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.',
+        leftSignerNip: cfg.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008',
+        rightSignerTitle: 'Bendahara Barang / BOS,',
+        rightSignerName: cfg.TREASURER || 'Siti Rahmawati, S.Pd.',
+        rightSignerNip: cfg.TREASURER_NIP || '19870921 201001 2 005',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'f4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'slate',
+        fontFamily: 'helvetica',
+        tableDensity: 'compact',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Laporan Rekonsiliasi Hasil Stock Opname',
+        runningFooterText: `Arsip Akuntansi & Persediaan UPT Satuan Pendidikan ${schoolName}`,
+      },
+      {
+        id: 'tpl_penghapusan_aset',
+        name: 'Berita Acara Usulan Penghapusan Aset Rusak Berat / Musnah',
+        category: 'PENGHAPUSAN',
+        description: 'Format resmi usulan penghapusan dari Kartu Inventaris Barang (KIB) akibat rusak total atau hilang.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA PEMERIKSAAN DAN USULAN PENGHAPUSAN BARANG MILIK DAERAH (BMD)',
+        docNumberPattern: `024/{NO}/BA-HAPUS/${new Date().getFullYear()}`,
+        openingClause: `Pada hari ini, Tim Penilai dan Pengurus Barang telah mengadakan verifikasi teknis terhadap aset tetap milik sekolah yang dinilai sudah tidak bernilai ekonomis / rusak berat dan diusulkan untuk dihapus dari buku induk inventaris:`,
+        closingClause: 'Barang-barang tercantum di atas telah diamankan di gudang transit penghapusan dan diteruskan ke Dinas Pendidikan guna penerbitan SK Penghapusan Resmi.',
+        defaultHeaders: ['No', 'Kode Aset', 'Nama Barang / Merk', 'Tahun Perolehan', 'Nilai Awal (Rp)', 'Kondisi Akhir', 'Alasan Teknis Usulan'],
+        defaultSampleRows: [
+          [1, 'AST-KIBE-008', 'Komputer PC Rakitan Intel Core 2 Duo', '2014', '4.500.000', 'Rusak Berat (Mati Total)', 'Motherboard terbakar & suku cadang diskontinu'],
+          [2, 'AST-KIBB-015', 'Meja Guru Kayu Jati Lama', '2008', '650.000', 'Rusak Berat / Lapuk', 'Dimakan rayap & tidak dapat diperbaiki'],
+        ],
+        leftSignerTitle: 'Pengurus Barang Pengguna,',
+        leftSignerName: cfg.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.',
+        leftSignerNip: cfg.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008',
+        rightSignerTitle: 'Tim Verifikasi Kelayakan BMD,',
+        rightSignerName: cfg.TREASURER || 'Siti Rahmawati, S.Pd.',
+        rightSignerNip: cfg.TREASURER_NIP || '19870921 201001 2 005',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'f4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'amber',
+        fontFamily: 'times',
+        tableDensity: 'normal',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Usulan Penghapusan Barang Milik Daerah (BMD)',
+        runningFooterText: `Dokumen Resmi UPT Satuan Pendidikan ${schoolName}`,
+      },
+      {
+        id: 'tpl_mutasi_ruangan',
+        name: 'Berita Acara Mutasi & Alih Status Penanggung Jawab Ruangan',
+        category: 'MUTASI',
+        description: 'Format mutasi perpindahan fisik aset antar ruangan kelas/laboratorium beserta serah terima PJ baru.',
+        isSystem: true,
+        createdAt: new Date('2026-01-01').toISOString(),
+        institutionName: schoolName,
+        institutionAddress: addr,
+        institutionNpsn: npsn,
+        institutionCity: city,
+        institutionAgency: 'DINAS PENDIDIKAN',
+        governingBody: `PEMERINTAH KOTA ${city.toUpperCase()}`,
+        title: 'BERITA ACARA MUTASI / PEMINDAHAN RUANGAN BARANG INVENTARIS',
+        docNumberPattern: `025/{NO}/BA-MUTASI/${new Date().getFullYear()}`,
+        openingClause: `Telah dilakukan relokasi dan penyesuaian penempatan fisik barang inventaris sekolah beserta pemindahan tanggung jawab pemeliharaan dari ruangan lama ke ruangan baru:`,
+        closingClause: 'Dengan ditandatanganinya Berita Acara ini, maka tanggung jawab operasional dan keutuhan barang secara sah beralih kepada Penanggung Jawab baru.',
+        defaultHeaders: ['No', 'Kode Aset', 'Nama Barang', 'Lokasi Lama', 'Lokasi Baru', 'PJ Lama', 'PJ Baru', 'Kondisi'],
+        defaultSampleRows: [
+          [1, 'AST-KIBE-003', 'Smart TV LED Samsung 55 Inch', 'Ruang Multimedia', 'Ruang Lab Komputer 1', 'Dra. Hj. Nurhayati', 'Ahmad Fauzi, S.Kom.', 'Baik'],
+        ],
+        leftSignerTitle: 'Penanggung Jawab Lama,',
+        leftSignerName: 'Dra. Hj. Nurhayati',
+        leftSignerNip: '19750820 200212 2 004',
+        rightSignerTitle: 'Penanggung Jawab Baru,',
+        rightSignerName: 'Ahmad Fauzi, S.Kom.',
+        rightSignerNip: '19900315 201802 1 002',
+        centerSignerTitle: `Kepala UPT Satuan Pendidikan ${schoolName}`,
+        centerSignerName: cfg.HEADMASTER || 'Hj. Sumarsih, S.Pd., M.M.',
+        centerSignerNip: cfg.HEADMASTER_NIP || '19680412 199303 2 005',
+        includeHeadmaster: true,
+        paperSize: 'a4',
+        orientation: 'portrait',
+        kopAlignment: 'dual_logo',
+        kopBorderStyle: 'double',
+        themeColor: 'emerald',
+        fontFamily: 'helvetica',
+        tableDensity: 'normal',
+        includeVerificationQR: true,
+        autoPageNumbering: true,
+        pageNumberPosition: 'bottom_center',
+        headerFooterStyle: 'formal_line',
+        runningHeaderText: 'Dokumen Mutasi Internal Inventaris Sekolah',
+        runningFooterText: `UPT Satuan Pendidikan ${schoolName}`,
+      },
+    ];
+  }
+
+  public getBATemplates(): BATemplate[] {
+    const saved = this.getItem<BATemplate[]>(STORAGE_KEYS.BA_TEMPLATES, null);
+    if (!saved || saved.length === 0) {
+      const defaults = this.getDefaultBATemplates();
+      this.setItem(STORAGE_KEYS.BA_TEMPLATES, defaults);
+      return defaults;
+    }
+    return saved;
+  }
+
+  public saveBATemplate(template: Omit<BATemplate, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): BATemplate {
+    const list = this.getBATemplates();
+    const isExisting = template.id ? list.findIndex((t) => t.id === template.id) : -1;
+
+    const finalTpl: BATemplate = {
+      ...template,
+      id: template.id || `custom_tpl_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      createdAt: template.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isSystem: template.isSystem ?? false,
+      paperSize: template.paperSize || 'a4',
+      orientation: template.orientation || 'portrait',
+      kopAlignment: template.kopAlignment || 'dual_logo',
+      kopBorderStyle: template.kopBorderStyle || 'double',
+      themeColor: template.themeColor || 'emerald',
+      fontFamily: template.fontFamily || 'helvetica',
+      tableDensity: template.tableDensity || 'normal',
+      includeVerificationQR: template.includeVerificationQR ?? true,
+      defaultHeaders: template.defaultHeaders && template.defaultHeaders.length > 0 ? template.defaultHeaders : ['No', 'Nama Barang', 'Jumlah', 'Satuan', 'Keterangan'],
+      openingClause: template.openingClause || 'Pada hari ini telah dilaksanakan serah terima barang inventaris sebagai berikut:',
+      closingClause: template.closingClause || 'Demikian Berita Acara ini dibuat untuk dapat dipergunakan sebagaimana mestinya.',
+      leftSignerTitle: template.leftSignerTitle || 'Pihak Pertama,',
+      rightSignerTitle: template.rightSignerTitle || 'Pihak Kedua,',
+    };
+
+    if (isExisting >= 0) {
+      // Create a version snapshot before overwriting
+      const oldTemplate = list[isExisting];
+      this.saveBATemplateVersion(
+        oldTemplate.id,
+        `Pembaruan tata letak template ${finalTpl.name}`,
+        this.getActiveUser().NAMA || 'Administrator'
+      );
+      list[isExisting] = finalTpl;
+    } else {
+      list.push(finalTpl);
+    }
+
+    this.setItem(STORAGE_KEYS.BA_TEMPLATES, list);
+    this.logAudit('SIMPAN_TEMPLATE_BA', 'document_center', finalTpl.id, { name: finalTpl.name });
+    return finalTpl;
+  }
+
+  public deleteBATemplate(id: string): boolean {
+    const list = this.getBATemplates();
+    const target = list.find((t) => t.id === id);
+    if (!target || target.isSystem) return false;
+
+    const filtered = list.filter((t) => t.id !== id);
+    this.setItem(STORAGE_KEYS.BA_TEMPLATES, filtered);
+    this.logAudit('HAPUS_TEMPLATE_BA', 'document_center', id, { name: target.name });
+    return true;
+  }
+
+  public resetDefaultBATemplates(): BATemplate[] {
+    const defaults = this.getDefaultBATemplates();
+    this.setItem(STORAGE_KEYS.BA_TEMPLATES, defaults);
+    return defaults;
+  }
+
+  // --- BATemplate Versioning System ---
+  public getBATemplateVersions(templateId?: string): BATemplateVersion[] {
+    const allVersions = this.getItem<BATemplateVersion[]>(STORAGE_KEYS.BA_TEMPLATE_VERSIONS, []);
+    if (!templateId) return allVersions;
+    return allVersions
+      .filter((v) => v.templateId === templateId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  public saveBATemplateVersion(
+    templateId: string,
+    summary: string,
+    author?: string,
+    versionTag?: string
+  ): BATemplateVersion | null {
+    const templates = this.getBATemplates();
+    const target = templates.find((t) => t.id === templateId);
+    if (!target) return null;
+
+    const allVersions = this.getItem<BATemplateVersion[]>(STORAGE_KEYS.BA_TEMPLATE_VERSIONS, []);
+    const existingForTemplate = allVersions.filter((v) => v.templateId === templateId);
+    const nextVerNum = existingForTemplate.length + 1;
+
+    const newVersion: BATemplateVersion = {
+      id: `ver_${templateId}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      templateId,
+      versionNumber: nextVerNum,
+      versionTag: versionTag || `v1.${nextVerNum}`,
+      timestamp: new Date().toISOString(),
+      author: author || this.getActiveUser().NAMA || 'Pengurus Barang',
+      summary: summary || `Snapshot versi ${nextVerNum}`,
+      snapshot: JSON.parse(JSON.stringify(target)),
+    };
+
+    allVersions.unshift(newVersion);
+    // Keep max 50 versions in storage
+    if (allVersions.length > 50) allVersions.pop();
+    this.setItem(STORAGE_KEYS.BA_TEMPLATE_VERSIONS, allVersions);
+    this.logAudit('CREATE_TEMPLATE_VERSION', 'document_center', templateId, {
+      versionNumber: nextVerNum,
+      summary,
+    });
+    return newVersion;
+  }
+
+  public restoreBATemplateVersion(versionId: string): BATemplate | null {
+    const allVersions = this.getBATemplateVersions();
+    const ver = allVersions.find((v) => v.id === versionId);
+    if (!ver || !ver.snapshot) return null;
+
+    const templates = this.getBATemplates();
+    const idx = templates.findIndex((t) => t.id === ver.templateId);
+    const restoredTpl: BATemplate = {
+      ...ver.snapshot,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (idx >= 0) {
+      // Save current state before restoring
+      this.saveBATemplateVersion(
+        templates[idx].id,
+        `Snapshot otomatis sebelum pemulihan ke versi ${ver.versionTag || ver.versionNumber}`,
+        this.getActiveUser().NAMA || 'Administrator'
+      );
+      templates[idx] = restoredTpl;
+    } else {
+      templates.push(restoredTpl);
+    }
+
+    this.setItem(STORAGE_KEYS.BA_TEMPLATES, templates);
+    this.logAudit('RESTORE_TEMPLATE_VERSION', 'document_center', ver.templateId, {
+      versionId,
+      versionTag: ver.versionTag,
+    });
+    return restoredTpl;
+  }
+
+  public deleteBATemplateVersion(versionId: string): boolean {
+    const allVersions = this.getBATemplateVersions();
+    const filtered = allVersions.filter((v) => v.id !== versionId);
+    if (filtered.length === allVersions.length) return false;
+    this.setItem(STORAGE_KEYS.BA_TEMPLATE_VERSIONS, filtered);
+    return true;
+  }
+
+  // --- Batch Status Update for Assets & Inventory Items ---
+  public batchUpdateAssets(
+    assetIds: string[],
+    updates: {
+      STATUS?: 'AKTIF' | 'TIDAK AKTIF' | 'DIHAPUS';
+      KONDISI?: 'BAIK' | 'RUSAK RINGAN' | 'RUSAK BERAT';
+      LOKASI?: string;
+      PENANGGUNG_JAWAB?: string;
+      KETERANGAN?: string;
+    },
+    docRef?: string
+  ): { success: boolean; count: number } {
+    if (!assetIds || assetIds.length === 0) return { success: false, count: 0 };
+
+    const assets = this.getAssets();
+    let updatedCount = 0;
+    const now = new Date().toISOString().slice(0, 10);
+
+    const newAssets = assets.map((ast) => {
+      if (assetIds.includes(ast.ID) || assetIds.includes(ast.KODE_ASET)) {
+        updatedCount++;
+        const newNotes = docRef
+          ? `${ast.KETERANGAN ? ast.KETERANGAN + ' | ' : ''}[BA Ref: ${docRef}] ${updates.KETERANGAN || ''}`.trim()
+          : updates.KETERANGAN !== undefined
+          ? updates.KETERANGAN
+          : ast.KETERANGAN;
+
+        return {
+          ...ast,
+          ...(updates.STATUS ? { STATUS: updates.STATUS } : {}),
+          ...(updates.KONDISI ? { KONDISI: updates.KONDISI } : {}),
+          ...(updates.LOKASI ? { LOKASI: updates.LOKASI } : {}),
+          ...(updates.PENANGGUNG_JAWAB ? { PENANGGUNG_JAWAB: updates.PENANGGUNG_JAWAB } : {}),
+          KETERANGAN: newNotes,
+        };
+      }
+      return ast;
+    });
+
+    this.setItem(STORAGE_KEYS.ASSETS, newAssets);
+    this.logAudit('BATCH_UPDATE_ASSETS', 'document_center', `${updatedCount}_assets`, {
+      assetIds,
+      updates,
+      docRef,
+    });
+    return { success: true, count: updatedCount };
+  }
+
+  public batchUpdateItems(
+    itemIds: string[],
+    updates: {
+      STATUS?: 'AKTIF' | 'NONAKTIF';
+      LOKASI_DEFAULT?: string;
+      KATEGORI?: string;
+    },
+    docRef?: string
+  ): { success: boolean; count: number } {
+    if (!itemIds || itemIds.length === 0) return { success: false, count: 0 };
+
+    const items = this.getItems();
+    let updatedCount = 0;
+
+    const newItems = items.map((itm) => {
+      if (itemIds.includes(itm.ID) || itemIds.includes(itm.KODE_BARANG)) {
+        updatedCount++;
+        return {
+          ...itm,
+          ...(updates.STATUS ? { STATUS: updates.STATUS } : {}),
+          ...(updates.LOKASI_DEFAULT ? { LOKASI_DEFAULT: updates.LOKASI_DEFAULT } : {}),
+          ...(updates.KATEGORI ? { KATEGORI: updates.KATEGORI } : {}),
+        };
+      }
+      return itm;
+    });
+
+    this.setItem(STORAGE_KEYS.ITEMS, newItems);
+    this.logAudit('BATCH_UPDATE_ITEMS', 'document_center', `${updatedCount}_items`, {
+      itemIds,
+      updates,
+      docRef,
+    });
+    return { success: true, count: updatedCount };
   }
 }
 

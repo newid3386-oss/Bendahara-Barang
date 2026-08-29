@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Package, Plus, Search, Edit2, Trash2, X, Check, Filter, QrCode } from 'lucide-react';
+import { Package, Plus, Search, Edit2, Trash2, X, Check, Filter, QrCode, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { Item } from '../types';
 import { A4ItemLabelsModal } from './A4ItemLabelsModal';
+import { excelService } from '../services/excelService';
 
 export const MasterBarangView: React.FC = () => {
   const [items, setItems] = useState<Item[]>(db.getItems());
@@ -18,6 +19,11 @@ export const MasterBarangView: React.FC = () => {
   const refreshData = () => {
     setItems(db.getItems());
     setStockMap(db.getStockMap());
+  };
+
+  const handleExportExcel = () => {
+    const config = db.getConfig();
+    excelService.exportPersediaan(items, stockMap, config, 'Master_Data_Barang_Persediaan');
   };
 
   const handleOpenAdd = () => {
@@ -82,6 +88,15 @@ export const MasterBarangView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+            title="Ekspor master barang dan saldo stok ke format Excel (.xlsx)"
+          >
+            <FileSpreadsheet size={16} /> Excel (.xlsx)
+          </button>
+
           <button
             type="button"
             onClick={() => setIsLabelsModalOpen(true)}

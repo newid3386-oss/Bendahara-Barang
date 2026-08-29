@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileCheck,
   Plus,
@@ -21,6 +21,19 @@ import {
   ArrowRight,
   ExternalLink,
   Layers,
+  Eye,
+  Settings2,
+  Printer,
+  ShieldCheck,
+  Layout,
+  Bookmark,
+  BookmarkPlus,
+  PenTool,
+  FileSpreadsheet,
+  QrCode,
+  Sliders,
+  CheckCircle2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import {
@@ -31,13 +44,22 @@ import {
   StockOpnameSession,
   Penghapusan,
   User,
+  BATemplate,
+  StockSummaryItem,
+  StockLedgerEntry,
 } from '../types';
-import { pdfService } from '../services/pdfService';
+import { pdfService, BeritaAcaraOptions } from '../services/pdfService';
 import { SearchableEmployeePicker } from './SearchableEmployeePicker';
+import { BeritaAcaraPreviewModal } from './BeritaAcaraPreviewModal';
+import { DocumentTemplateManager } from './DocumentTemplateManager';
+import { BatchStatusUpdateModal } from './BatchStatusUpdateModal';
+import { BulkQRLabelGenerator } from './BulkQRLabelGenerator';
+import { autoSyncService } from '../services/autoSyncService';
 
 type SourceTransactionType =
   | 'BARANG_MASUK'
   | 'BARANG_KELUAR'
+  | 'STOCK_LEDGER'
   | 'ASET'
   | 'STOCK_OPNAME'
   | 'PENGHAPUSAN'
@@ -47,7 +69,14 @@ export const DocumentCenterView: React.FC = () => {
   const config = db.getConfig();
   const [documents, setDocuments] = useState<DocumentRecord[]>(db.getDocuments());
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'GENERATOR' | 'REPOSITORY'>('GENERATOR');
+  const [activeTab, setActiveTab] = useState<'GENERATOR' | 'TEMPLATES' | 'BULK_QR' | 'REPOSITORY'>('GENERATOR');
+  const [appliedTemplateMsg, setAppliedTemplateMsg] = useState<string | null>(null);
+  const [batchToastMsg, setBatchToastMsg] = useState<string | null>(null);
+  const [isSyncingData, setIsSyncingData] = useState(false);
+  const [syncToastMsg, setSyncToastMsg] = useState<string | null>(null);
+
+  // Batch Status Update Modal state
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
 
   // Source selection states
   const [sourceType, setSourceType] = useState<SourceTransactionType>('BARANG_MASUK');
@@ -66,6 +95,18 @@ export const DocumentCenterView: React.FC = () => {
   const [catatanPenutup, setCatatanPenutup] = useState(
     'Demikian Berita Acara ini dibuat dengan sebenarnya dalam rangkap 2 (dua) untuk dapat dipergunakan sebagaimana mestinya.'
   );
+
+  // Document Styling & Paper Size options
+  const [paperSize, setPaperSize] = useState<'a4' | 'f4' | 'letter' | 'legal'>('a4');
+  const [kopAlignment, setKopAlignment] = useState<'dual_logo' | 'center' | 'left'>('dual_logo');
+  const [themeColor, setThemeColor] = useState<'emerald' | 'navy' | 'monochrome' | 'slate' | 'amber'>('emerald');
+  const [includeVerificationQR, setIncludeVerificationQR] = useState(true);
+  const [includeHeadmaster, setIncludeHeadmaster] = useState(true);
+  const [watermark, setWatermark] = useState('');
+
+  // Preview Modal state
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewModalOptions, setPreviewModalOptions] = useState<BeritaAcaraOptions | null>(null);
 
   // Drive File Link
   const [driveUrl, setDriveUrl] = useState('');
@@ -90,10 +131,25 @@ export const DocumentCenterView: React.FC = () => {
   // Source datasets
   const barangMasukList = db.getBarangMasuk();
   const barangKeluarList = db.getBarangKeluar().filter((k) => k.STATUS_TRANSAKSI === 'DISETUJUI');
+  const stockSummaryList = db.getStockSummary();
   const assetList = db.getAssets();
   const opnameSessions = db.getStockOpnameSessions();
   const penghapusanList = db.getPenghapusan();
   const users = db.getUsers();
+
+  // Extract detected item/asset codes from tableRowsRaw for fast batch update matching
+  const suggestedCodesFromBA = useMemo(() => {
+    if (!tableRowsRaw) return [];
+    const lines = tableRowsRaw.split('\n');
+    const codes: string[] = [];
+    lines.forEach((line) => {
+      const parts = line.split(',').map((p) => p.trim());
+      if (parts[1] && parts[1].length >= 3 && !parts[1].startsWith('Rp') && !parts[1].toLowerCase().includes('kode')) {
+        codes.push(parts[1]);
+      }
+    });
+    return Array.from(new Set(codes));
+  }, [tableRowsRaw]);
 
   const refreshData = () => {
     setDocuments(db.getDocuments());
@@ -167,6 +223,69 @@ export const DocumentCenterView: React.FC = () => {
         setJabatanPihak2(`Pihak Kedua (Guru / Pegawai Penerima - ${bk.UNIT_RUANGAN})`);
         setNamaPihak2(bk.PENERIMA);
         setNipPihak2(bk.PENERIMA_NIP || recipientUser?.NIP || '-');
+      }
+    } else if (type === 'STOCK_LEDGER') {
+      if (id === 'SUMMARY_ALL' || !id) {
+        const totalItems = stockSummaryList.length;
+        const totalMasuk = stockSummaryList.reduce((acc, curr) => acc + curr.TOTAL_MASUK, 0);
+        const totalKeluar = stockSummaryList.reduce((acc, curr) => acc + curr.TOTAL_KELUAR, 0);
+        const totalSaldo = stockSummaryList.reduce((acc, curr) => acc + curr.STOK, 0);
+
+        setJudulBA('BERITA ACARA REKONSILIASI BUKU KAS & MUTASI PERSEDIAAN (STOCK LEDGER)');
+        setNomorBA(`027/BA-LEDGER/SDN6/${year}/${String(documents.length + 1).padStart(3, '0')}`);
+        setTanggalBA(new Date().toISOString().slice(0, 10));
+        setDeskripsiBA(
+          `Pada hari ini telah dilakukan rekonsiliasi dan verifikasi mutasi buku persediaan (stock ledger) sekolah tahun anggaran ${year}. Berdasarkan pencatatan buku kas umum (BKU) dan kartu stok persediaan, seluruh arus penerimaan (Total Masuk: ${totalMasuk.toLocaleString('id-ID')} unit) dan pendistribusian (Total Keluar: ${totalKeluar.toLocaleString('id-ID')} unit) barang telah diperiksa dengan sisa saldo persediaan sebanyak ${totalSaldo.toLocaleString('id-ID')} unit dari ${totalItems} jenis barang aktif dengan rincian saldo mutasi sebagai berikut:`
+        );
+        setTableHeaders('No, Kode Barang, Nama Barang, Satuan, Total Masuk, Total Keluar, Saldo Akhir, Status');
+
+        const rowsStr = stockSummaryList
+          .map(
+            (s, idx) =>
+              `${idx + 1}, ${s.KODE_BARANG}, ${s.NAMA_BARANG}, ${s.JENIS_SATUAN}, ${s.TOTAL_MASUK}, ${s.TOTAL_KELUAR}, ${s.STOK}, ${s.STATUS === 'MINIMUM' ? 'Perlu Restock' : 'Cukup / Aman'}`
+          )
+          .join('\n');
+        setTableRowsRaw(rowsStr);
+
+        setJabatanPihak1('Pihak Pertama (Pengurus Barang Sekolah)');
+        setNamaPihak1(config.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.');
+        setNipPihak1(config.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008');
+
+        setJabatanPihak2('Pihak Kedua (Bendahara BOS / Pengelola Akuntansi)');
+        setNamaPihak2(config.TREASURER || 'Siti Rahmawati, S.Pd.');
+        setNipPihak2(config.TREASURER_NIP || '19870921 201001 2 005');
+      } else {
+        const targetItem = stockSummaryList.find((s) => s.KODE_BARANG === id);
+        const itemLedgers = db.getStockLedger(id);
+        const itemName = targetItem ? targetItem.NAMA_BARANG : id;
+
+        setJudulBA(`BERITA ACARA VERIFIKASI MUTASI KARTU STOK PERSEDIAAN (${itemName})`);
+        setNomorBA(`027/BA-KARTU-STOK/${id}/${year}`);
+        setTanggalBA(new Date().toISOString().slice(0, 10));
+        setDeskripsiBA(
+          `Berdasarkan hasil pemeriksaan fisik dan audit kartu stok persediaan untuk kode barang [${id}] "${itemName}", dilaporkan rincian kronologis mutasi keluar-masuk barang serta saldo fisik akhir sebagai berikut:`
+        );
+        setTableHeaders('No, Tanggal, No Referensi / Dokumen, Satuan, Masuk, Keluar, Saldo Berjalan, Status');
+
+        if (itemLedgers.length > 0) {
+          const rowsStr = itemLedgers
+            .map(
+              (l, idx) =>
+                `${idx + 1}, ${l.TANGGAL}, ${l.NOMOR_DOKUMEN}, ${l.JENIS_SATUAN}, ${l.QTY_IN}, ${l.QTY_OUT}, ${l.SALDO_SESUDAH}, ${l.STATUS}`
+            )
+            .join('\n');
+          setTableRowsRaw(rowsStr);
+        } else {
+          setTableRowsRaw(`1, ${new Date().toISOString().slice(0, 10)}, SALDO AWAL, Unit, 0, 0, ${targetItem?.STOK || 0}, Tercatat Sesuai Fisik`);
+        }
+
+        setJabatanPihak1('Petugas Gudang / Pengelola Persediaan');
+        setNamaPihak1(config.WAREHOUSE_OFFICER || 'Budi Santoso, A.Md.');
+        setNipPihak1(config.WAREHOUSE_OFFICER_NIP || '19920311 201903 1 008');
+
+        setJabatanPihak2('Pengurus Barang & Pengelola Aset');
+        setNamaPihak2(config.TREASURER || 'Siti Rahmawati, S.Pd.');
+        setNipPihak2(config.TREASURER_NIP || '19870921 201001 2 005');
       }
     } else if (type === 'STOCK_OPNAME') {
       const op = opnameSessions.find((s) => s.ID === id);
@@ -304,47 +423,14 @@ export const DocumentCenterView: React.FC = () => {
     }
   };
 
-  const handleCreateAndDownloadPDF = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!judulBA || !nomorBA || !namaPihak1 || !namaPihak2) {
-      alert('Mohon lengkapi Judul, Nomor BA, dan Pihak Penandatangan.');
-      return;
-    }
-
+  const buildCurrentOptions = (): BeritaAcaraOptions => {
     const headers = tableHeaders.split(',').map((h) => h.trim());
     const rows = tableRowsRaw
       .split('\n')
       .filter(Boolean)
       .map((line) => line.split(',').map((c) => c.trim()));
 
-    // Save record to repository
-    const docId = db.createDocument({
-      NOMOR_DOKUMEN: nomorBA,
-      JENIS_DOKUMEN: judulBA.includes('BAST')
-        ? 'BAST_PENGADAAN'
-        : judulBA.includes('DIST') || judulBA.includes('SPB')
-        ? 'BA_DISTRIBUSI'
-        : judulBA.includes('OPNAME')
-        ? 'BA_OPNAME'
-        : judulBA.includes('HAPUS')
-        ? 'BA_PENGHAPUSAN'
-        : 'BERITA_ACARA',
-      TANGGAL: tanggalBA,
-      PIHAK_TERKAIT: `${namaPihak1} & ${namaPihak2}`,
-      KETERANGAN: deskripsiBA,
-      FILE_URL: driveUrl || undefined,
-      DATA: {
-        title: judulBA,
-        headers,
-        rows,
-        leftSigner: { title: jabatanPihak1, name: namaPihak1, nip: nipPihak1 },
-        rightSigner: { title: jabatanPihak2, name: namaPihak2, nip: nipPihak2 },
-        includeHeadmaster: true,
-      },
-    });
-
-    // Generate Official PDF
-    pdfService.generateBeritaAcara({
+    return {
       title: judulBA,
       docNo: nomorBA,
       description: deskripsiBA,
@@ -361,10 +447,156 @@ export const DocumentCenterView: React.FC = () => {
         name: namaPihak2,
         nip: nipPihak2 ? (nipPihak2.startsWith('NIP') ? nipPihak2 : `NIP. ${nipPihak2}`) : '',
       },
-      includeHeadmaster: true,
+      centerSigner: {
+        title: jabatanMengetahui || 'Kepala UPT Satuan Pendidikan',
+        name: namaMengetahui,
+        nip: nipMengetahui,
+      },
+      includeHeadmaster,
+      paperSize,
+      kopSurat: {
+        show: true,
+        alignment: kopAlignment,
+        borderStyle: 'double',
+      },
+      styling: {
+        themeColor,
+        includeVerificationQR,
+        watermark,
+      },
+    };
+  };
+
+  const handleRefreshFromSheets = async (silent = false) => {
+    setIsSyncingData(true);
+    try {
+      const syncStatus = autoSyncService.getStatus();
+      if (syncStatus.connectionType === 'NONE') {
+        if (!silent) {
+          setSyncToastMsg('Data lokal siap (Google Sheets belum dikonfigurasi).');
+          setTimeout(() => setSyncToastMsg(null), 3500);
+        }
+        setIsSyncingData(false);
+        return;
+      }
+
+      const res = await autoSyncService.triggerSync(true);
+      if (res.success) {
+        refreshData();
+        if (!silent) {
+          setSyncToastMsg('Data persediaan & aset berhasil diperbarui dari Google Sheets!');
+          setTimeout(() => setSyncToastMsg(null), 3500);
+        }
+      } else {
+        if (!silent) {
+          setSyncToastMsg(res.message);
+          setTimeout(() => setSyncToastMsg(null), 4000);
+        }
+      }
+    } catch (e: any) {
+      if (!silent) {
+        setSyncToastMsg(`Sinkronisasi Sheets: ${e.message}`);
+        setTimeout(() => setSyncToastMsg(null), 4000);
+      }
+    } finally {
+      setIsSyncingData(false);
+    }
+  };
+
+  const handleOpenPreviewModal = async () => {
+    if (!judulBA || !nomorBA) {
+      alert('Mohon lengkapi Judul dan Nomor Berita Acara terlebih dahulu.');
+      return;
+    }
+    // Auto-refresh from Sheets in background if connected
+    handleRefreshFromSheets(true);
+
+    const currentOpt = buildCurrentOptions();
+    setPreviewModalOptions(currentOpt);
+    setIsPreviewModalOpen(true);
+  };
+
+  const handleCreateAndDownloadPDF = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!judulBA || !nomorBA || !namaPihak1 || !namaPihak2) {
+      alert('Mohon lengkapi Judul, Nomor BA, dan Pihak Penandatangan.');
+      return;
+    }
+
+    // Auto-refresh from Sheets in background if connected
+    handleRefreshFromSheets(true);
+
+    const currentOpt = buildCurrentOptions();
+
+    // Save record to repository
+    db.createDocument({
+      NOMOR_DOKUMEN: nomorBA,
+      JENIS_DOKUMEN: judulBA.includes('BAST')
+        ? 'BAST_PENGADAAN'
+        : judulBA.includes('DIST') || judulBA.includes('SPB')
+        ? 'BA_DISTRIBUSI'
+        : judulBA.includes('OPNAME')
+        ? 'BA_OPNAME'
+        : judulBA.includes('HAPUS')
+        ? 'BA_PENGHAPUSAN'
+        : 'BERITA_ACARA',
+      TANGGAL: tanggalBA,
+      PIHAK_TERKAIT: `${namaPihak1} & ${namaPihak2}`,
+      KETERANGAN: deskripsiBA,
+      FILE_URL: driveUrl || undefined,
+      DATA: {
+        title: judulBA,
+        headers: currentOpt.tableHeaders,
+        rows: currentOpt.tableRows,
+        leftSigner: currentOpt.leftSigner,
+        rightSigner: currentOpt.rightSigner,
+        includeHeadmaster,
+        paperSize,
+        kopAlignment,
+      },
     });
 
+    // Generate and Download Official PDF
+    pdfService.generateBeritaAcara(currentOpt);
+
     refreshData();
+  };
+
+  const handlePreviewDoc = (doc: DocumentRecord) => {
+    if (doc.DATA) {
+      const data = doc.DATA;
+      const docOptions: BeritaAcaraOptions = {
+        title: data.title || doc.JENIS_DOKUMEN,
+        docNo: doc.NOMOR_DOKUMEN,
+        description: doc.KETERANGAN || '',
+        tableHeaders: data.headers || ['No', 'Item', 'Qty', 'Keterangan'],
+        tableRows: data.rows || [[1, doc.PIHAK_TERKAIT, 1, 'Baik']],
+        footerText:
+          'Demikian dokumen Berita Acara ini diterbitkan secara sah dan diarsipkan dalam sistem inventaris sekolah.',
+        leftSigner: data.leftSigner,
+        rightSigner: data.rightSigner,
+        centerSigner: {
+          title: jabatanMengetahui || 'Kepala UPT Satuan Pendidikan',
+          name: namaMengetahui,
+          nip: nipMengetahui,
+        },
+        includeHeadmaster: data.includeHeadmaster !== false,
+        paperSize: data.paperSize || 'a4',
+        kopSurat: {
+          show: true,
+          alignment: data.kopAlignment || 'dual_logo',
+          borderStyle: 'double',
+        },
+        styling: {
+          themeColor: 'emerald',
+          includeVerificationQR: true,
+        },
+      };
+      setPreviewModalOptions(docOptions);
+      setIsPreviewModalOpen(true);
+    } else {
+      alert('Dokumen ini diarsipkan dari modul transaksi.');
+    }
   };
 
   const handleDownloadDoc = (doc: DocumentRecord) => {
@@ -380,10 +612,109 @@ export const DocumentCenterView: React.FC = () => {
           'Demikian dokumen Berita Acara ini diterbitkan secara sah dan diarsipkan dalam sistem inventaris sekolah.',
         leftSigner: data.leftSigner,
         rightSigner: data.rightSigner,
+        paperSize: data.paperSize || 'a4',
+        kopSurat: {
+          show: true,
+          alignment: data.kopAlignment || 'dual_logo',
+        },
       });
     } else {
       alert('Dokumen ini diarsipkan dari modul transaksi.');
     }
+  };
+
+  const handleApplyTemplate = (tpl: BATemplate) => {
+    setJudulBA(tpl.title);
+    const year = new Date().getFullYear();
+    const count = documents.length + 1;
+    const docNo = tpl.docNumberPattern
+      ? tpl.docNumberPattern.replace('{YEAR}', String(year)).replace('{NO}', String(count).padStart(3, '0'))
+      : `027/BAST-BOS/SDN6/${year}/${String(count).padStart(3, '0')}`;
+    setNomorBA(docNo);
+    if (tpl.openingClause) setDeskripsiBA(tpl.openingClause);
+    if (tpl.closingClause) setCatatanPenutup(tpl.closingClause);
+    if (tpl.defaultHeaders) setTableHeaders(tpl.defaultHeaders.join(', '));
+    if (tpl.defaultSampleRows) {
+      setTableRowsRaw(tpl.defaultSampleRows.map((r) => r.join(', ')).join('\n'));
+    }
+    if (tpl.paperSize) setPaperSize(tpl.paperSize);
+    if (tpl.kopAlignment) setKopAlignment(tpl.kopAlignment);
+    if (tpl.themeColor) setThemeColor(tpl.themeColor);
+    if (tpl.leftSignerTitle) setJabatanPihak1(tpl.leftSignerTitle.replace(/,$/, ''));
+    if (tpl.leftSignerName) setNamaPihak1(tpl.leftSignerName);
+    if (tpl.leftSignerNip) setNipPihak1(tpl.leftSignerNip.replace(/^NIP\.\s*/, ''));
+    if (tpl.rightSignerTitle) setJabatanPihak2(tpl.rightSignerTitle.replace(/,$/, ''));
+    if (tpl.rightSignerName) setNamaPihak2(tpl.rightSignerName);
+    if (tpl.rightSignerNip) setNipPihak2(tpl.rightSignerNip.replace(/^NIP\.\s*/, ''));
+    if (tpl.centerSignerTitle) setJabatanMengetahui(tpl.centerSignerTitle);
+    if (tpl.centerSignerName) setNamaMengetahui(tpl.centerSignerName);
+    if (tpl.centerSignerNip) setNipMengetahui(tpl.centerSignerNip.replace(/^NIP\.\s*/, ''));
+    if (tpl.includeHeadmaster !== undefined) setIncludeHeadmaster(tpl.includeHeadmaster);
+    if (tpl.includeVerificationQR !== undefined) setIncludeVerificationQR(tpl.includeVerificationQR);
+    if (tpl.watermark !== undefined) setWatermark(tpl.watermark);
+
+    setAppliedTemplateMsg(`Template "${tpl.name}" berhasil diterapkan!`);
+    setTimeout(() => setAppliedTemplateMsg(null), 4000);
+    setActiveTab('GENERATOR');
+  };
+
+  const handlePreviewTemplate = (tpl: BATemplate) => {
+    const docOpt: BeritaAcaraOptions = {
+      title: tpl.title,
+      docNo: tpl.docNumberPattern
+        ? tpl.docNumberPattern.replace('{YEAR}', String(new Date().getFullYear())).replace('{NO}', '001')
+        : '027/BAST-BOS/SDN6/2026/001',
+      description: tpl.openingClause || '',
+      tableHeaders: tpl.defaultHeaders || ['No', 'Item', 'Qty', 'Keterangan'],
+      tableRows: tpl.defaultSampleRows || [['1', 'Contoh Item Barang', '10', 'Baik']],
+      footerText: tpl.closingClause || 'Demikian Berita Acara ini dibuat sebagaimana mestinya.',
+      leftSigner: {
+        title: tpl.leftSignerTitle || 'Pihak Pertama,',
+        name: tpl.leftSignerName || config.WAREHOUSE_OFFICER,
+        nip: tpl.leftSignerNip,
+      },
+      rightSigner: {
+        title: tpl.rightSignerTitle || 'Pihak Kedua,',
+        name: tpl.rightSignerName || config.TREASURER,
+        nip: tpl.rightSignerNip,
+      },
+      centerSigner: {
+        title: tpl.centerSignerTitle || 'Kepala UPT Satuan Pendidikan',
+        name: tpl.centerSignerName || config.HEADMASTER,
+        nip: tpl.centerSignerNip,
+      },
+      includeHeadmaster: tpl.includeHeadmaster !== false,
+      paperSize: tpl.paperSize || 'a4',
+      orientation: tpl.orientation || 'portrait',
+      kopSurat: {
+        show: true,
+        alignment: tpl.kopAlignment || 'dual_logo',
+        borderStyle: tpl.kopBorderStyle || 'double',
+        line1: tpl.governingBody,
+        line2: tpl.institutionAgency,
+        line3: tpl.institutionName ? `UPT SATUAN PENDIDIKAN ${tpl.institutionName.toUpperCase()}` : undefined,
+        line4: tpl.institutionAddress,
+      },
+      styling: {
+        themeColor: tpl.themeColor || 'emerald',
+        fontFamily: tpl.fontFamily || 'helvetica',
+        tableDensity: tpl.tableDensity || 'normal',
+        includeVerificationQR: tpl.includeVerificationQR !== false,
+        watermark: tpl.watermark || '',
+      },
+      pageNumbering: {
+        enabled: tpl.autoPageNumbering !== false,
+        position: tpl.pageNumberPosition || 'bottom_center',
+      },
+      headerFooter: {
+        enabled: true,
+        runningHeader: tpl.runningHeaderText,
+        runningFooter: tpl.runningFooterText,
+        style: tpl.headerFooterStyle || 'formal_line',
+      },
+    };
+    setPreviewModalOptions(docOpt);
+    setIsPreviewModalOpen(true);
   };
 
   const filteredDocs = documents.filter(
@@ -397,8 +728,16 @@ export const DocumentCenterView: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {/* Toast notifications */}
+      {(appliedTemplateMsg || batchToastMsg || syncToastMsg) && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-800 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-semibold animate-slide-in">
+          <Check size={16} />
+          <span>{appliedTemplateMsg || batchToastMsg || syncToastMsg}</span>
+        </div>
+      )}
+
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -410,38 +749,97 @@ export const DocumentCenterView: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Penerbitan Berita Acara otomatis dari data transaksi riil (Pengadaan BOS, Distribusi Guru, Opname, Penghapusan) terintegrasi Asisten AI.
+            Penerbitan Berita Acara otomatis dari data transaksi riil (Pengadaan BOS, Distribusi Guru, Buku Persediaan, Opname, Penghapusan) terintegrasi Asisten AI.
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick Action: Google Sheets Auto-Refresh */}
           <button
             type="button"
-            onClick={() => setActiveTab('GENERATOR')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'GENERATOR'
-                ? 'bg-purple-800 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => handleRefreshFromSheets(false)}
+            disabled={isSyncingData}
+            className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold transition-colors border border-purple-200 flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+            title="Muat ulang dan sinkronkan data stok serta aset terkini dari Google Sheets"
           >
-            <Sparkles size={14} /> Generator Berita Acara
+            <RefreshCw size={14} className={`text-purple-700 ${isSyncingData ? 'animate-spin' : ''}`} />
+            <span>{isSyncingData ? 'Menyinkronkan...' : 'Refresh Data Sheets'}</span>
           </button>
+
+          {/* Quick Action: Batch Status Update */}
           <button
             type="button"
-            onClick={() => setActiveTab('REPOSITORY')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'REPOSITORY'
-                ? 'bg-purple-800 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => setIsBatchModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition-colors border border-emerald-200 flex items-center gap-1.5 shadow-2xs"
+            title="Perbarui status, kondisi, atau lokasi banyak aset sekaligus"
           >
-            <ClipboardList size={14} /> Arsip & Repositori ({documents.length})
+            <ShieldCheck size={14} className="text-emerald-700" />
+            <span>Update Status Massal</span>
+            {suggestedCodesFromBA.length > 0 && (
+              <span className="bg-emerald-700 text-white font-mono text-[9px] px-1.5 py-0.2 rounded-full">
+                {suggestedCodesFromBA.length}
+              </span>
+            )}
           </button>
+
+          {/* 4-Tab Switcher */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab('GENERATOR')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'GENERATOR'
+                  ? 'bg-purple-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles size={14} /> Generator BA
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('TEMPLATES')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'TEMPLATES'
+                  ? 'bg-purple-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Bookmark size={14} /> Template Master
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('BULK_QR')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'BULK_QR'
+                  ? 'bg-purple-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <QrCode size={14} /> Cetak Label & QR
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('REPOSITORY')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'REPOSITORY'
+                  ? 'bg-purple-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ClipboardList size={14} /> Arsip ({documents.length})
+            </button>
+          </div>
         </div>
       </div>
 
-      {activeTab === 'GENERATOR' ? (
+      {activeTab === 'BULK_QR' ? (
+        <BulkQRLabelGenerator onBackToGenerator={() => setActiveTab('GENERATOR')} />
+      ) : activeTab === 'TEMPLATES' ? (
+        <DocumentTemplateManager
+          onApplyTemplate={handleApplyTemplate}
+          onPreviewTemplate={handlePreviewTemplate}
+        />
+      ) : activeTab === 'GENERATOR' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Left Column: Transaction Selector */}
           <div className="lg:col-span-4 space-y-4">
@@ -456,7 +854,7 @@ export const DocumentCenterView: React.FC = () => {
                 </span>
               </div>
 
-              {/* Source Type Pills */}
+              {/* Source Type Pills - 6 Grid */}
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
@@ -464,16 +862,16 @@ export const DocumentCenterView: React.FC = () => {
                     setSourceType('BARANG_MASUK');
                     setSelectedTxId('');
                   }}
-                  className={`p-2.5 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
                     sourceType === 'BARANG_MASUK'
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-2xs'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <PackagePlus size={16} className="text-emerald-700 shrink-0" />
+                  <PackagePlus size={15} className="text-emerald-700 shrink-0" />
                   <div>
                     <div>Belanja Masuk</div>
-                    <div className="text-[10px] font-normal text-slate-500">Pengadaan BOS</div>
+                    <div className="text-[9px] font-normal text-slate-500">Pengadaan BOS</div>
                   </div>
                 </button>
 
@@ -483,16 +881,35 @@ export const DocumentCenterView: React.FC = () => {
                     setSourceType('BARANG_KELUAR');
                     setSelectedTxId('');
                   }}
-                  className={`p-2.5 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
                     sourceType === 'BARANG_KELUAR'
                       ? 'bg-blue-50 border-blue-300 text-blue-950 shadow-2xs'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <PackageMinus size={16} className="text-blue-700 shrink-0" />
+                  <PackageMinus size={15} className="text-blue-700 shrink-0" />
                   <div>
                     <div>Distribusi ATK</div>
-                    <div className="text-[10px] font-normal text-slate-500">SPB Guru/Kelas</div>
+                    <div className="text-[9px] font-normal text-slate-500">SPB Guru/Kelas</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceType('STOCK_LEDGER');
+                    handleSelectTransaction('STOCK_LEDGER', 'SUMMARY_ALL');
+                  }}
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                    sourceType === 'STOCK_LEDGER'
+                      ? 'bg-teal-50 border-teal-300 text-teal-950 shadow-2xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileSpreadsheet size={15} className="text-teal-700 shrink-0" />
+                  <div>
+                    <div>Buku Persediaan</div>
+                    <div className="text-[9px] font-normal text-slate-500">Stock Ledger</div>
                   </div>
                 </button>
 
@@ -502,16 +919,16 @@ export const DocumentCenterView: React.FC = () => {
                     setSourceType('ASET');
                     setSelectedTxId('');
                   }}
-                  className={`p-2.5 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
                     sourceType === 'ASET'
                       ? 'bg-indigo-50 border-indigo-300 text-indigo-950 shadow-2xs'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <Box size={16} className="text-indigo-700 shrink-0" />
+                  <Box size={15} className="text-indigo-700 shrink-0" />
                   <div>
                     <div>Aset & Ruangan</div>
-                    <div className="text-[10px] font-normal text-slate-500">KIR Inventaris</div>
+                    <div className="text-[9px] font-normal text-slate-500">KIR Inventaris</div>
                   </div>
                 </button>
 
@@ -521,16 +938,35 @@ export const DocumentCenterView: React.FC = () => {
                     setSourceType('STOCK_OPNAME');
                     setSelectedTxId('');
                   }}
-                  className={`p-2.5 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
                     sourceType === 'STOCK_OPNAME'
                       ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-2xs'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <ClipboardList size={16} className="text-amber-700 shrink-0" />
+                  <ClipboardList size={15} className="text-amber-700 shrink-0" />
                   <div>
                     <div>Stock Opname</div>
-                    <div className="text-[10px] font-normal text-slate-500">Hasil Fisik</div>
+                    <div className="text-[9px] font-normal text-slate-500">Hasil Fisik</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceType('PENGHAPUSAN');
+                    setSelectedTxId('');
+                  }}
+                  className={`p-2 rounded-xl text-left text-xs font-bold flex items-center gap-2 border transition-all ${
+                    sourceType === 'PENGHAPUSAN'
+                      ? 'bg-rose-50 border-rose-300 text-rose-950 shadow-2xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Flame size={15} className="text-rose-700 shrink-0" />
+                  <div>
+                    <div>Penghapusan</div>
+                    <div className="text-[9px] font-normal text-slate-500">Barang Rusak</div>
                   </div>
                 </button>
               </div>
@@ -538,10 +974,67 @@ export const DocumentCenterView: React.FC = () => {
               {/* Transactions List */}
               <div className="space-y-1.5 pt-1">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Daftar Transaksi Tersedia:
+                  {sourceType === 'STOCK_LEDGER' ? 'Rekap Saldo & Kartu Stok:' : 'Daftar Transaksi Tersedia:'}
                 </span>
 
-                <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
+                <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                  {sourceType === 'STOCK_LEDGER' && (
+                    <div className="space-y-2">
+                      {/* Master Summary Card */}
+                      <div
+                        onClick={() => handleSelectTransaction('STOCK_LEDGER', 'SUMMARY_ALL')}
+                        className={`p-3 rounded-xl cursor-pointer border text-xs transition-all ${
+                          selectedTxId === 'SUMMARY_ALL'
+                            ? 'bg-teal-100/80 border-teal-500 text-teal-950 shadow-2xs'
+                            : 'bg-teal-50/50 hover:bg-teal-50 border-teal-200 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-teal-900">⚡ Rekap Seluruh Saldo Persediaan</span>
+                          <span className="text-[10px] font-mono bg-teal-200 text-teal-900 px-2 py-0.5 rounded-full font-bold">
+                            {stockSummaryList.length} Item
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-teal-800 mt-1 leading-snug">
+                          Rekonsiliasi total barang masuk, distribusi, dan sisa saldo persediaan tahun berjalan.
+                        </p>
+                      </div>
+
+                      {/* Individual Items */}
+                      <div className="text-[10px] font-bold text-slate-400 uppercase pt-1">
+                        Atau Pilih Kartu Stok Per Item:
+                      </div>
+                      {stockSummaryList.map((item) => (
+                        <div
+                          key={item.KODE_BARANG}
+                          onClick={() => handleSelectTransaction('STOCK_LEDGER', item.KODE_BARANG)}
+                          className={`p-2.5 rounded-xl cursor-pointer border text-xs transition-all ${
+                            selectedTxId === item.KODE_BARANG
+                              ? 'bg-teal-50 border-teal-400 text-teal-950 shadow-2xs'
+                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <span className="truncate mr-1">{item.NAMA_BARANG}</span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
+                                item.STATUS === 'MINIMUM'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              Stok: {item.STOK} {item.JENIS_SATUAN}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center justify-between">
+                            <span className="font-mono">{item.KODE_BARANG}</span>
+                            <span>Masuk: {item.TOTAL_MASUK} • Keluar: {item.TOTAL_KELUAR}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {sourceType === 'BARANG_MASUK' && (
                     barangMasukList.length > 0 ? (
                       barangMasukList.map((bm) => (
@@ -917,14 +1410,112 @@ export const DocumentCenterView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                <button
-                  type="submit"
-                  className="px-6 py-3 rounded-xl bg-purple-800 hover:bg-purple-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
-                >
-                  <Download size={16} /> Terbitkan & Cetak Berita Acara (PDF)
-                </button>
+              {/* 4. Format Dokumen & Kop Surat Settings */}
+              <div className="pt-3 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Settings2 size={16} className="text-purple-700" />
+                    4. Format Kertas & Kop Surat Dokumen
+                  </span>
+                  <span className="text-[10px] text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                    Standar Berkas Dinas & Sekolah
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Paper Size Selector */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block flex items-center gap-1">
+                      <Layout size={13} className="text-emerald-600" />
+                      Ukuran Kertas:
+                    </label>
+                    <select
+                      value={paperSize}
+                      onChange={(e) => setPaperSize(e.target.value as any)}
+                      className="w-full text-xs font-semibold p-2 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-purple-700"
+                    >
+                      <option value="a4">A4 Standar (210 × 297 mm)</option>
+                      <option value="f4">F4 / Folio (215 × 330 mm) [Dinas]</option>
+                      <option value="letter">Letter / Kuarto (216 × 279 mm)</option>
+                      <option value="legal">Legal Panjang (216 × 356 mm)</option>
+                    </select>
+                  </div>
+
+                  {/* Kop Surat Alignment */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block flex items-center gap-1">
+                      <Building2 size={13} className="text-blue-600" />
+                      Tata Letak Kop Surat:
+                    </label>
+                    <select
+                      value={kopAlignment}
+                      onChange={(e) => setKopAlignment(e.target.value as any)}
+                      className="w-full text-xs font-semibold p-2 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-purple-700"
+                    >
+                      <option value="dual_logo">Logo Ganda (Pemda + Sekolah)</option>
+                      <option value="center">Rata Tengah (1 Logo)</option>
+                      <option value="left">Rata Kiri Modern</option>
+                    </select>
+                  </div>
+
+                  {/* Theme & Extras */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block flex items-center gap-1">
+                      <ShieldCheck size={13} className="text-purple-600" />
+                      Warna & Barcode:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={themeColor}
+                        onChange={(e) => setThemeColor(e.target.value as any)}
+                        className="flex-1 text-xs font-semibold p-2 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-purple-700"
+                      >
+                        <option value="emerald">Emerald Hijau Dinas</option>
+                        <option value="navy">Navy Biru Formal</option>
+                        <option value="monochrome">Monokrom Hitam</option>
+                        <option value="slate">Slate Gray</option>
+                        <option value="amber">Amber / Gold</option>
+                      </select>
+                      <label
+                        className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50"
+                        title="Tampilkan QR Code Verifikasi Keaslian Dokumen"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={includeVerificationQR}
+                          onChange={(e) => setIncludeVerificationQR(e.target.checked)}
+                          className="w-3.5 h-3.5 text-purple-700 rounded border-slate-300"
+                        />
+                        QR
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons: Preview Modal + Download PDF */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-purple-600" />
+                  <span>Kertas aktif: <strong>{paperSize.toUpperCase()}</strong> {paperSize === 'f4' ? '(Folio)' : ''}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenPreviewModal}
+                    className="px-5 py-2.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-900 font-bold text-xs shadow-xs transition-all flex items-center gap-2 border border-purple-300"
+                  >
+                    <Eye size={15} /> Pratinjau Dokumen (Preview Modal)
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-purple-800 hover:bg-purple-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+                  >
+                    <Download size={15} /> Terbitkan & Unduh PDF
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -954,7 +1545,7 @@ export const DocumentCenterView: React.FC = () => {
                     <th className="py-3 px-4">Pihak Penandatangan</th>
                     <th className="py-3 px-4">Berkas Drive</th>
                     <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-center">Aksi Unduh</th>
+                    <th className="py-3 px-4 text-center">Aksi Dokumen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -991,13 +1582,24 @@ export const DocumentCenterView: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadDoc(doc)}
-                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-purple-50 hover:text-purple-900 border border-slate-200 transition-colors inline-flex items-center gap-1"
-                          >
-                            <Download size={13} /> PDF
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewDoc(doc)}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 transition-colors inline-flex items-center gap-1"
+                              title="Pratinjau & Cetak Dokumen"
+                            >
+                              <Eye size={13} /> Pratinjau
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadDoc(doc)}
+                              className="px-2 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors inline-flex items-center gap-1"
+                              title="Unduh PDF Langsung"
+                            >
+                              <Download size={13} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1013,6 +1615,30 @@ export const DocumentCenterView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Berita Acara Live Preview Modal with Paper Size & Kop Customization */}
+      {isPreviewModalOpen && (
+        <BeritaAcaraPreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
+          options={previewModalOptions || buildCurrentOptions()}
+        />
+      )}
+
+      {/* Batch Status Update Modal */}
+      {isBatchModalOpen && (
+        <BatchStatusUpdateModal
+          isOpen={isBatchModalOpen}
+          onClose={() => setIsBatchModalOpen(false)}
+          currentDocNumber={nomorBA}
+          suggestedCodes={suggestedCodesFromBA}
+          onSuccess={(msg) => {
+            setBatchToastMsg(msg);
+            setTimeout(() => setBatchToastMsg(null), 4000);
+            refreshData();
+          }}
+        />
       )}
     </div>
   );

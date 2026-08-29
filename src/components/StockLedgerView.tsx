@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { BookOpen, Search, Download, Filter } from 'lucide-react';
+import { BookOpen, Search, Download, Filter, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { StockLedger, Item } from '../types';
 import { pdfService } from '../services/pdfService';
+import { excelService } from '../services/excelService';
 
 export const StockLedgerView: React.FC = () => {
   const items = db.getItems();
@@ -19,6 +20,18 @@ export const StockLedgerView: React.FC = () => {
     pdfService.generateKartuStok(selectedItem.KODE_BARANG);
   };
 
+  const handleExportExcel = () => {
+    const config = db.getConfig();
+    const allStockLedgers = db.getStockLedger();
+    const filtered = allStockLedgers.filter((l) => !selectedSku || l.KODE_BARANG === selectedSku);
+
+    excelService.exportStockLedger(
+      filtered,
+      config,
+      selectedItem ? `Kartu_Stok_${selectedItem.KODE_BARANG}` : 'Buku_Besar_Kartu_Stok'
+    );
+  };
+
   return (
     <div className="space-y-5">
       {/* Header Banner */}
@@ -33,14 +46,24 @@ export const StockLedgerView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleExportPDF}
-          disabled={!selectedItem}
-          className="px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
-        >
-          <Download size={15} /> Cetak Kartu Stok (PDF)
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+            title="Ekspor Kartu Stok ke format Excel"
+          >
+            <FileSpreadsheet size={15} /> Excel (.xlsx)
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            disabled={!selectedItem}
+            className="px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+          >
+            <Download size={15} /> Cetak Kartu Stok (PDF)
+          </button>
+        </div>
       </div>
 
       {/* SKU Selector Card */}

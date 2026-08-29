@@ -358,6 +358,74 @@ export interface NotificationItem {
   STATUS: 'UNREAD' | 'READ';
 }
 
+export interface BATemplateVersion {
+  id: string;
+  templateId: string;
+  versionNumber: number;
+  versionTag?: string;
+  timestamp: string;
+  author: string;
+  summary: string;
+  snapshot: BATemplate;
+}
+
+export interface BATemplate {
+  id: string;
+  name: string;
+  category: 'PENGADAAN' | 'MUTASI' | 'PENGHAPUSAN' | 'PEMERIKSAAN' | 'STOCK_OPNAME' | 'SERAH_TERIMA' | 'LAINNYA';
+  description?: string;
+  isSystem?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  versionCount?: number;
+
+  // Custom institution & address fields
+  institutionName?: string;
+  institutionAddress?: string;
+  institutionNpsn?: string;
+  institutionCity?: string;
+  institutionAgency?: string; // e.g. "DINAS PENDIDIKAN"
+  governingBody?: string; // e.g. "PEMERINTAH KOTA TANGERANG"
+  institutionEmail?: string;
+  institutionWebsite?: string;
+
+  // Document metadata defaults
+  title: string;
+  docNumberPattern?: string; // e.g. "020/{NO}/BAST-INV/{YEAR}"
+  openingClause: string;
+  closingClause: string;
+  defaultHeaders: string[];
+  defaultSampleRows?: (string | number)[][];
+
+  // Signatories defaults
+  leftSignerTitle: string;
+  leftSignerName?: string;
+  leftSignerNip?: string;
+  rightSignerTitle: string;
+  rightSignerName?: string;
+  rightSignerNip?: string;
+  centerSignerTitle?: string;
+  centerSignerName?: string;
+  centerSignerNip?: string;
+  includeHeadmaster?: boolean;
+
+  // Layout & Formatting defaults
+  paperSize: 'a4' | 'f4' | 'letter' | 'legal';
+  orientation: 'portrait' | 'landscape';
+  kopAlignment: 'dual_logo' | 'center' | 'left';
+  kopBorderStyle: 'double' | 'single' | 'bold' | 'none';
+  themeColor: 'emerald' | 'navy' | 'monochrome' | 'slate' | 'amber';
+  fontFamily: 'helvetica' | 'times' | 'courier';
+  tableDensity: 'compact' | 'normal' | 'spacious';
+  includeVerificationQR: boolean;
+  autoPageNumbering?: boolean;
+  pageNumberPosition?: 'bottom_center' | 'bottom_right' | 'top_right';
+  headerFooterStyle?: 'formal_line' | 'minimal' | 'boxed' | 'none';
+  runningHeaderText?: string;
+  runningFooterText?: string;
+  watermark?: string;
+}
+
 export interface AppTask {
   ID: string;
   TYPE: 'APPROVAL' | 'STOCK' | 'OPNAME' | 'TASK';

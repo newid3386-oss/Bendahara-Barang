@@ -208,16 +208,16 @@ export const excelService = {
   exportStockLedger(entries: StockLedgerEntry[], config: Config, filename = 'Buku_Besar_Kartu_Stok') {
     const data = entries.map((entry, index) => ({
       'No': index + 1,
-      'Tanggal': entry.TANGGAL,
-      'Kode Barang': entry.KODE_BARANG,
-      'Nama Barang': entry.NAMA_BARANG,
-      'Jenis Mutasi': entry.JENIS_MUTASI,
-      'Nomor Dokumen': entry.NOMOR_DOKUMEN,
-      'Keterangan': entry.KETERANGAN,
-      'Jumlah Masuk': entry.MASUK || 0,
-      'Jumlah Keluar': entry.KELUAR || 0,
-      'Saldo Sisa Stok': entry.SALDO_AKHIR,
-      'Satuan': entry.JENIS_SATUAN,
+      'Tanggal': entry.TANGGAL || '-',
+      'Kode Barang': entry.KODE_BARANG || '-',
+      'Nama Barang': entry.NAMA_BARANG || '-',
+      'Jenis Mutasi': entry.REF_TYPE || entry.JENIS_MUTASI || '-',
+      'Nomor Dokumen': entry.NOMOR_DOKUMEN || '-',
+      'Keterangan': entry.STATUS || entry.KETERANGAN || '-',
+      'Jumlah Masuk': entry.QTY_IN ?? entry.MASUK ?? 0,
+      'Jumlah Keluar': entry.QTY_OUT ?? entry.KELUAR ?? 0,
+      'Saldo Sisa Stok': entry.SALDO_SESUDAH ?? entry.SALDO_AKHIR ?? 0,
+      'Satuan': entry.JENIS_SATUAN || 'Pcs',
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(data);

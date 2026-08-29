@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
+import { SchoolPublicWebsite } from './components/SchoolPublicWebsite';
 import { DashboardView } from './components/DashboardView';
 import { MasterBarangView } from './components/MasterBarangView';
 import { PenyediaView } from './components/PenyediaView';
@@ -31,9 +32,10 @@ import { QRScannerModal } from './components/QRScannerModal';
 import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
 import { QRStickerModal } from './components/QRStickerModal';
 import { db } from './services/localStorageService';
-import { Asset, ActivePage } from './types';
+import { Asset, ActivePage, User } from './types';
 
 export default function App() {
+  const [viewMode, setViewMode] = useState<'app' | 'website'>('app');
   const [activePage, setActivePage] = useState<ActivePage>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -47,13 +49,20 @@ export default function App() {
   const [scannedDriveUrl, setScannedDriveUrl] = useState<string | undefined>(undefined);
   const [selectedAssetDetail, setSelectedAssetDetail] = useState<Asset | null>(null);
 
-  // Handle URL parameters for Dual-Mode QR Scanning
+  // Handle URL parameters for Dual-Mode QR Scanning & View Mode
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const scanParam = params.get('scan') || params.get('code');
       const driveParam = params.get('drive');
       const pageParam = params.get('page');
+      const viewParam = params.get('view');
+
+      if (viewParam === 'website' || viewParam === 'portal') {
+        setViewMode('website');
+      } else if (viewParam === 'app' || viewParam === 'dashboard') {
+        setViewMode('app');
+      }
 
       if (pageParam) {
         setActivePage(pageParam as ActivePage);
@@ -77,7 +86,7 @@ export default function App() {
       .getBarangKeluar()
       .filter((k) => k.STATUS_TRANSAKSI === 'MENUNGGU_PERSETUJUAN').length;
     setNotificationCount(lowStock + pendingApprovals);
-  }, [activePage]);
+  }, [activePage, viewMode]);
 
   // Global keyboard shortcut for search (Ctrl+K or Cmd+K)
   useEffect(() => {
@@ -97,7 +106,17 @@ export default function App() {
     if (found) {
       setSelectedAssetDetail(found);
       setActivePage('aset');
+      setViewMode('app');
     }
+  };
+
+  const handleNavigate = (page: ActivePage | string) => {
+    if (page === 'website_sekolah') {
+      setViewMode('website');
+      return;
+    }
+    setActivePage(page as ActivePage);
+    setViewMode('app');
   };
 
   const renderActiveView = () => {
@@ -105,7 +124,7 @@ export default function App() {
       case 'dashboard':
         return (
           <DashboardView
-            onNavigate={(page) => setActivePage(page)}
+            onNavigate={(page) => handleNavigate(page)}
             onOpenSheetsModal={() => setIsGoogleModalOpen(true)}
           />
         );
@@ -168,12 +187,40 @@ export default function App() {
       default:
         return (
           <DashboardView
-            onNavigate={(page) => setActivePage(page)}
+            onNavigate={(page) => handleNavigate(page)}
             onOpenSheetsModal={() => setIsGoogleModalOpen(true)}
           />
         );
     }
   };
+
+  // If currently in Public Website mode, display the official school portal
+  if (viewMode === 'website') {
+    return (
+      <>
+        <SchoolPublicWebsite
+          onEnterApp={(user?: User) => {
+            if (user) db.setActiveUser(user);
+            setViewMode('app');
+          }}
+        />
+
+        {/* Global Modals accessible if opened from website actions */}
+        {scannedCode && (
+          <PublicAssetVerificationModal
+            isOpen={Boolean(scannedCode)}
+            assetCode={scannedCode}
+            driveUrl={scannedDriveUrl}
+            onClose={() => {
+              setScannedCode(null);
+              setScannedDriveUrl(undefined);
+            }}
+            onOpenInApp={handleOpenAssetInApp}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100/90 text-slate-800 flex flex-col font-sans antialiased selection:bg-emerald-900 selection:text-white">
@@ -186,7 +233,9 @@ export default function App() {
         onOpenSheetsModal={() => setIsGoogleModalOpen(true)}
         onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
         onOpenQRScanner={() => setIsQRScannerOpen(true)}
-        onNavigate={(page) => setActivePage(page)}
+        onOpenSchoolWebsite={() => setViewMode('website')}
+        onLogout={() => setViewMode('website')}
+        onNavigate={(page) => handleNavigate(page)}
         notificationCount={notificationCount}
       />
 
@@ -195,9 +244,10 @@ export default function App() {
         <Sidebar
           activePage={activePage}
           onNavigate={(page) => {
-            setActivePage(page);
+            handleNavigate(page);
             setIsSidebarOpen(false);
           }}
+          onOpenSchoolWebsite={() => setViewMode('website')}
           isOpen={isSidebarOpen}
           isMobileOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
@@ -215,7 +265,7 @@ export default function App() {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onNavigate={(page) => {
-          setActivePage(page);
+          handleNavigate(page);
           setIsSearchOpen(false);
         }}
       />
@@ -231,7 +281,7 @@ export default function App() {
         isOpen={isAIAssistantOpen}
         onClose={() => setIsAIAssistantOpen(false)}
         onNavigate={(page) => {
-          setActivePage(page);
+          handleNavigate(page);
           setIsAIAssistantOpen(false);
         }}
       />
@@ -246,7 +296,7 @@ export default function App() {
         }}
       />
 
-      {/* Public Asset Verification & Dual-Mode Google Drive Modal (Triggered when QR is scanned externally) */}
+      {/* Public Asset Verification & Dual-Mode Google Drive Modal */}
       {scannedCode && (
         <PublicAssetVerificationModal
           isOpen={Boolean(scannedCode)}

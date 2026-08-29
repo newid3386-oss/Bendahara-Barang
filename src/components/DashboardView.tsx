@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Package,
   Box,
@@ -20,9 +20,18 @@ import {
   Layers,
   Activity,
   ArrowRight,
+  ShoppingCart,
+  ShieldAlert,
+  AlertCircle,
+  Warehouse,
+  Flame,
+  Check,
+  RefreshCw,
+  ExternalLink,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
-import { ActivePage } from '../types';
+import { ActivePage, Asset } from '../types';
 import { Sparkline, AreaChart, DonutChart, BarChart, ProgressRing } from './charts';
 import { AIInsightsPanel } from './AIInsightsPanel';
 
@@ -43,6 +52,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const tasks = db.getTodayTasks();
   const connectedSheetId = db.getConnectedGoogleSheetId();
   const config = db.getConfig();
+  const procurementPlans = db.getProcurementPlans();
+  const maintenanceLogs = db.getPemeliharaanAset();
+
+  const [activeQuickTab, setActiveQuickTab] = useState<'ALL' | 'INVENTORY' | 'MAINTENANCE' | 'PROCUREMENT'>('ALL');
 
   // ─── Financial & Asset Calculations ───────────────────────
   const totalAssetValue = assets.reduce(
@@ -55,6 +68,81 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const assetRusakBerat = assets.filter((a) => a.KONDISI === 'RUSAK BERAT');
   const totalBarangRusak = assetRusakRingan.length + assetRusakBerat.length;
   const healthRate = assets.length > 0 ? Math.round((assetBaik.length / assets.length) * 100) : 100;
+
+  // ─── Inventory (Persediaan Habis Pakai & ATK) ─────────────
+  const totalStockUnits = useMemo(() => {
+    return stockSummary.reduce((sum, s) => sum + Number(s.STOK || 0), 0);
+  }, [stockSummary]);
+
+  const totalStockValue = useMemo(() => {
+    return stockSummary.reduce((sum, s) => {
+      const itm = items.find((i) => i.KODE_BARANG === s.KODE_BARANG);
+      const price = Number(itm?.HARGA_ESTIMASI || itm?.HARGA_STANDAR) || 35000;
+      return sum + (s.STOK * price);
+    }, 0);
+  }, [stockSummary, items]);
+
+  const safeStockItems = stockSummary.filter((s) => s.STATUS === 'AMAN');
+  const lowStockItems = stockSummary.filter((s) => s.STATUS === 'MINIMUM');
+  const outOfStockItems = stockSummary.filter((s) => s.STOK === 0);
+  const stockAvailabilityRate = stockSummary.length > 0
+    ? Math.round((safeStockItems.length / stockSummary.length) * 100)
+    : 100;
+
+  const totalCombinedValuation = totalAssetValue + totalStockValue;
+  const totalCombinedUnits = totalAssetUnits + totalStockUnits;
+
+  // ─── Pending Maintenance Calculations ────────────────────
+  const damagedAssetsList = useMemo(() => {
+    return assets.filter((a) => a.KONDISI === 'RUSAK RINGAN' || a.KONDISI === 'RUSAK BERAT');
+  }, [assets]);
+
+  const estRepairBudget = useMemo(() => {
+    return damagedAssetsList.reduce((sum, a) => {
+      const val = Number(a.TOTAL_NILAI) || Number(a.HARGA_SATUAN) || 500000;
+      if (a.KONDISI === 'RUSAK RINGAN') {
+        return sum + Math.max(100000, Math.round(val * 0.15));
+      }
+      return sum + Math.max(300000, Math.round(val * 0.4));
+    }, 0);
+  }, [damagedAssetsList]);
+
+  // ─── Recent Procurement Alerts & Burn Rate ───────────────
+  const procurementAlerts = useMemo(() => {
+    return lowStockItems.map((s) => {
+      const itm = items.find((i) => i.KODE_BARANG === s.KODE_BARANG);
+      const keluar30Hari = keluarList
+        .filter((k) => k.KODE_BARANG === s.KODE_BARANG && k.STATUS_TRANSAKSI === 'DISETUJUI')
+        .reduce((sum, k) => sum + k.JUMLAH, 0);
+
+      const dailyBurn = keluar30Hari > 0 ? keluar30Hari / 30 : 0.5;
+      const daysLeft = s.STOK === 0 ? 0 : Math.max(1, Math.round(s.STOK / dailyBurn));
+      const targetMin = Number(s.BATAS_MINIMUM) || 5;
+      const recommendQty = Math.max(1, targetMin * 2 - s.STOK);
+      const estPrice = Number(itm?.HARGA_ESTIMASI || itm?.HARGA_STANDAR) || 35000;
+      const subtotalEst = recommendQty * estPrice;
+
+      let urgency: 'EMERGENCY' | 'CRITICAL' | 'WARNING' = 'WARNING';
+      if (s.STOK === 0) urgency = 'EMERGENCY';
+      else if (daysLeft <= 5) urgency = 'CRITICAL';
+
+      return {
+        ...s,
+        daysLeft,
+        recommendQty,
+        estPrice,
+        subtotalEst,
+        urgency,
+        kodeRekening: itm?.KODE_REKENING_RKAS || '5.1.02.01.01.0024',
+      };
+    }).sort((a, b) => a.daysLeft - b.daysLeft);
+  }, [lowStockItems, keluarList, items]);
+
+  const totalProcurementBudgetEst = useMemo(() => {
+    return procurementAlerts.reduce((sum, a) => sum + a.subtotalEst, 0);
+  }, [procurementAlerts]);
+
+  const activePlansCount = procurementPlans.filter((p) => p.STATUS === 'DIAJUKAN').length;
 
   // ─── Month-over-Month Trend ────────────────────────────────
   const now = new Date();
@@ -127,7 +215,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     { label: 'Rusak Berat', value: assetRusakBerat.length, color: '#ef4444' },
   ];
 
-  // ─── Budget Utilization (mock from sumber anggaran) ────────
+  // ─── Budget Utilization ────────────────────────────────────
   const budgetBySource = useMemo(() => {
     const sources: Record<string, number> = {};
     masukList.forEach((m) => {
@@ -212,9 +300,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .filter((k) => k.TANGGAL.startsWith(currentYM) && k.STATUS_TRANSAKSI === 'DISETUJUI')
     .reduce((sum, k) => sum + k.JUMLAH, 0);
 
-  const lowStockItems = stockSummary.filter((s) => s.STATUS === 'MINIMUM');
   const pendingApprovals = keluarList.filter((k) => k.STATUS_TRANSAKSI === 'MENUNGGU_PERSETUJUAN');
-  const rusakAssets = assets.filter((a) => a.KONDISI === 'RUSAK RINGAN' || a.KONDISI === 'RUSAK BERAT');
 
   const activityIcon = {
     in: { icon: ArrowDownLeft, bg: 'bg-emerald-100', text: 'text-emerald-700' },
@@ -226,8 +312,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-5 animate-slide-up">
       {/* ─── Hero Banner ─────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl p-5 sm:p-6 bg-gradient-to-br from-emerald-800 via-emerald-900 to-teal-950 text-white shadow-lg">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -mr-20 -mt-20" />
-        <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-teal-400/10 rounded-full blur-3xl" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+        <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-teal-400/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/30">
@@ -238,14 +324,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Dashboard Tata Kelola Barang & Inventaris
             </h2>
             <p className="text-xs text-emerald-100/70 max-w-2xl leading-relaxed">
-              Monitoring real-time persediaan, aset, dan transaksi dengan analitik cerdas berbasis AI.
+              Monitoring terpusat persediaan habis pakai, aset tetap, antrean pemeliharaan, serta peringatan dini pengadaan BOS/ARKAS.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onOpenSheetsModal}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white font-bold text-xs border border-white/20 transition-all flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white font-bold text-xs border border-white/20 transition-all flex items-center gap-2 shadow-xs"
             >
               <FileSpreadsheet size={16} />
               {connectedSheetId ? 'Kelola Sinkronisasi' : 'Hubungkan Sheets'}
@@ -253,27 +339,431 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Quick Stats Bar */}
+        {/* Top Summary Micro-Bar */}
         <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t border-white/10">
           <div>
-            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Nilai Aset</div>
-            <div className="text-lg font-black mt-0.5">{formatRupiah(totalAssetValue)}</div>
+            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Total Valuasi Gabungan</div>
+            <div className="text-lg font-black mt-0.5">{formatRupiah(totalCombinedValuation)}</div>
+            <div className="text-[10px] text-emerald-200/60 mt-0.5">Aset Tetap + Persediaan</div>
           </div>
           <div>
-            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Total Unit Aset</div>
-            <div className="text-lg font-black mt-0.5">{totalAssetUnits} Unit</div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Pengadaan Bulan Ini</div>
-            <div className="text-lg font-black mt-0.5">{formatRupiah(totalNilaiMasukBulanIni)}</div>
+            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Total Fisik Barang</div>
+            <div className="text-lg font-black mt-0.5">{totalCombinedUnits} Unit</div>
+            <div className="text-[10px] text-emerald-200/60 mt-0.5">{totalAssetUnits} Aset • {totalStockUnits} Stok</div>
           </div>
           <div>
             <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Kesehatan Aset</div>
-            <div className="text-lg font-black mt-0.5 flex items-center gap-1">
-              {healthRate}%
-              <span className={`text-[10px] ${healthRate >= 80 ? 'text-emerald-300' : 'text-amber-300'}`}>
-                {healthRate >= 80 ? 'Sehat' : 'Perlu Perhatian'}
+            <div className="text-lg font-black mt-0.5 flex items-center gap-1.5">
+              <span>{healthRate}%</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded ${healthRate >= 80 ? 'bg-emerald-500/30 text-emerald-200' : 'bg-amber-500/30 text-amber-200'}`}>
+                {healthRate >= 80 ? 'Sehat' : 'Perlu Servis'}
               </span>
+            </div>
+            <div className="text-[10px] text-emerald-200/60 mt-0.5">{assetBaik.length} dari {assets.length} Aset Baik</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-emerald-300/70 uppercase tracking-wide">Stok Ketersediaan</div>
+            <div className="text-lg font-black mt-0.5 flex items-center gap-1.5">
+              <span>{stockAvailabilityRate}%</span>
+              {lowStockItems.length > 0 ? (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-200">
+                  {lowStockItems.length} Kritis
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-200">Aman</span>
+              )}
+            </div>
+            <div className="text-[10px] text-emerald-200/60 mt-0.5">{safeStockItems.length} dari {stockSummary.length} SKU Aman</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── OPTIMIZED 'QUICK STATS' COMMAND MONITORING PANEL ─────── */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-xs">
+              <Activity size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-slate-800 tracking-tight">
+                  Quick Stats & Monitoring Pengawasan
+                </h3>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                  Live Audit
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pemantauan komprehensif total inventaris, antrean pemeliharaan, dan peringatan dini restock
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Filter Navigation Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveQuickTab('ALL')}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                activeQuickTab === 'ALL'
+                  ? 'bg-white text-emerald-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Semua Modul
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveQuickTab('INVENTORY')}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                activeQuickTab === 'INVENTORY'
+                  ? 'bg-white text-emerald-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Inventaris ({items.length + assets.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveQuickTab('MAINTENANCE')}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1 ${
+                activeQuickTab === 'MAINTENANCE'
+                  ? 'bg-white text-amber-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Pemeliharaan
+              {totalBarangRusak > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveQuickTab('PROCUREMENT')}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1 ${
+                activeQuickTab === 'PROCUREMENT'
+                  ? 'bg-white text-rose-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Pengadaan
+              {lowStockItems.length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ─── 3 PRIMARY QUICK STATS MODULE CARDS ─────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 1. TOTAL INVENTORY SUMMARY */}
+          {(activeQuickTab === 'ALL' || activeQuickTab === 'INVENTORY') && (
+            <div className="rounded-xl p-4 bg-gradient-to-b from-slate-50 to-emerald-50/30 border border-emerald-100/80 hover:border-emerald-300 transition-all flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800">
+                      <Warehouse size={16} />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-950">
+                      Total Inventaris & Stok
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    {items.length} Master SKU
+                  </span>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-slate-800">
+                    {totalCombinedUnits.toLocaleString('id-ID')}{' '}
+                    <span className="text-xs font-semibold text-slate-500">Unit Terkelola</span>
+                  </div>
+                  <div className="text-xs font-bold text-emerald-700 mt-0.5">
+                    Valuasi: {formatRupiahFull(totalCombinedValuation)}
+                  </div>
+                </div>
+
+                {/* Sub metrics breakdown */}
+                <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-slate-400 font-semibold">Persediaan ATK/Bahan</div>
+                    <div className="font-black text-slate-700 mt-0.5">{totalStockUnits} Unit</div>
+                    <div className="text-[10px] text-slate-500">{stockSummary.length} Jenis Barang</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-slate-400 font-semibold">Aset Tetap (KIB)</div>
+                    <div className="font-black text-slate-700 mt-0.5">{totalAssetUnits} Unit</div>
+                    <div className="text-[10px] text-slate-500">{assets.length} Register Aset</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500">
+                  Ketersediaan: <strong className="text-emerald-700">{stockAvailabilityRate}%</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('persediaan')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 hover:text-emerald-950 hover:underline"
+                >
+                  Detail Persediaan <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 2. PENDING MAINTENANCE ITEMS */}
+          {(activeQuickTab === 'ALL' || activeQuickTab === 'MAINTENANCE') && (
+            <div className="rounded-xl p-4 bg-gradient-to-b from-slate-50 to-amber-50/40 border border-amber-200/80 hover:border-amber-400 transition-all flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-amber-100 text-amber-800">
+                      <Wrench size={16} />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider text-amber-950">
+                      Antrean Pemeliharaan
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      totalBarangRusak > 0
+                        ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {totalBarangRusak > 0 ? `${totalBarangRusak} Perlu Tindakan` : 'Semua Berfungsi'}
+                  </span>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-slate-800">
+                    {totalBarangRusak}{' '}
+                    <span className="text-xs font-semibold text-slate-500">Aset Rusak</span>
+                  </div>
+                  <div className="text-xs font-bold text-amber-800 mt-0.5">
+                    Est. Biaya Servis: {formatRupiah(estRepairBudget)}
+                  </div>
+                </div>
+
+                {/* Sub metrics breakdown */}
+                <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Rusak Ringan
+                    </div>
+                    <div className="font-black text-slate-800 mt-0.5">{assetRusakRingan.length} Aset</div>
+                    <div className="text-[10px] text-slate-500">Dapat diservis</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-rose-700 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      Rusak Berat
+                    </div>
+                    <div className="font-black text-slate-800 mt-0.5">{assetRusakBerat.length} Aset</div>
+                    <div className="text-[10px] text-slate-500">Usulan penghapusan</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500">
+                  {maintenanceLogs.length} riwayat servis tercatat
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('pemeliharaan')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 hover:text-amber-950 hover:underline"
+                >
+                  Kelola Pemeliharaan <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 3. RECENT PROCUREMENT ALERTS */}
+          {(activeQuickTab === 'ALL' || activeQuickTab === 'PROCUREMENT') && (
+            <div className="rounded-xl p-4 bg-gradient-to-b from-slate-50 to-rose-50/40 border border-rose-200/80 hover:border-rose-400 transition-all flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-rose-100 text-rose-800">
+                      <ShieldAlert size={16} />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-950">
+                      Peringatan Pengadaan
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      lowStockItems.length > 0
+                        ? 'bg-rose-100 text-rose-900 border border-rose-200 animate-pulse'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {lowStockItems.length > 0 ? `${lowStockItems.length} Stok Kritis` : 'Stok Cukup'}
+                  </span>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-slate-800">
+                    {lowStockItems.length}{' '}
+                    <span className="text-xs font-semibold text-slate-500">Item Di Bawah Minimum</span>
+                  </div>
+                  <div className="text-xs font-bold text-rose-800 mt-0.5">
+                    Kebutuhan Belanja: {formatRupiah(totalProcurementBudgetEst)}
+                  </div>
+                </div>
+
+                {/* Sub metrics breakdown */}
+                <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-rose-700 font-semibold flex items-center gap-1">
+                      <Flame size={11} className="text-rose-600" />
+                      Habis Total (0 Qty)
+                    </div>
+                    <div className="font-black text-rose-900 mt-0.5">{outOfStockItems.length} Item</div>
+                    <div className="text-[10px] text-rose-600">Perlu belanja instan</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white border border-slate-100">
+                    <div className="text-[10px] text-slate-600 font-semibold flex items-center gap-1">
+                      <ShoppingCart size={11} className="text-slate-500" />
+                      Rencana Aktif
+                    </div>
+                    <div className="font-black text-slate-800 mt-0.5">{activePlansCount} Usulan</div>
+                    <div className="text-[10px] text-slate-500">Di Procurement Planner</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500">
+                  {outOfStockItems.length > 0 ? `${outOfStockItems.length} barang kosong` : 'Semua item siap'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('procurement_planner')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-rose-900 hover:text-rose-950 hover:underline"
+                >
+                  Rencana Pengadaan <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ─── EXPANDED ACTIONABLE MONITORING FEED (ALERTS & ACTION CARDS) ─── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+          {/* Detailed Pending Maintenance Queue List */}
+          <div className="p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/70 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wrench size={15} className="text-amber-800" />
+                <h4 className="text-xs font-extrabold text-amber-950 uppercase tracking-wider">
+                  Daftar Aset Butuh Servis ({damagedAssetsList.length})
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('pemeliharaan')}
+                className="text-[11px] font-bold text-amber-900 hover:underline flex items-center gap-1"
+              >
+                Input Perbaikan <ChevronRight size={12} />
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+              {damagedAssetsList.length > 0 ? (
+                damagedAssetsList.slice(0, 4).map((ast) => (
+                  <div
+                    key={ast.ID}
+                    onClick={() => onNavigate('pemeliharaan')}
+                    className="p-2 rounded-lg bg-white border border-amber-100 hover:border-amber-300 hover:shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-slate-800 truncate">{ast.NAMA_BARANG}</div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                        <span className="font-mono">{ast.KODE_ASET}</span>
+                        <span>•</span>
+                        <span>{ast.LOKASI}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span
+                        className={`inline-block text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          ast.KONDISI === 'RUSAK RINGAN'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {ast.KONDISI}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600" />
+                  Seluruh sarana prasarana dalam kondisi prima.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Detailed Procurement Warning Feed */}
+          <div className="p-3.5 rounded-xl bg-rose-50/40 border border-rose-200/70 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Flame size={15} className="text-rose-700" />
+                <h4 className="text-xs font-extrabold text-rose-950 uppercase tracking-wider">
+                  Peringatan Dini Stok Kritis ({procurementAlerts.length})
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('procurement_planner')}
+                className="text-[11px] font-bold text-rose-900 hover:underline flex items-center gap-1"
+              >
+                Buat Rencana BOS <ChevronRight size={12} />
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+              {procurementAlerts.length > 0 ? (
+                procurementAlerts.slice(0, 4).map((al) => (
+                  <div
+                    key={al.KODE_BARANG}
+                    onClick={() => onNavigate('procurement_planner')}
+                    className="p-2 rounded-lg bg-white border border-rose-100 hover:border-rose-300 hover:shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-slate-800 truncate">{al.NAMA_BARANG}</div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                        <span>Sisa: <strong className="text-rose-700 font-bold">{al.STOK} {al.JENIS_SATUAN}</strong> (Min: {al.BATAS_MINIMUM})</span>
+                        <span>•</span>
+                        <span className="text-amber-700 font-semibold">Habis dlm ~{al.daysLeft} hari</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-bold text-slate-700 block">
+                        Beli +{al.recommendQty} {al.JENIS_SATUAN}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium">
+                        {formatRupiah(al.subtotalEst)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600" />
+                  Persediaan aman di atas batas minimum.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -317,7 +807,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-2xl font-black text-slate-800 mt-2">{assets.length}</div>
           <div className="flex items-center justify-between mt-1">
             <span className="text-[11px] text-slate-400">
-              {rusakAssets.length > 0 ? `${rusakAssets.length} perlu perbaikan` : 'Semua baik'}
+              {totalBarangRusak > 0 ? `${totalBarangRusak} perlu perbaikan` : 'Semua baik'}
             </span>
             <div className="w-16">
               <Sparkline data={assetSparkline} color="#3b82f6" height={20} />
@@ -429,7 +919,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {totalBarangRusak > 0 && (
             <button
               onClick={() => onNavigate('pemeliharaan')}
-              className="w-full mt-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 transition-colors flex items-center justify-center gap-1.5"
+              className="w-full mt-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold border border-amber-200 transition-colors flex items-center justify-center gap-1.5"
             >
               <Wrench size={13} />
               {totalBarangRusak} aset perlu perbaikan

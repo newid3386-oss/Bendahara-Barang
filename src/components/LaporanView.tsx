@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
-import { FileText, Download, Filter, Calendar, BookOpen, Layers, Box, Check } from 'lucide-react';
+import { FileText, Download, Filter, Calendar, BookOpen, Layers, Box, Check, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { pdfService } from '../services/pdfService';
+import { excelService } from '../services/excelService';
 
 export const LaporanView: React.FC = () => {
   const [reportType, setReportType] = useState<
-    'PERSEDIAAN' | 'PENERIMAAN' | 'PENGELUARAN' | 'ASET_KIR' | 'REKAP_TRIWULAN'
+    'PERSEDIAAN' | 'PENERIMAAN' | 'PENGELUARAN' | 'ASET_KIR' | 'REKAP_TRIWULAN' | 'KIB_INVENTARIS'
   >('PERSEDIAAN');
 
   const [selectedPeriod, setSelectedPeriod] = useState('Bulan Berjalan');
   const [selectedRoom, setSelectedRoom] = useState('Semua Ruangan');
+  const [selectedKib, setSelectedKib] = useState('ALL');
 
+  const config = db.getConfig();
+  const items = db.getItems();
+  const stockMap = db.getStockMap();
   const stockSummary = db.getStockSummary();
   const masukList = db.getBarangMasuk();
   const keluarList = db.getBarangKeluar();
@@ -18,7 +23,7 @@ export const LaporanView: React.FC = () => {
 
   const rooms = Array.from(new Set(assets.map((a) => a.LOKASI).filter(Boolean)));
 
-  const handleDownloadReport = () => {
+  const handleDownloadPDF = () => {
     switch (reportType) {
       case 'PERSEDIAAN':
         pdfService.generateLaporanPersediaan(stockSummary, selectedPeriod);
@@ -32,6 +37,18 @@ export const LaporanView: React.FC = () => {
         pdfService.generateLaporanAset(
           filteredAssets,
           `KARTU INVENTARIS RUANGAN (KIR) - ${selectedRoom.toUpperCase()}`
+        );
+        break;
+      }
+
+      case 'KIB_INVENTARIS': {
+        const filteredAssets =
+          selectedKib === 'ALL'
+            ? assets
+            : assets.filter((a) => a.KIB_KATEGORI === selectedKib || a.KATEGORI === selectedKib);
+        pdfService.generateLaporanAset(
+          filteredAssets,
+          `BUKU INVENTARIS BARANG MILIK DAERAH (${selectedKib === 'ALL' ? 'GOLONGAN KIB A-F' : selectedKib})`
         );
         break;
       }
@@ -55,10 +72,15 @@ export const LaporanView: React.FC = () => {
           footerText: `Total Nilai Penerimaan Barang: Rp ${masukList
             .reduce((sum, m) => sum + m.TOTAL_PENGADAAN, 0)
             .toLocaleString('id-ID')}`,
+          leftSigner: {
+            title: 'Mengetahui, Kepala Sekolah',
+            name: config.HEADMASTER || 'Kepala Sekolah',
+            nip: config.HEADMASTER_NIP || '-',
+          },
           rightSigner: {
             title: 'Pengurus / Pengelola Barang,',
-            name: db.getConfig().TREASURER || 'Pengurus Barang',
-            nip: '',
+            name: config.TREASURER || config.WAREHOUSE_OFFICER || 'Pengurus Barang',
+            nip: config.TREASURER_NIP || config.WAREHOUSE_OFFICER_NIP || '-',
           },
         });
         break;
@@ -80,10 +102,15 @@ export const LaporanView: React.FC = () => {
             k.UNIT_RUANGAN,
           ]),
           footerText: `Total Transaksi Penyaluran Barang: ${keluarList.length} transaksi.`,
+          leftSigner: {
+            title: 'Mengetahui, Kepala Sekolah',
+            name: config.HEADMASTER || 'Kepala Sekolah',
+            nip: config.HEADMASTER_NIP || '-',
+          },
           rightSigner: {
             title: 'Pengurus / Pengelola Barang,',
-            name: db.getConfig().TREASURER || 'Pengurus Barang',
-            nip: '',
+            name: config.TREASURER || config.WAREHOUSE_OFFICER || 'Pengurus Barang',
+            nip: config.TREASURER_NIP || config.WAREHOUSE_OFFICER_NIP || '-',
           },
         });
         break;
@@ -108,15 +135,45 @@ export const LaporanView: React.FC = () => {
             'Laporan mutasi persediaan ini disusun sesuai dengan bukti fisik buku penerimaan, pengeluaran, dan stock opname.',
           leftSigner: {
             title: 'Mengetahui, Kepala Sekolah',
-            name: db.getConfig().HEADMASTER || 'Kepala Sekolah',
-            nip: '',
+            name: config.HEADMASTER || 'Kepala Sekolah',
+            nip: config.HEADMASTER_NIP || '-',
           },
           rightSigner: {
             title: 'Pengurus Barang,',
-            name: db.getConfig().TREASURER || 'Pengurus Barang',
-            nip: '',
+            name: config.TREASURER || config.WAREHOUSE_OFFICER || 'Pengurus Barang',
+            nip: config.TREASURER_NIP || config.WAREHOUSE_OFFICER_NIP || '-',
           },
         });
+        break;
+    }
+  };
+
+  const handleDownloadExcel = () => {
+    switch (reportType) {
+      case 'PERSEDIAAN':
+      case 'REKAP_TRIWULAN':
+        excelService.exportPersediaan(items, stockMap, config, `Laporan_Persediaan_${selectedPeriod.replace(/\s+/g, '_')}`);
+        break;
+
+      case 'PENERIMAAN':
+        excelService.exportBarangMasuk(masukList, config, `Buku_Penerimaan_Pengadaan_${selectedPeriod.replace(/\s+/g, '_')}`);
+        break;
+
+      case 'PENGELUARAN':
+        excelService.exportBarangKeluar(keluarList, config, `Buku_Pengeluaran_SPB_${selectedPeriod.replace(/\s+/g, '_')}`);
+        break;
+
+      case 'ASET_KIR': {
+        const filteredAssets =
+          selectedRoom === 'Semua Ruangan'
+            ? assets
+            : assets.filter((a) => a.LOKASI === selectedRoom);
+        excelService.exportAssets(filteredAssets, config, 'ALL', `KIR_${selectedRoom.replace(/\s+/g, '_')}`);
+        break;
+      }
+
+      case 'KIB_INVENTARIS':
+        excelService.exportAssets(assets, config, selectedKib, `Daftar_Aset_Inventaris_${selectedKib}`);
         break;
     }
   };
@@ -130,7 +187,7 @@ export const LaporanView: React.FC = () => {
           Pusat Laporan & Pertanggungjawaban Barang
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Cetak dokumen resmi pembukuan barang persediaan, mutasi triwulan, buku kas penerimaan/pengeluaran, dan Kartu Inventaris Ruangan (KIR).
+          Cetak dokumen resmi pembukuan barang persediaan, mutasi triwulan, buku kas penerimaan/pengeluaran, KIB, dan Kartu Inventaris Ruangan (KIR).
         </p>
       </div>
 
@@ -159,6 +216,12 @@ export const LaporanView: React.FC = () => {
             id: 'ASET_KIR',
             title: 'Kartu Inventaris Ruangan (KIR)',
             desc: 'Daftar inventaris aset tetap per ruangan / laboratorium.',
+            icon: Box,
+          },
+          {
+            id: 'KIB_INVENTARIS',
+            title: 'Buku Inventaris KIB (A - F)',
+            desc: 'Rekapitulasi aset tetap berdasarkan kelompok KIB dan nilai buku.',
             icon: Box,
           },
           {
@@ -241,15 +304,43 @@ export const LaporanView: React.FC = () => {
               </select>
             </div>
           )}
+
+          {reportType === 'KIB_INVENTARIS' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Golongan KIB</label>
+              <select
+                value={selectedKib}
+                onChange={(e) => setSelectedKib(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-medium focus:outline-emerald-700"
+              >
+                <option value="ALL">Semua Golongan KIB (A - F)</option>
+                <option value="KIB A">KIB A - Tanah</option>
+                <option value="KIB B">KIB B - Peralatan & Mesin</option>
+                <option value="KIB C">KIB C - Gedung & Bangunan</option>
+                <option value="KIB D">KIB D - Jalan, Irigasi & Jaringan</option>
+                <option value="KIB E">KIB E - Aset Tetap Lainnya (Buku/Koleksi)</option>
+                <option value="KIB F">KIB F - Konstruksi Dalam Pengerjaan</option>
+              </select>
+            </div>
+          )}
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-100">
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
           <button
             type="button"
-            onClick={handleDownloadReport}
-            className="px-6 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+            onClick={handleDownloadExcel}
+            className="px-5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2"
+            title="Download lembar kerja format Microsoft Excel (.xlsx)"
           >
-            <Download size={16} /> Unduh / Cetak Dokumen PDF Resmi
+            <FileSpreadsheet size={16} /> Unduh Format Excel (.xlsx)
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPDF}
+            className="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+            title="Download dokumen cetak resmi format PDF lengkap dengan Kop & Tanda Tangan"
+          >
+            <Download size={16} /> Unduh Dokumen PDF Resmi
           </button>
         </div>
       </div>

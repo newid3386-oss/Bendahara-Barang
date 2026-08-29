@@ -12,6 +12,11 @@ import {
   AlertCircle,
   Sparkles,
   QrCode,
+  Globe,
+  LogOut,
+  Shield,
+  School,
+  User as UserIcon,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User, ActivePage } from '../types';
@@ -22,6 +27,8 @@ interface NavbarProps {
   onOpenGoogleSync?: () => void;
   onOpenAIAssistant?: () => void;
   onOpenQRScanner?: () => void;
+  onOpenSchoolWebsite?: () => void;
+  onLogout?: () => void;
   onNavigate?: (page: ActivePage) => void;
   onToggleSidebarMobile?: () => void;
   onToggleSidebar?: () => void;
@@ -34,6 +41,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenGoogleSync,
   onOpenAIAssistant,
   onOpenQRScanner,
+  onOpenSchoolWebsite,
+  onLogout,
   onNavigate,
   onToggleSidebarMobile,
   onToggleSidebar,
@@ -41,7 +50,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const config = db.getConfig();
   const activeUser = db.getActiveUser();
-  const users = db.getUsers();
   const notifications = db.getNotifications().filter((n) => n.STATUS === 'UNREAD');
 
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -167,12 +175,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const handleSwitchUser = (user: User) => {
-    db.setActiveUser(user);
-    setShowUserMenu(false);
-    window.location.reload();
-  };
-
   const handleMarkNotifRead = (id: string, module?: string) => {
     db.markNotificationRead(id);
     if (module && module !== 'GENERAL' && typeof onNavigate === 'function') {
@@ -242,6 +244,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <QrCode size={15} className="text-emerald-700" />
           <span className="hidden sm:inline">Scan QR</span>
+        </button>
+
+        {/* School Website Portal Button */}
+        <button
+          type="button"
+          onClick={() => onOpenSchoolWebsite && onOpenSchoolWebsite()}
+          className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-emerald-900 border border-slate-300 shadow-2xs"
+          title="Buka Website Resmi SDN Tangerang 6"
+        >
+          <School size={15} className="text-emerald-700" />
+          <span>Website Sekolah</span>
         </button>
 
         {/* Gemini AI Assistant Button */}
@@ -326,7 +339,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* User Account Switcher */}
+        {/* User Account Profile & Logout Menu */}
         <div className="relative">
           <button
             type="button"
@@ -348,33 +361,68 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="px-3 py-2 border-b border-slate-100">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Ganti Peran / Pengguna
-                </span>
+            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white shadow-2xl border border-slate-200 p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-3">
+              {/* Profile Card Header */}
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                  {activeUser.NAMA.charAt(0)}
+                </div>
+                <div className="overflow-hidden">
+                  <div className="text-xs font-bold text-slate-900 truncate">
+                    {activeUser.NAMA}
+                  </div>
+                  <div className="text-[11px] font-semibold text-emerald-800 truncate">
+                    {activeUser.JABATAN || activeUser.ROLE}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                    {activeUser.NIP ? `NIP: ${activeUser.NIP}` : 'Pegawai'}
+                  </div>
+                </div>
               </div>
-              <div className="py-1 space-y-1">
-                {users.map((u) => (
-                  <button
-                    key={u.ID}
-                    type="button"
-                    onClick={() => handleSwitchUser(u)}
-                    className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs transition-colors ${
-                      u.ID === activeUser.ID
-                        ? 'bg-emerald-50 text-emerald-900 font-bold'
-                        : 'hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div>
-                      <div>{u.NAMA}</div>
-                      <div className="text-[10px] text-slate-400 font-normal">
-                        {u.ROLE} • {u.NIP || 'No NIP'}
-                      </div>
-                    </div>
-                    {u.ID === activeUser.ID && <Check size={14} className="text-emerald-700" />}
-                  </button>
-                ))}
+
+              {/* Action Links */}
+              <div className="space-y-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    if (onOpenSchoolWebsite) onOpenSchoolWebsite();
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-slate-100 text-slate-700 text-left font-medium transition-colors"
+                >
+                  <School size={15} className="text-emerald-700" />
+                  <span>Kunjungi Website Sekolah (SDN 6)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    if (onNavigate) onNavigate('pegawai');
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-slate-100 text-slate-700 text-left font-medium transition-colors"
+                >
+                  <UserIcon size={15} className="text-slate-500" />
+                  <span>Kelola Akun Pegawai</span>
+                </button>
+
+                <div className="border-t border-slate-100 my-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    if (onLogout) {
+                      onLogout();
+                    } else if (onOpenSchoolWebsite) {
+                      onOpenSchoolWebsite();
+                    }
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-rose-50 text-rose-700 text-left font-bold transition-colors"
+                >
+                  <LogOut size={15} className="text-rose-600" />
+                  <span>Keluar / Ke Website Utama</span>
+                </button>
               </div>
             </div>
           )}

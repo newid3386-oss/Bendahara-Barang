@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Plus, Minus, Check, ShoppingBag, Search, Sparkles } from 'lucide-react';
+import { ClipboardList, Plus, Minus, Check, ShoppingBag, Search, Sparkles, Printer, Download } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { Item, User } from '../types';
 import { SignaturePad } from './SignaturePad';
 import { SearchableEmployeePicker } from './SearchableEmployeePicker';
+import { pdfService } from '../services/pdfService';
 
 export const PengambilanATKView: React.FC = () => {
   const [items, setItems] = useState<Item[]>(db.getItems());
@@ -32,6 +33,15 @@ export const PengambilanATKView: React.FC = () => {
   const [tujuan, setTujuan] = useState('Keperluan KBM / Administrasi Kelas');
   const [parafLink, setParafLink] = useState('');
   const [submittedDoc, setSubmittedDoc] = useState<string | null>(null);
+  const [submittedDetails, setSubmittedDetails] = useState<{
+    docNo: string;
+    penerima: string;
+    nip: string;
+    unit: string;
+    tujuan: string;
+    items: { KODE_BARANG: string; NAMA_BARANG: string; JUMLAH: number; JENIS_SATUAN: string }[];
+    paraf: string;
+  } | null>(null);
 
   const atkItems = items.filter(
     (i) =>
@@ -103,11 +113,52 @@ export const PengambilanATKView: React.FC = () => {
       });
 
       setSubmittedDoc(res.docNo);
+      setSubmittedDetails({
+        docNo: res.docNo,
+        penerima: penerimaNama,
+        nip: penerimaNip,
+        unit: unitRuangan || 'Ruang Guru / Kelas',
+        tujuan,
+        items: cartItems,
+        paraf: parafLink,
+      });
       setCart({});
       setParafLink('');
     } catch (err) {
       alert((err as Error).message);
     }
+  };
+
+  const handlePrintSPB = () => {
+    if (!submittedDetails) return;
+    const config = db.getConfig();
+    pdfService.generateBeritaAcara({
+      title: 'SURAT PENYERAHAN BARANG (SPB) / BUKTI PENGAMBILAN ATK',
+      docNo: submittedDetails.docNo,
+      description: `Telah diserahkan perlengkapan bahan ajar / administrasi kantor kepada tenaga pendidik / kependidikan dengan rincian sebagai berikut:`,
+      tableHeaders: ['No', 'Kode Barang', 'Nama Barang ATK', 'Jumlah', 'Satuan'],
+      tableRows: submittedDetails.items.map((it, idx) => [
+        idx + 1,
+        it.KODE_BARANG,
+        it.NAMA_BARANG,
+        it.JUMLAH,
+        it.JENIS_SATUAN,
+      ]),
+      footerText: `Tujuan Penggunaan: ${submittedDetails.tujuan}\nUnit / Ruangan: ${submittedDetails.unit}\nBarang telah diterima dalam kondisi baik dan langsung dipergunakan untuk kegiatan sekolah.`,
+      leftSigner: {
+        title: 'Petugas Pengelola Barang,',
+        name: config.TREASURER || config.WAREHOUSE_OFFICER || 'Pengurus Barang',
+        nip: config.TREASURER_NIP || config.WAREHOUSE_OFFICER_NIP || '-',
+      },
+      rightSigner: {
+        title: 'Penerima Barang / Guru,',
+        name: submittedDetails.penerima,
+        nip: submittedDetails.nip || '-',
+      },
+      signatures: {
+        rightSignatureImage: submittedDetails.paraf,
+      },
+    });
   };
 
   return (
@@ -124,20 +175,32 @@ export const PengambilanATKView: React.FC = () => {
       </div>
 
       {submittedDoc && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between animate-in fade-in">
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
           <div>
             <h4 className="font-bold text-xs">Pengambilan ATK Berhasil Dicatat!</h4>
             <p className="text-xs text-emerald-800">
               No. Bukti Dokumen: <strong className="font-mono">{submittedDoc}</strong>. Stok gudang telah dipotong otomatis.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setSubmittedDoc(null)}
-            className="px-3 py-1.5 rounded-lg bg-emerald-800 text-white text-xs font-bold"
-          >
-            Buat Lagi
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrintSPB}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+            >
+              <Printer size={14} /> Cetak Bukti SPB (PDF)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSubmittedDoc(null);
+                setSubmittedDetails(null);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition-colors"
+            >
+              Transaksi Baru
+            </button>
+          </div>
         </div>
       )}
 

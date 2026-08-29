@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Search, AlertTriangle, Download, RefreshCw, Filter } from 'lucide-react';
+import { Layers, Search, AlertTriangle, Download, RefreshCw, Filter, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { StockSummary } from '../types';
 import { pdfService } from '../services/pdfService';
+import { excelService } from '../services/excelService';
 
 export const PersediaanView: React.FC = () => {
   const [stockList, setStockList] = useState<StockSummary[]>(db.getStockSummary());
@@ -23,6 +24,13 @@ export const PersediaanView: React.FC = () => {
 
   const handleExportPDF = () => {
     pdfService.generateLaporanPersediaan(stockList, 'Bulan Berjalan');
+  };
+
+  const handleExportExcel = () => {
+    const items = db.getItems();
+    const stockMap = db.getStockMap();
+    const config = db.getConfig();
+    excelService.exportPersediaan(items, stockMap, config);
   };
 
   const filtered = stockList.filter((s) => {
@@ -52,7 +60,7 @@ export const PersediaanView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={refreshData}
@@ -60,6 +68,14 @@ export const PersediaanView: React.FC = () => {
             title="Rekonsiliasi & Hitung Ulang Saldo"
           >
             <RefreshCw size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+            title="Ekspor ke format Excel"
+          >
+            <FileSpreadsheet size={15} /> Excel (.xlsx)
           </button>
           <button
             type="button"
