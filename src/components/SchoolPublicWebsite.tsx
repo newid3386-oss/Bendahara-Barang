@@ -35,14 +35,19 @@ import {
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User, Asset, Item } from '../types';
+import { LoginSelectionModal } from './LoginSelectionModal';
 
 interface SchoolPublicWebsiteProps {
   onEnterApp: (user?: User) => void;
+  onEnterClassroom: () => void;
+  onEnterAdmin: () => void;
   initialLoginOpen?: boolean;
 }
 
 export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
   onEnterApp,
+  onEnterClassroom,
+  onEnterAdmin,
   initialLoginOpen = false,
 }) => {
   const config = db.getConfig();
@@ -53,14 +58,6 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
 
   const [activeNav, setActiveNav] = useState<'beranda' | 'profil' | 'sarpras' | 'verifikasi' | 'berita' | 'kontak'>('beranda');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialLoginOpen);
-
-  // Login form states
-  const [selectedUserForLogin, setSelectedUserForLogin] = useState<User>(users[3] || users[0]);
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginRoleFilter, setLoginRoleFilter] = useState<'ALL' | 'KEPALA SEKOLAH' | 'BENDAHARA' | 'OPERATOR' | 'GURU'>('ALL');
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Public QR Verification Search
   const [verificationInput, setVerificationInput] = useState('');
@@ -79,51 +76,6 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
   const totalPersediaanCount = items.length;
   const goodAssetsCount = assets.filter((a) => a.KONDISI === 'BAIK').length;
   const totalTeachers = users.length;
-
-  const handleQuickLogin = (user: User) => {
-    setIsLoggingIn(true);
-    setLoginError(null);
-    setTimeout(() => {
-      db.setActiveUser(user);
-      db.logAudit('LOGIN', 'AUTH_PORTAL', user.NIP || user.NAMA, {
-        method: 'QUICK_OFFICIAL_LOGIN',
-        role: user.ROLE,
-      });
-      setIsLoggingIn(false);
-      setIsLoginModalOpen(false);
-      onEnterApp(user);
-    }, 400);
-  };
-
-  const handleManualLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-
-    const identifier = loginUsername.trim().toLowerCase();
-    const found = users.find(
-      (u) =>
-        (u.NIP && u.NIP.replace(/\s+/g, '') === identifier.replace(/\s+/g, '')) ||
-        (u.EMAIL && u.EMAIL.toLowerCase() === identifier) ||
-        u.NAMA.toLowerCase().includes(identifier)
-    );
-
-    if (!found) {
-      setLoginError('NIP, Email, atau Nama Pengguna tidak terdaftar pada basis data resmi sekolah.');
-      return;
-    }
-
-    setIsLoggingIn(true);
-    setTimeout(() => {
-      db.setActiveUser(found);
-      db.logAudit('LOGIN', 'AUTH_PORTAL', found.NIP || found.NAMA, {
-        method: 'MANUAL_FORM_LOGIN',
-        role: found.ROLE,
-      });
-      setIsLoggingIn(false);
-      setIsLoginModalOpen(false);
-      onEnterApp(found);
-    }, 450);
-  };
 
   const handleVerifyCode = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -191,7 +143,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
               className="flex items-center gap-1 font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               <Lock size={12} />
-              <span>Portal SIPERSEDA</span>
+              <span>LOGIN</span>
             </button>
           </div>
         </div>
@@ -270,14 +222,14 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             </button>
           </nav>
 
-          {/* Primary Action: Portal SIPERSEDA Login */}
+          {/* Primary Action: LOGIN portal selector */}
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setIsLoginModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-900 hover:to-teal-900 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-2 group"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-900 hover:to-teal-900 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-2 group"
             >
               <LogIn size={15} className="group-hover:translate-x-0.5 transition-transform" />
-              <span>Masuk SIPERSEDA</span>
+              <span>LOGIN</span>
             </button>
           </div>
         </div>
@@ -364,7 +316,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                       className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-900/40 transition-all flex items-center gap-2"
                     >
                       <LogIn size={16} />
-                      <span>Masuk Portal SIPERSEDA</span>
+                      <span>LOGIN</span>
                     </button>
                     <button
                       onClick={() => setActiveNav('sarpras')}
@@ -963,7 +915,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                   className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2"
                 >
                   <LogIn size={15} />
-                  <span>Buka Form Login SIPERSEDA</span>
+                  <span>LOGIN</span>
                 </button>
               </div>
             </div>
@@ -1017,147 +969,23 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
         </div>
       </footer>
 
-      {/* LOGIN PORTAL MODAL */}
+      {/* LOGIN SELECTION MODAL — SIPERSEDA / Classroom / Admin */}
       {isLoginModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative animate-in zoom-in-95 duration-150">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white p-6 relative">
-              <button
-                type="button"
-                onClick={() => setIsLoginModalOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-600/30 border border-emerald-400 text-emerald-300 flex items-center justify-center">
-                  <Lock size={22} />
-                </div>
-                <div>
-                  <div className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
-                    Autentikasi Satuan Pendidikan
-                  </div>
-                  <h3 className="text-lg font-black text-white">Portal Masuk SIPERSEDA</h3>
-                  <div className="text-[11px] text-slate-300">
-                    UPT Satuan Pendidikan SD Negeri Tangerang 6
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Content Tabs */}
-            <div className="p-6 space-y-6">
-              {loginError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
-                  {loginError}
-                </div>
-              )}
-
-              {/* Quick Role / User Account Selection (Dinas Mode) */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <UserCheck size={15} className="text-emerald-700" />
-                    <span>Pilih Akun Dinas Resmi (Akses Cepat)</span>
-                  </label>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                    Terverifikasi
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
-                  {users.map((u) => (
-                    <button
-                      key={u.ID}
-                      type="button"
-                      onClick={() => handleQuickLogin(u)}
-                      disabled={isLoggingIn}
-                      className="p-3 rounded-2xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/50 text-left transition-all flex items-center justify-between group shadow-2xs"
-                    >
-                      <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                          {u.NAMA.charAt(0)}
-                        </div>
-                        <div className="overflow-hidden">
-                          <div className="text-xs font-bold text-slate-800 group-hover:text-emerald-900 truncate">
-                            {u.NAMA}
-                          </div>
-                          <div className="text-[10px] text-slate-500 truncate">
-                            {u.JABATAN || u.ROLE}
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={14} className="text-slate-400 group-hover:text-emerald-700 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Manual Form Divider */}
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-200" />
-                <span className="shrink mx-3 text-[11px] font-bold text-slate-400 uppercase">
-                  Atau Masuk dengan Kredensial
-                </span>
-                <div className="flex-grow border-t border-slate-200" />
-              </div>
-
-              {/* Manual Login Form */}
-              <form onSubmit={handleManualLogin} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    NIP / Email / Nama Pengguna
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: 198406192009022007 atau nama guru..."
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-emerald-700"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    PIN / Kata Sandi (Opsional untuk Akun Resmi)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Masukkan PIN keamanan..."
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-emerald-700 font-mono"
-                  />
-                </div>
-
-                <div className="pt-2 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setIsLoginModalOpen(false)}
-                    className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoggingIn}
-                    className="px-6 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5"
-                  >
-                    {isLoggingIn ? (
-                      <span>Memverifikasi...</span>
-                    ) : (
-                      <>
-                        <LogIn size={14} />
-                        <span>Masuk ke SIPERSEDA</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
+        <LoginSelectionModal
+          onClose={() => setIsLoginModalOpen(false)}
+          onEnterSiperseda={(user) => {
+            setIsLoginModalOpen(false);
+            onEnterApp(user);
+          }}
+          onEnterClassroom={() => {
+            setIsLoginModalOpen(false);
+            onEnterClassroom();
+          }}
+          onEnterAdmin={() => {
+            setIsLoginModalOpen(false);
+            onEnterAdmin();
+          }}
+        />
       )}
     </div>
   );
