@@ -31,11 +31,15 @@ import { AIAssistantModal } from './components/AIAssistantModal';
 import { QRScannerModal } from './components/QRScannerModal';
 import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
 import { QRStickerModal } from './components/QRStickerModal';
+import { ClassroomApp } from './components/ClassroomApp';
+import { AdminPanel } from './components/AdminPanel';
+import { accountService } from './services/accountService';
+import { classroomService } from './services/classroomService';
 import { db } from './services/localStorageService';
 import { Asset, ActivePage, User } from './types';
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<'app' | 'website'>('app');
+  const [viewMode, setViewMode] = useState<'app' | 'website' | 'classroom' | 'admin'>('website');
   const [activePage, setActivePage] = useState<ActivePage>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -98,6 +102,12 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Initialize Classroom & Admin account stores on first load
+  useEffect(() => {
+    accountService.initAccounts();
+    classroomService.initClassroom();
   }, []);
 
   const handleOpenAssetInApp = (assetCode: string) => {
@@ -194,6 +204,16 @@ export default function App() {
     }
   };
 
+  // Classroom module — separate from SIPERSEDA
+  if (viewMode === 'classroom') {
+    return <ClassroomApp onLogout={() => setViewMode('website')} />;
+  }
+
+  // Admin management panel
+  if (viewMode === 'admin') {
+    return <AdminPanel onLogout={() => setViewMode('website')} />;
+  }
+
   // If currently in Public Website mode, display the official school portal
   if (viewMode === 'website') {
     return (
@@ -203,6 +223,8 @@ export default function App() {
             if (user) db.setActiveUser(user);
             setViewMode('app');
           }}
+          onEnterClassroom={() => setViewMode('classroom')}
+          onEnterAdmin={() => setViewMode('admin')}
         />
 
         {/* Global Modals accessible if opened from website actions */}
