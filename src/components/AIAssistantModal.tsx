@@ -42,15 +42,15 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
     {
       id: 'welcome',
       sender: 'ai',
-      text: `Halo! Saya **Asisten AI Pengelola Barang & Inventaris SD Negeri Tangerang 6** didukung Google Gemini.
+      text: `Halo! Saya **AI SIPERDSEDA - Asisten Pengelola Persediaan & Aset Cerdas SD Negeri Tangerang 6** didukung Google Gemini.
 
 Saya dapat membantu Anda dalam:
-- 📄 **Penyusunan Berita Acara (BAST, BAPB, SPB, BA Penghapusan)** dengan konsiderans hukum baku.
-- 📦 **Analisis Stok Kritis & Perencanaan Belanja ARKAS / BOS**.
-- ⚖️ **Konsultasi Regulasi Aset Milik Daerah (Permendagri 19/2016)**.
-- 🔍 **Deteksi Anomali & Rekonsiliasi Buku Kas Umum (BKU)**.
+- 📄 **Penyusunan Berita Acara Resmi (BAST, BAPB, BAP, BA Penghapusan)** dengan konsiderans regulasi baku.
+- 📦 **Analisis Stok Kritis, Burn Rate & Rekomendasi Belanja ARKAS / BOS**.
+- ⚖️ **Konsultasi Regulasi Barang Milik Daerah (Permendagri No. 19/2016)**.
+- 🔍 **Deteksi Anomali Saldo, Rekonsiliasi BKU, dan Pencatatan KIR Ruangan**.
 
-Ada yang bisa saya bantu hari ini?`,
+Ada kebutuhan analisis persediaan atau draf dokumen yang ingin dibantu?`,
       timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       suggestedActions: [
         'Bantu buat draf BAST Pengadaan BOS',
@@ -113,6 +113,7 @@ Ada yang bisa saya bantu hari ini?`,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: messageToSend,
+          assistantType: 'SIPERDSEDA',
           contextData,
           conversationHistory: historyPayload,
         }),

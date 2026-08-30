@@ -27,6 +27,7 @@ import { DepresiasiAsetView } from './components/DepresiasiAsetView';
 import { MultiSchoolConsolidationView } from './components/MultiSchoolConsolidationView';
 import { UniversalSearchModal } from './components/UniversalSearchModal';
 import { GoogleSheetsIntegrationModal } from './components/GoogleSheetsIntegrationModal';
+import { FirebaseCloudSyncModal } from './components/FirebaseCloudSyncModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
 import { QRScannerModal } from './components/QRScannerModal';
 import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
@@ -44,6 +45,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -253,6 +255,7 @@ export default function App() {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenGoogleSync={() => setIsGoogleModalOpen(true)}
         onOpenSheetsModal={() => setIsGoogleModalOpen(true)}
+        onOpenFirebaseSync={() => setIsFirebaseModalOpen(true)}
         onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
         onOpenQRScanner={() => setIsQRScannerOpen(true)}
         onOpenSchoolWebsite={() => setViewMode('website')}
@@ -296,6 +299,12 @@ export default function App() {
       <GoogleSheetsIntegrationModal
         isOpen={isGoogleModalOpen}
         onClose={() => setIsGoogleModalOpen(false)}
+      />
+
+      {/* Global Firebase Firestore Cloud Sync Modal */}
+      <FirebaseCloudSyncModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
       />
 
       {/* Global Gemini AI Assistant Modal */}

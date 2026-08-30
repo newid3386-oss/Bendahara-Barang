@@ -1071,6 +1071,181 @@ export class PdfService {
     doc.save(`Laporan_Inventaris_${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
+  public generateConsolidatedTeacherReportsPdf(
+    reports: any[],
+    kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+    kepsekNip: string = '198406192009022007'
+  ): void {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const config = db.getConfig();
+
+    // 1. Kop Surat
+    this.addKopSurat(doc, pageWidth, {
+      show: true,
+      line1: 'PEMERINTAH KOTA TANGERANG',
+      line2: 'DINAS PENDIDIKAN',
+      line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
+      line4: `${config.SCHOOL_ADDRESS || 'Jl. Perintis Kemerdekaan No. 6 Babakan'} • NPSN: ${config.SCHOOL_NPSN || '20606016'}`,
+    });
+
+    let currentY = 48;
+
+    // 2. Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text('REKAPITULASI LAPORAN PEMBELAJARAN & KINERJA GURU', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      `Konsolidasi Laporan Pembelajaran Semester / Bulanan • Dicetak pada: ${new Date().toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })}`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+
+    currentY += 8;
+
+    // Summary Statistics Box
+    const totalReports = reports.length;
+    const gradedReports = reports.filter((r) => r.STATUS === 'DINILAI');
+    const avgScore =
+      gradedReports.length > 0
+        ? Math.round(gradedReports.reduce((acc, r) => acc + (r.NILAI || 0), 0) / gradedReports.length)
+        : '-';
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, currentY, pageWidth - 28, 14, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`Total Laporan: ${totalReports}`, 20, currentY + 9);
+    doc.text(`Laporan Dinilai: ${gradedReports.length}`, 75, currentY + 9);
+    doc.text(`Rata-rata Nilai: ${avgScore}`, 135, currentY + 9);
+
+    currentY += 18;
+
+    // Table 1: Summary Table of all reports
+    const tableRows = reports.map((r, idx) => [
+      idx + 1,
+      r.GURU_NAMA || '-',
+      r.JUDUL || '-',
+      r.KATEGORI || 'Bulanan',
+      r.PERIODE || '-',
+      r.STATUS || 'DRAFT',
+      r.NILAI ? `${r.NILAI}/100` : 'Belum Dinilai',
+      r.FEEDBACK ? (r.FEEDBACK.length > 40 ? r.FEEDBACK.slice(0, 40) + '...' : r.FEEDBACK) : '-',
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['No', 'Nama Guru', 'Judul Laporan', 'Kategori', 'Periode', 'Status', 'Nilai', 'Catatan Kepsek']],
+      body: tableRows.length > 0 ? tableRows : [['-', '-', 'Belum ada data laporan guru', '-', '-', '-', '-', '-']],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 58, 138], // Navy tone for academic management
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 8 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 42 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 16, halign: 'center' },
+        5: { cellWidth: 18, halign: 'center' },
+        6: { cellWidth: 16, halign: 'center' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-expect-error autoTable adds lastAutoTable
+    let nextY = doc.lastAutoTable.finalY + 10;
+
+    // Section 2: Detailed report narratives
+    if (nextY > 230) {
+      doc.addPage();
+      nextY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('RINCIAN & CATATAN KEMAJUAN KELAS MASING-MASING GURU:', 14, nextY);
+    nextY += 6;
+
+    reports.forEach((r, idx) => {
+      if (nextY > 240) {
+        doc.addPage();
+        nextY = 20;
+      }
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(14, nextY, pageWidth - 28, 22, 1.5, 1.5, 'S');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 58, 138);
+      doc.text(`${idx + 1}. ${r.JUDUL} (${r.GURU_NAMA} • ${r.PERIODE})`, 18, nextY + 5.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      const splitText = doc.splitTextToSize(r.ISI || 'Tidak ada deskripsi rincian.', pageWidth - 36);
+      doc.text(splitText.slice(0, 3), 18, nextY + 10.5);
+
+      if (r.FEEDBACK) {
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Catatan Evaluasi Kepsek: "${r.FEEDBACK}" (Nilai: ${r.NILAI || '-'})`, 18, nextY + 18.5);
+      }
+
+      nextY += 26;
+    });
+
+    // Signature section
+    if (nextY > 230) {
+      doc.addPage();
+      nextY = 20;
+    } else {
+      nextY += 6;
+    }
+
+    const sigX = pageWidth - 70;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Tangerang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, sigX, nextY);
+    nextY += 4.5;
+    doc.text('Mengetahui / Mengesahkan,', sigX, nextY);
+    nextY += 4.5;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Kepala UPT SDN Tangerang 6', sigX, nextY);
+    nextY += 22;
+    doc.text(kepsekName, sigX, nextY);
+    nextY += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`NIP. ${kepsekNip}`, sigX, nextY);
+
+    doc.save(`Rekap_Laporan_Guru_SDN_Tangerang_6_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   public generateKartuStok(kodeBarang: string): void {
     this.generateKartuStokPDF(kodeBarang);
   }

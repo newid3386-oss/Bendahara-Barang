@@ -36,6 +36,7 @@ import {
 import { db } from '../services/localStorageService';
 import { User, Asset, Item } from '../types';
 import { LoginSelectionModal } from './LoginSelectionModal';
+import { SchoolWebsiteAIAssistantModal } from './SchoolWebsiteAIAssistantModal';
 
 interface SchoolPublicWebsiteProps {
   onEnterApp: (user?: User) => void;
@@ -58,6 +59,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
 
   const [activeNav, setActiveNav] = useState<'beranda' | 'profil' | 'sarpras' | 'verifikasi' | 'berita' | 'kontak'>('beranda');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialLoginOpen);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   // Public QR Verification Search
   const [verificationInput, setVerificationInput] = useState('');
@@ -222,8 +224,16 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             </button>
           </nav>
 
-          {/* Primary Action: LOGIN portal selector */}
-          <div className="flex items-center gap-2.5">
+          {/* Primary Action: AI Website & LOGIN portal selector */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <button
+              onClick={() => setIsAIModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300/80 font-extrabold text-xs transition-all flex items-center gap-1.5 shadow-xs"
+              title="Tanya AI Informasi PPDB & Sekolah"
+            >
+              <Sparkles size={14} className="text-amber-500 animate-pulse" />
+              <span className="hidden sm:inline">Tanya AI</span>
+            </button>
             <button
               onClick={() => setIsLoginModalOpen(true)}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-900 hover:to-teal-900 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-2 group"
@@ -968,6 +978,31 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           © {new Date().getFullYear()} UPT Satuan Pendidikan SDN Tangerang 6. Hak Cipta Dilindungi Undang-Undang.
         </div>
       </footer>
+
+      {/* Floating AI Information Chatbot Button */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => setIsAIModalOpen(true)}
+          className="group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white rounded-full shadow-2xl hover:shadow-emerald-900/40 border border-emerald-400/40 hover:scale-105 transition-all active:scale-95"
+          title="Tanya Asisten AI Informasi Sekolah"
+        >
+          <div className="relative">
+            <Sparkles size={20} className="text-amber-300 animate-pulse" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full"></span>
+          </div>
+          <div className="text-left hidden sm:block">
+            <div className="text-[10px] uppercase font-extrabold text-emerald-200 tracking-wider">AI Layanan Informasi</div>
+            <div className="text-xs font-black">Tanya SDN 6</div>
+          </div>
+        </button>
+      </div>
+
+      {/* AI WEBSITE ASSISTANT MODAL */}
+      <SchoolWebsiteAIAssistantModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+      />
 
       {/* LOGIN SELECTION MODAL — SIPERSEDA / Classroom / Admin */}
       {isLoginModalOpen && (

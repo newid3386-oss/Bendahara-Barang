@@ -121,8 +121,14 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
   const renderCredentialForm = (sistem: SystemType, accent: string) => {
     const demoHints =
       sistem === 'CLASSROOM'
-        ? ['kepsek / kepala123', 'nurul / guru123', 'aisyah / siswa123']
-        : ['admin / admin123'];
+        ? [
+            { label: 'Guru Baru (Uji Kunci Kelas 1x)', val: 'gurubaru / guru123' },
+            { label: 'Guru Kls 1 (Terkunci)', val: 'nurul / guru123' },
+            { label: 'Guru Kls 3 (Terkunci)', val: 'fauzi / guru123' },
+            { label: 'Siswa Kls 1', val: 'aisyah / siswa123' },
+            { label: 'Kepsek', val: 'kepsek / kepala123' },
+          ]
+        : [{ label: 'Super Admin', val: 'admin / admin123' }];
     return (
       <form onSubmit={handleCredentialLogin(sistem)} className="space-y-3">
         {formError && (
@@ -178,11 +184,22 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
           </button>
         </div>
         <div className="pt-2 border-t border-slate-100">
-          <p className="text-[10px] text-slate-400 font-semibold mb-1">Akun Demo:</p>
+          <p className="text-[10px] text-slate-400 font-semibold mb-1">Pilih Cepat Akun Demo (Klik untuk mengisi):</p>
           <div className="flex flex-wrap gap-1">
-            {demoHints.map((h) => (
-              <span key={h} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">{h}</span>
-            ))}
+            {demoHints.map((h) => {
+              const [u, p] = h.val.split(' / ');
+              return (
+                <button
+                  type="button"
+                  key={h.val}
+                  onClick={() => { setUsername(u); setPassword(p); }}
+                  className="text-[10px] bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 px-2 py-0.5 rounded font-mono transition-colors"
+                  title="Klik untuk mengisi formulir"
+                >
+                  <strong className="font-sans font-bold text-slate-900">{h.label}:</strong> {h.val}
+                </button>
+              );
+            })}
           </div>
         </div>
       </form>

@@ -17,14 +17,17 @@ import {
   Shield,
   School,
   User as UserIcon,
+  Cloud,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
+import { firebaseService, FirebaseSyncStatus } from '../services/firebaseService';
 import { User, ActivePage } from '../types';
 
 interface NavbarProps {
   onOpenSearch?: () => void;
   onOpenSheetsModal?: () => void;
   onOpenGoogleSync?: () => void;
+  onOpenFirebaseSync?: () => void;
   onOpenAIAssistant?: () => void;
   onOpenQRScanner?: () => void;
   onOpenSchoolWebsite?: () => void;
@@ -39,6 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenSheetsModal,
   onOpenGoogleSync,
+  onOpenFirebaseSync,
   onOpenAIAssistant,
   onOpenQRScanner,
   onOpenSchoolWebsite,
@@ -266,6 +270,18 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Sparkles size={15} className="text-emerald-300" />
           <span className="hidden sm:inline">Asisten AI</span>
+        </button>
+
+        {/* Firebase Firestore Cloud Sync Button */}
+        <button
+          type="button"
+          onClick={() => onOpenFirebaseSync && onOpenFirebaseSync()}
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300 shadow-2xs"
+          title="Sinkronisasi Database Cloud Firebase Terpusat"
+        >
+          <Cloud size={15} className="text-blue-700" />
+          <span className="hidden md:inline font-semibold">Cloud Sync</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Realtime Live"></span>
         </button>
 
         {/* Dynamic Google Sheets Connection Status Indicator */}

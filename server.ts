@@ -438,32 +438,133 @@ Tugas Analisis:
   }
 });
 
-// Endpoint: AI Inventory Assistant & Berita Acara Auto-Drafter
+// Endpoint: AI Multi-Persona Assistant (Website, SIPERDSEDA, Classroom Siswa, Guru, Kepsek)
 app.post('/api/ai/assistant', async (req, res) => {
-  const { message, contextData, conversationHistory = [] } = req.body;
+  const {
+    message,
+    assistantType = 'SIPERDSEDA', // 'WEBSITE' | 'SIPERDSEDA' | 'CLASSROOM_SISWA' | 'CLASSROOM_GURU' | 'CLASSROOM_KEPSEK'
+    userRole,
+    userName,
+    userClass,
+    contextData,
+    conversationHistory = [],
+  } = req.body;
 
   if (!message) {
     return res.status(400).json({ success: false, error: 'Pesan / pertanyaan diperlukan.' });
   }
 
-  const getHeuristicReply = (userQ: string) => {
-    const lower = userQ.toLowerCase();
-    if (lower.includes('bast') || lower.includes('berita acara')) {
+  // Smart heuristic responses tailored for each persona
+  const getHeuristicReply = (type: string, userQ: string) => {
+    const q = userQ.toLowerCase();
+
+    if (type === 'WEBSITE') {
+      if (q.includes('ppdb') || q.includes('daftar') || q.includes('syarat') || q.includes('masuk')) {
+        return `Informasi PPDB SD Negeri Tangerang 6:
+- **Jalur Pendaftaran**: Jalur Zonasi (prioritas domisili terdekat), Jalur Afirmasi (KIP/KKS), dan Jalur Perpindahan Tugas Orang Tua.
+- **Persyaratan Berkas**: Akta Kelahiran asli, Kartu Keluarga (KK Kota Tangerang), KTP Orang Tua, dan Ijazah TK/PAUD (jika ada).
+- **Usia Minimal**: 6 tahun pada bulan Juli tahun ajaran berjalan (prioritas usia 7 tahun ke atas).
+- Pendaftaran dapat dipantau langsung melalui portal resmi Dinas Pendidikan Kota Tangerang atau sekretariat PPDB di sekolah.`;
+      }
+      if (q.includes('visi') || q.includes('misi') || q.includes('profil') || q.includes('kepala')) {
+        return `**SD Negeri Tangerang 6**
+- **Alamat**: Jl. Perintis Kemerdekaan No. 6, Babakan, Kec. Tangerang, Kota Tangerang.
+- **Akreditasi**: A (Unggul).
+- **Visi**: "Mewujudkan peserta didik yang beriman, berakhlak mulia, cerdas, berprestasi, dan berwawasan lingkungan."
+- **Kurikulum**: Kurikulum Merdeka Terintegrasi Penguatan Profil Pelajar Pancasila (P5) dan Sekolah Ramah Anak.`;
+      }
+      if (q.includes('ekskul') || q.includes('kegiatan') || q.includes('pramuka')) {
+        return `Kegiatan Ekstrakurikuler di SDN Tangerang 6 meliputi:
+1. **Pramuka Siaga & Penggalang** (Wajib)
+2. **Seni Tari Tradisional & Modern**
+3. **Pencak Silat & Olahraga Futsal**
+4. **Klub Sains & Matematika Cilik**
+5. **Paduan Suara & Musik Angklung**
+6. **Dokter Kecil (UKS) & Pojok Literasi**`;
+      }
+      return `Halo! Selamat datang di Portal Resmi SD Negeri Tangerang 6.
+Saya adalah **AI Asisten Informasi Sekolah**. Anda dapat menanyakan informasi seputar PPDB, profil sekolah, fasilitas sarana prasarana, kegiatan ekstrakurikuler, kalender akademik, dan tata tertib sekolah. Silakan tanyakan hal yang ingin Anda ketahui!`;
+    }
+
+    if (type === 'CLASSROOM_SISWA') {
+      if (q.includes('matematika') || q.includes('hitung') || q.includes('pecahan') || q.includes('luas') || q.includes('kali') || q.includes('bagi')) {
+        return `Halo teman cerdas! 🌟 Mari kita pelajari bersama langkah demi langkah:
+1. **Pahami Soal**: Cari tahu apa yang diketahui dan apa yang ditanyakan.
+2. **Tuliskan Rumus/Aturan Dasar**: Misalnya untuk luas persegi panjang: $Luas = Panjang \\times Lebar$. Untuk penjumlahan pecahan, samakan dahulu penyebutnya dengan KPK.
+3. **Coba Hitung Perlahan**: Jika ada perkalian atau pembagian bertingkat, selesaikan dari kiri ke kanan.
+
+Ketikkan soal matematikamu, dan kita bahas cara penyelesaiannya bersama ya!`;
+      }
+      if (q.includes('ipas') || q.includes('ipa') || q.includes('fotosintesis') || q.includes('ekosistem') || q.includes('tata surya')) {
+        return `Keren sekali pertanyaannya! 🚀
+Dalam sains IPAS, kita belajar tentang bagaimana alam di sekitar kita bekerja.
+Misalnya dalam **Fotosintesis**: Tumbuhan hijau memasak makanan sendiri menggunakan cahaya matahari, air ($H_2O$), dan karbon dioksida ($CO_2$), menghasilkan oksigen ($O_2$) segar untuk kita bernapas!
+
+Ada bagian materi IPAS yang ingin kamu tanyakan lebih detail?`;
+      }
+      return `Halo adik-adik siswa SD Negeri Tangerang 6! 👋
+Saya **AI Teman Belajar & Tutor Cerdas**. Saya siap membantu kamu:
+- 📖 Memahami materi pelajaran yang sulit dengan bahasa yang santai dan mudah dimengerti.
+- 💡 Memberikan petunjuk dan cara berpikir untuk menyelesaikan tugas mandiri.
+- 🎯 Latihan soal dan kuis seru persiapan ujian.
+
+Apa yang ingin kita pelajari hari ini?`;
+    }
+
+    if (type === 'CLASSROOM_GURU') {
+      if (q.includes('modul ajar') || q.includes('rpp') || q.includes('atp') || q.includes('kurikulum merdeka')) {
+        return `**Rekomendasi Struktur Modul Ajar Kurikulum Merdeka**:
+1. **Identitas Modul**: Satuan Pendidikan, Fase/Kelas, Alokasi Waktu, Mata Pelajaran.
+2. **Kompetensi Awal & Profil Pelajar Pancasila (P5)**: Beriman, Bernalar Kritis, Mandiri, Gotong Royong.
+3. **Tujuan Pembelajaran**: Mengacu pada Capaian Pembelajaran (CP) dan Alur Tujuan Pembelajaran (ATP).
+4. **Pemahaman Bermakna & Pertanyaan Pemantik**: Pertanyaan kontekstual memicu rasa ingin tahu siswa.
+5. **Kegiatan Pembelajaran Berdiferensiasi**: Pembukaan (Apersepsi), Inti (Eksplorasi-Kolaborasi-Aplikasi), dan Penutup (Refleksi).
+6. **Asesmen**: Asesmen Diagnostik, Formatif (Lembar Observasi), dan Sumatif (Rubrik Kriteria Ketercapaian Tujuan Pembelajaran).`;
+      }
+      if (q.includes('soal') || q.includes('hots') || q.includes('rubrik') || q.includes('kisi')) {
+        return `**Panduan Penyusunan Soal HOTS SD**:
+- Berikan stimulus berbasis cerita/studi kasus nyata kehidupan sehari-hari anak.
+- Gunakan Kata Kerja Operasional (KKO) Level Kognitif C4 (Menganalisis), C5 (Mengevaluasi), dan C6 (Mencipta).
+- Sediakan kunci jawaban dan rubrik penilaian bergradasi (skor 1-4).`;
+      }
+      return `Selamat datang Bapak/Ibu Guru SD Negeri Tangerang 6! 👨‍🏫👩‍🏫
+Saya **AI Asisten Perencana Pembelajaran & Kurikulum Merdeka**. Saya dapat membantu:
+- 📝 Menyusun Draf Modul Ajar (MA) dan RPP berdiferensiasi.
+- 🧪 Membuat Bank Soal HOTS, Kuis Interaktif, dan Kisi-kisi Asesmen.
+- 📊 Menyusun Rubrik Penilaian Kinerja dan Refleksi Pembelajaran.
+- 💌 Menyusun Draf Umpan Balik / Feedback tugas siswa yang konstruktif.
+
+Topik atau materi apa yang ingin Bapak/Ibu rancang hari ini?`;
+    }
+
+    if (type === 'CLASSROOM_KEPSEK') {
+      return `Selamat datang Ibu/Bapak Kepala Sekolah SD Negeri Tangerang 6! 🏛️
+Saya **AI Konsultan Manajerial & Supervisi Akademik**. Saya siap mendukung kepemimpinan sekolah Anda dalam:
+- 📈 **Evaluasi Capaian Rapor Pendidikan**: Menganalisis data literasi, numerasi, iklim keamanan, dan kualitas pembelajaran.
+- 👨‍🏫 **Supervisi Klinis & Pembinaan Guru**: Menyusun instrumen observasi kelas, rubrik umpan balik pedagogik, dan rencana tindak lanjut (RTL).
+- 📋 **Penelaahan & Penilaian Laporan Bulanan Guru**: Memberikan catatan evaluasi capaian kurikulum per rombel kelas.
+- 🤝 **Program Pendidikan Inklusi**: Pendampingan penyesuaian kurikulum bagi siswa dengan kebutuhan khusus.
+
+Ada aspek manajerial atau supervisi akademik yang ingin Anda telaah?`;
+    }
+
+    // Default: SIPERDSEDA
+    if (q.includes('bast') || q.includes('berita acara')) {
       return `Untuk pembuatan Berita Acara Serah Terima (BAST):
 1. Buka menu **Document Center** > tab **Generator Berita Acara Otomatis**.
 2. Pilih nomor transaksi barang masuk atau penyaluran yang ingin dibuatkan BAST.
 3. Klik tombol **"Sempurnakan Narasi & Konsiderans (Gemini AI)"** untuk menghasilkan draf kalimat dinas resmi.
 4. Klik **Cetak PDF** atau **Unduh Word (.docx)** untuk penandatanganan rangkap 2.`;
     }
-    if (lower.includes('stok') || lower.includes('kritis') || lower.includes('habis')) {
+    if (q.includes('stok') || q.includes('kritis') || q.includes('habis')) {
       return `Untuk memantau barang dengan stok menipis:
 - Silakan periksa kartu peringatan di **Dashboard Utama** atau tab **Rencana Pengadaan AI**.
 - Sistem secara otomatis menandai barang yang stoknya berada pada atau di bawah **Batas Minimum**.
 - Lakukan penyusunan usulan belanja RKAS BOS untuk barang berstatus **MENDESAK**.`;
     }
-    return `Halo! Saya Asisten AI Pengelola Barang SD Negeri Tangerang 6.
+    return `Halo! Saya Asisten AI Pengelola Barang SIPERDSEDA SD Negeri Tangerang 6.
 Berdasarkan Permendagri No. 19/2016 dan Petunjuk Teknis Pengelolaan Dana BOS:
-- Terkait pertanyaan Anda: "${userQ}", seluruh mutasi barang wajib tercatat dalam Buku Penerimaan, Buku Pengeluaran, dan didukung dokumen sumber yang sah (Kwitansi/Faktur/BAST).
+- Seluruh mutasi persediaan wajib tercatat dalam Buku Penerimaan, Buku Pengeluaran, dan didukung dokumen sumber yang sah (Kwitansi/Faktur/BAST).
 - Anda dapat memanfaatkan fitur **Scan Kwitansi AI** untuk pembacaan otomatis nota belanja, atau **Rencana Pengadaan AI** untuk proyeksi kebutuhan barang semester depan.`;
   };
 
@@ -475,23 +576,76 @@ Berdasarkan Permendagri No. 19/2016 dan Petunjuk Teknis Pengelolaan Dana BOS:
         success: true,
         isFallback: true,
         data: {
-          reply: getHeuristicReply(message),
-          suggestedActions: [
-            'Buat BAST Pengadaan Belanja BOS',
-            'Cek Barang dengan Stok Kritis',
-            'Analisis Konsumsi ATK Semester Ini',
-          ],
+          reply: getHeuristicReply(assistantType, message),
+          suggestedActions:
+            assistantType === 'WEBSITE'
+              ? ['Informasi PPDB dan Syarat Pendaftaran', 'Profil Singkat & Visi Misi Sekolah', 'Jadwal Ekstrakurikuler & Prestasi']
+              : assistantType === 'CLASSROOM_SISWA'
+              ? ['Jelaskan Cara Menghitung Pecahan Campuran', 'Bantu Pahami Siklus Air (IPAS)', 'Beri Contoh Kalimat Utama dan Ide Pokok']
+              : assistantType === 'CLASSROOM_GURU'
+              ? ['Buatkan Modul Ajar IPAS Kelas 4 Kurikulum Merdeka', 'Buat 5 Soal HOTS Matematika beserta Kunci', 'Buatkan Rubrik Penilaian Proyek P5']
+              : assistantType === 'CLASSROOM_KEPSEK'
+              ? ['Rekomendasi Supervisi Pembelajaran Guru', 'Analisis Peningkatan Nilai Literasi Rapor Pendidikan', 'Format Catatan Evaluasi Laporan Bulanan Guru']
+              : ['Buat BAST Pengadaan Belanja BOS', 'Cek Barang dengan Stok Kritis', 'Analisis Konsumsi ATK Semester Ini'],
         },
       });
     }
 
-    const systemInstruction = `
-Anda adalah "AI Bendahara & Pengelola Aset Cerdas SD Negeri Tangerang 6".
+    // Build targeted system instructions based on persona
+    let systemInstruction = '';
+
+    if (assistantType === 'WEBSITE') {
+      systemInstruction = `
+Anda adalah "AI Duta Informasi & Humas SD Negeri Tangerang 6".
+Tugas Anda:
+1. Memberikan informasi yang ramah, sopan, akurat, dan jelas kepada orang tua murid, calon pendaftar PPDB, dan masyarakat luas.
+2. Menjelaskan profil sekolah, visi-misi, kurikulum Merdeka, fasilitas belajar (Laboratorium Komputer, Perpustakaan Digital, Pojok Baca, Lapangan Olahraga, UKS), ekstrakurikuler, dan tata tertib.
+3. Menjelaskan alur dan persyaratan PPDB Kota Tangerang (Zonasi, Afirmasi, Prestasi, Perpindahan Orang Tua).
+4. Menjunjung tinggi reputasi sekolah yang ramah anak, bersih, religius, berprestasi, dan berakhlak mulia.
+Format jawaban: Gunakan Markdown rapi, bullet points, dan bahasa Indonesia yang bersahabat namun santun.
+`;
+    } else if (assistantType === 'CLASSROOM_SISWA') {
+      systemInstruction = `
+Anda adalah "AI Teman Belajar & Tutor Pintar Siswa SD Negeri Tangerang 6".
+Profil Siswa: ${userName || 'Siswa'} (${userClass || 'Sekolah Dasar'}).
+Prinsip Interaksi:
+1. Gunakan bahasa yang ceria, menyemangati, ramah anak, dan mudah dipahami (gunakan emoji secukupnya).
+2. Terapkan metode Socratic / Bimbingan Berpikir: JANGAN langsung memberikan jawaban akhir untuk PR/tugas hitungan, tetapi jelaskan konsepnya, berikan contoh serupa, dan bimbing langkah demi langkah agar siswa mandiri.
+3. Jelaskan konsep materi SD (Matematika, IPAS, Bahasa Indonesia, Bahasa Inggris, Pendidikan Pancasila, SBdP) dengan analogi dunia nyata sehari-hari.
+4. Berikan pujian saat siswa mencoba belajar dan memahami hal baru.
+`;
+    } else if (assistantType === 'CLASSROOM_GURU') {
+      systemInstruction = `
+Anda adalah "AI Rekan Mengajar & Konsultan Kurikulum Merdeka Guru SD Negeri Tangerang 6".
+Profil Guru: ${userName || 'Bapak/Ibu Guru'} (Pengampu ${userClass || 'Kelas SD'}).
+Keahlian Anda:
+1. Menyusun Draf Modul Ajar (MA), RPP Berdiferensiasi, Tujuan Pembelajaran (TP), dan Alur Tujuan Pembelajaran (ATP) sesuai Panduan Kemendikbudristek.
+2. Menyusun Butir Soal HOTS (Level Kognitif C4-C6) dilengkapi stimulus kontekstual, kunci jawaban, dan rubrik penskoran.
+3. Merancang Rubrik Asesmen Diagnostik, Formatif, Sumatif, dan Penilaian Proyek Penguatan Profil Pelajar Pancasila (P5).
+4. Membantu menulis kalimat umpan balik (feedback) untuk tugas siswa yang konstruktif dan memotivasi.
+5. Menyusun Draf Laporan Kinerja Pembelajaran Kelas untuk disampaikan kepada Kepala Sekolah.
+Gunakan format Markdown terstruktur yang langsung siap disalin ke dokumen pembelajaran.
+`;
+    } else if (assistantType === 'CLASSROOM_KEPSEK') {
+      systemInstruction = `
+Anda adalah "AI Konsultan Manajerial & Supervisi Akademik Kepala Sekolah SD Negeri Tangerang 6".
+Keahlian Anda:
+1. Membantu Kepala Sekolah dalam supervisi akademik pembelajaran guru di kelas sesuai standar evaluasi kinerja Kemendikbudristek.
+2. Menganalisis laporan bulanan pembelajaran guru dan memberikan draf feedback kepemimpinan yang membangun.
+3. Memberikan rekomendasi intervensi pedagogik berbasis data rapor pendidikan sekolah (fokus peningkatan literasi, numerasi, iklim inklusivitas, dan karakter).
+4. Memberikan saran pengalokasian sarana prasarana belajar yang tepat sasaran mendukung KBM.
+Format: Bahasa dinas resmi, analitis, bijaksana, dan solutif.
+`;
+    } else {
+      // Default: SIPERDSEDA
+      systemInstruction = `
+Anda adalah "AI SIPERDSEDA - Asisten Pengelola Persediaan & Aset Cerdas SD Negeri Tangerang 6".
 Anda memiliki keahlian mendalam dalam:
 1. Pengelolaan Barang Milik Daerah (BMD) sesuai Permendagri No. 19 Tahun 2016.
 2. Petunjuk Teknis Pengelolaan Dana BOS (Bantuan Operasional Satuan Pendidikan) & Aplikasi ARKAS Kemendikbudristek.
 3. Penyusunan Berita Acara resmi kedinasan (BAST Pengadaan, BAST Distribusi, Berita Acara Pemeriksaan Barang / BAPB, Berita Acara Stock Opname, dan BA Penghapusan Aset Rusak Berat).
-4. Penataan kode barang, kartu inventaris ruangan (KIR), dan kode rekening belanja BOS.
+4. Penataan kode barang, kartu inventaris ruangan (KIR), kartu persediaan barang habis pakai, dan kode rekening belanja BOS.
+5. Analisis laju konsumsi barang (burn rate), estimasi kehabisan stok (stockout), dan optimasi pengadaan barang.
 
 Data Konteks Aplikasi Saat Ini:
 ${contextData ? JSON.stringify(contextData).slice(0, 4000) : 'Data umum inventaris SD Negeri Tangerang 6'}
@@ -501,6 +655,7 @@ Instruksi Menjawab:
 - Format teks menggunakan Markdown yang rapi (gunakan poin-poin dan penekanan tebal).
 - Jika pengguna meminta draf narasi Berita Acara, berikan kalimat konsiderans hukum dan klausa serah terima yang lengkap dengan rujukan aturan yang tepat.
 `;
+    }
 
     const contents: any[] = [];
     if (conversationHistory.length > 0) {
@@ -520,7 +675,7 @@ Instruksi Menjawab:
       contents,
       config: {
         systemInstruction,
-        temperature: 0.7,
+        temperature: assistantType === 'CLASSROOM_SISWA' ? 0.8 : 0.6,
       },
     });
 
@@ -536,12 +691,17 @@ Instruksi Menjawab:
       success: true,
       isFallback: true,
       data: {
-        reply: getHeuristicReply(message),
-        suggestedActions: [
-          'Buat BAST Pengadaan Belanja BOS',
-          'Cek Barang dengan Stok Kritis',
-          'Analisis Konsumsi ATK Semester Ini',
-        ],
+        reply: getHeuristicReply(assistantType, message),
+        suggestedActions:
+          assistantType === 'WEBSITE'
+            ? ['Informasi PPDB dan Syarat Pendaftaran', 'Profil Singkat & Visi Misi Sekolah', 'Jadwal Ekstrakurikuler & Prestasi']
+            : assistantType === 'CLASSROOM_SISWA'
+            ? ['Jelaskan Cara Menghitung Pecahan Campuran', 'Bantu Pahami Siklus Air (IPAS)', 'Beri Contoh Kalimat Utama dan Ide Pokok']
+            : assistantType === 'CLASSROOM_GURU'
+            ? ['Buatkan Modul Ajar IPAS Kelas 4 Kurikulum Merdeka', 'Buat 5 Soal HOTS Matematika beserta Kunci', 'Buatkan Rubrik Penilaian Proyek P5']
+            : assistantType === 'CLASSROOM_KEPSEK'
+            ? ['Rekomendasi Supervisi Pembelajaran Guru', 'Analisis Peningkatan Nilai Literasi Rapor Pendidikan', 'Format Catatan Evaluasi Laporan Bulanan Guru']
+            : ['Buat BAST Pengadaan Belanja BOS', 'Cek Barang dengan Stok Kritis', 'Analisis Konsumsi ATK Semester Ini'],
       },
     });
   }
