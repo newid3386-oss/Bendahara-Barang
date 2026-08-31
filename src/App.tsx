@@ -247,7 +247,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-800 flex flex-col font-sans antialiased selection:bg-emerald-900 selection:text-white">
+    <div className="min-h-screen bg-slate-100/90 text-slate-800 flex flex-col font-sans antialiased selection:bg-blue-900 selection:text-white">
       {/* Top Navigation */}
       <Navbar
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
