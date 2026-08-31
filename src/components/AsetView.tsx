@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Plus,
@@ -199,7 +199,7 @@ export const AsetView: React.FC = () => {
   };
 
   // Filter Logic
-  const filtered = assets.filter((a) => {
+  const filtered = useMemo(() => assets.filter((a) => {
     const matchSearch =
       !search ||
       a.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
@@ -212,13 +212,34 @@ export const AsetView: React.FC = () => {
       a.KIB_KATEGORI === activeKibTab ||
       (activeKibTab === 'KIB B' && !a.KIB_KATEGORI);
     return matchSearch && matchCond && matchKib;
-  });
+  }), [assets, search, filterCondition, activeKibTab]);
 
   // Pagination slicing
   const totalItems = filtered.length;
   const paginatedAssets = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const totalNilaiAset = assets.reduce((sum, a) => sum + (a.TOTAL_NILAI || a.HARGA_PEROLEHAN || 0), 0);
+
+  const stats = useMemo(() => {
+    return {
+      baik: assets.filter((a) => a.KONDISI === 'BAIK').length,
+      rusak: assets.filter((a) => a.KONDISI !== 'BAIK').length,
+      totalNilai: assets.reduce((sum, a) => sum + (a.TOTAL_NILAI || a.HARGA_PEROLEHAN || 0), 0)
+    };
+  }, [assets]);
+
+  const kibTabs = useMemo(() => [
+    { id: 'ALL', label: 'Semua Aset', count: assets.length },
+    { id: 'KIB A', label: 'KIB A (Tanah)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB A').length },
+    {
+      id: 'KIB B',
+      label: 'KIB B (Peralatan & Mesin)',
+      count: assets.filter((a) => a.KIB_KATEGORI === 'KIB B' || !a.KIB_KATEGORI).length,
+    },
+    { id: 'KIB C', label: 'KIB C (Gedung & Bangunan)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB C').length },
+    { id: 'KIB D', label: 'KIB D (Jalan & Jaringan)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB D').length },
+    { id: 'KIB E', label: 'KIB E (Aset Lainnya)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB E').length },
+  ], [assets]);
 
   const handleToggleSelect = (id: string) => {
     setSelectedAssetIds((prev) =>
@@ -291,37 +312,26 @@ export const AsetView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
           <span className="text-xs font-bold text-slate-500">Total Nilai Perolehan Aset</span>
           <div className="text-xl font-black text-emerald-950 mt-1">
-            Rp {totalNilaiAset.toLocaleString('id-ID')}
+            Rp {stats.totalNilai.toLocaleString('id-ID')}
           </div>
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
           <span className="text-xs font-bold text-slate-500">Kondisi Baik</span>
           <div className="text-xl font-black text-emerald-700 mt-1">
-            {assets.filter((a) => a.KONDISI === 'BAIK').length} Unit
+            {stats.baik} Unit
           </div>
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
           <span className="text-xs font-bold text-slate-500">Rusak / Perlu Servis</span>
           <div className="text-xl font-black text-rose-700 mt-1">
-            {assets.filter((a) => a.KONDISI !== 'BAIK').length} Unit
+            {stats.rusak} Unit
           </div>
         </div>
       </div>
 
       {/* Golongan KIB Tabs (Permendagri 47/2021) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-2xs">
-        {[
-          { id: 'ALL', label: 'Semua Aset', count: assets.length },
-          { id: 'KIB A', label: 'KIB A (Tanah)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB A').length },
-          {
-            id: 'KIB B',
-            label: 'KIB B (Peralatan & Mesin)',
-            count: assets.filter((a) => a.KIB_KATEGORI === 'KIB B' || !a.KIB_KATEGORI).length,
-          },
-          { id: 'KIB C', label: 'KIB C (Gedung & Bangunan)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB C').length },
-          { id: 'KIB D', label: 'KIB D (Jalan & Jaringan)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB D').length },
-          { id: 'KIB E', label: 'KIB E (Aset Lainnya)', count: assets.filter((a) => a.KIB_KATEGORI === 'KIB E').length },
-        ].map((tab) => (
+        {kibTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"

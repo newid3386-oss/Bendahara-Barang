@@ -3,15 +3,18 @@ import {
   ShieldCheck, Users, LogOut, Plus, Search, X, Edit2, Trash2,
   KeyRound, School, GraduationCap, Settings, BookOpen, CheckCircle2, Ban,
   Lock, Unlock, AlertTriangle, ArrowRight, ArrowLeftRight, Check, UserPlus,
+  Sparkles, Save, Video, Play, ExternalLink, Image as ImageIcon,
 } from 'lucide-react';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { Account, SystemType, AccountRole } from '../types/classroom';
+import { db } from '../services/localStorageService';
+import { Config, PublicMediaItem } from '../types';
 
 interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin';
+type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin' | 'website';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [admin, setAdmin] = useState<Account | null>(accountService.getActiveAdminAccount());
@@ -22,6 +25,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('Semua');
   const [notification, setNotification] = useState<string | null>(null);
+  const [config, setConfig] = useState<Config>(db.getConfig());
+
+  // Public Media (Eskul & Prestasi) state
+  const [publicMediaItems, setPublicMediaItems] = useState<PublicMediaItem[]>(db.getPublicMediaItems());
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [editingMedia, setEditingMedia] = useState<PublicMediaItem | null>(null);
+  const [mediaForm, setMediaForm] = useState<Partial<PublicMediaItem>>({
+    title: '',
+    category: 'ESKUL',
+    description: '',
+    photoUrl: '',
+    youtubeUrl: '',
+    dateOrYear: '',
+  });
+
+  const handleSaveMedia = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mediaForm.title) {
+      alert('Judul media wajib diisi.');
+      return;
+    }
+    const itemToSave: PublicMediaItem = {
+      id: editingMedia ? editingMedia.id : `PUB-MED-${Date.now()}`,
+      title: mediaForm.title || '',
+      category: mediaForm.category || 'ESKUL',
+      description: mediaForm.description || '',
+      photoUrl: mediaForm.photoUrl || '',
+      youtubeUrl: mediaForm.youtubeUrl || '',
+      dateOrYear: mediaForm.dateOrYear || '',
+    };
+    db.savePublicMediaItem(itemToSave);
+    setPublicMediaItems(db.getPublicMediaItems());
+    setShowMediaModal(false);
+    setEditingMedia(null);
+    setMediaForm({ title: '', category: 'ESKUL', description: '', photoUrl: '', youtubeUrl: '', dateOrYear: '' });
+    showNotify('Data media eskul/prestasi berhasil disimpan.');
+  };
+
+  const handleDeleteMedia = (id: string) => {
+    if (confirm('Hapus media kegiatan/prestasi ini dari website publik?')) {
+      db.deletePublicMediaItem(id);
+      setPublicMediaItems(db.getPublicMediaItems());
+      showNotify('Media berhasil dihapus.');
+    }
+  };
 
   // Transfer student modal state
   const [transferSiswa, setTransferSiswa] = useState<Account | null>(null);
@@ -105,12 +153,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setTransferSiswa(null);
   };
 
+  const handleSaveConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    db.saveConfig(config);
+    showNotify('Pengaturan Tampilan Website Publik berhasil disimpan.');
+  };
+
   const tabs: { id: AdminTab; label: string; icon: any; color: string; badge?: string }[] = [
     { id: 'overview', label: 'Ringkasan', icon: ShieldCheck, color: 'text-slate-700' },
     { id: 'grouping', label: 'Pengelompokan Kelas & Siswa', icon: School, color: 'text-blue-700', badge: 'Fitur Utama' },
     { id: 'classroom', label: 'Akun Classroom', icon: BookOpen, color: 'text-indigo-700' },
     { id: 'siperseda', label: 'Akun SIPERSEDA', icon: School, color: 'text-emerald-700' },
     { id: 'admin', label: 'Akun Admin', icon: Settings, color: 'text-slate-800' },
+    { id: 'website', label: 'Tampilan Website Publik', icon: Sparkles, color: 'text-amber-700', badge: 'Publik' },
   ];
 
   const currentSistem: SystemType | null =
@@ -123,6 +178,112 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         <div className="fixed top-20 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
           <CheckCircle2 size={16} className="text-emerald-400" />
           <span>{notification}</span>
+        </div>
+      )}
+
+      {/* Media Add/Edit Modal */}
+      {showMediaModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Video size={20} className="text-blue-600" /> {editingMedia ? 'Edit Media Eskul / Prestasi' : 'Tambah Media Baru'}
+              </h3>
+              <button
+                onClick={() => setShowMediaModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMedia} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Judul Kegiatan / Prestasi</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Juara 1 Cerdas Cermat Kota Tangerang"
+                  value={mediaForm.title || ''}
+                  onChange={(e) => setMediaForm({ ...mediaForm, title: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Kategori</label>
+                  <select
+                    value={mediaForm.category || 'ESKUL'}
+                    onChange={(e) => setMediaForm({ ...mediaForm, category: e.target.value as any })}
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 font-bold"
+                  >
+                    <option value="ESKUL">Ekstrakurikuler (Eskul)</option>
+                    <option value="PRESTASI">Prestasi Siswa</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tahun / Periode</label>
+                  <input
+                    type="text"
+                    placeholder="Desember 2025 / 2025/2026"
+                    value={mediaForm.dateOrYear || ''}
+                    onChange={(e) => setMediaForm({ ...mediaForm, dateOrYear: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">URL Foto (Gambar Thumbnail)</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/..."
+                  value={mediaForm.photoUrl || ''}
+                  onChange={(e) => setMediaForm({ ...mediaForm, photoUrl: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Link Video YouTube (URL)</label>
+                <input
+                  type="text"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={mediaForm.youtubeUrl || ''}
+                  onChange={(e) => setMediaForm({ ...mediaForm, youtubeUrl: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 font-mono text-red-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Deskripsi Singkat</label>
+                <textarea
+                  rows={3}
+                  placeholder="Jelaskan kegiatan atau pencapaian prestasi..."
+                  value={mediaForm.description || ''}
+                  onChange={(e) => setMediaForm({ ...mediaForm, description: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 resize-none"
+                />
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMediaModal(false)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-md"
+                >
+                  <Save size={16} /> Simpan Media
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -180,6 +341,189 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       </div>
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+        {/* WEBSITE CONFIG TAB */}
+        {tab === 'website' && (
+          <div className="space-y-6">
+            <form onSubmit={handleSaveConfig} className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <Sparkles size={20} className="text-amber-600" /> Pengaturan Tampilan Website Publik
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Kelola logo, judul, banner, visi, misi, dan teks footer yang tampil di halaman utama website sekolah.</p>
+              </div>
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all"
+              >
+                <Save size={16} /> Simpan Perubahan
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Judul Website</label>
+                <input
+                  type="text"
+                  placeholder="SD NEGERI TANGERANG 6"
+                  value={config.PUBLIC_WEB_TITLE || ''}
+                  onChange={(e) => setConfig({ ...config, PUBLIC_WEB_TITLE: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600 font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Logo Sekolah (URL Gambar)</label>
+                <input
+                  type="text"
+                  placeholder="https://..."
+                  value={config.SCHOOL_LOGO_URL || ''}
+                  onChange={(e) => setConfig({ ...config, SCHOOL_LOGO_URL: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Judul Selamat Datang (Hero Title)</label>
+              <input
+                type="text"
+                placeholder="Sistem Informasi Persediaan & Aset..."
+                value={config.PUBLIC_WEB_WELCOME_TITLE || ''}
+                onChange={(e) => setConfig({ ...config, PUBLIC_WEB_WELCOME_TITLE: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 font-bold focus:outline-amber-600"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Deskripsi Selamat Datang</label>
+              <textarea
+                rows={3}
+                placeholder="Platform digital terpadu untuk..."
+                value={config.PUBLIC_WEB_WELCOME_DESC || ''}
+                onChange={(e) => setConfig({ ...config, PUBLIC_WEB_WELCOME_DESC: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600 resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Visi Sekolah</label>
+              <textarea
+                rows={2}
+                placeholder="Terwujudnya Peserta Didik yang Beriman..."
+                value={config.PUBLIC_WEB_VISI || ''}
+                onChange={(e) => setConfig({ ...config, PUBLIC_WEB_VISI: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600 resize-none font-medium italic"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Misi Sekolah (Pisahkan dengan baris baru / Enter untuk poin berbeda)</label>
+              <textarea
+                rows={4}
+                placeholder="Menyelenggarakan proses pembelajaran...&#10;Mengembangkan potensi bakat..."
+                value={config.PUBLIC_WEB_MISI || ''}
+                onChange={(e) => setConfig({ ...config, PUBLIC_WEB_MISI: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600 resize-none font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Teks Footer Website</label>
+              <input
+                type="text"
+                placeholder="UPT Satuan Pendidikan SDN Tangerang 6 di bawah naungan..."
+                value={config.PUBLIC_WEB_FOOTER_DESC || ''}
+                onChange={(e) => setConfig({ ...config, PUBLIC_WEB_FOOTER_DESC: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600"
+              />
+            </div>
+
+            <div className="pt-4 flex justify-end">
+              <button
+                type="submit"
+                className="px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all"
+              >
+                <Save size={16} /> Simpan Pengaturan Tampilan Website
+              </button>
+            </div>
+          </form>
+
+          {/* Kelola Media Eskul & Prestasi (Foto & Link YouTube) */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6 mt-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <Video size={18} className="text-blue-600" /> Kelola Media Eskul & Prestasi (Foto & YouTube)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Tambah, edit, atau hapus dokumentasi foto dan tautan video YouTube ekstrakurikuler serta prestasi siswa.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMedia(null);
+                  setMediaForm({ title: '', category: 'ESKUL', description: '', photoUrl: '', youtubeUrl: '', dateOrYear: '' });
+                  setShowMediaModal(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all w-fit"
+              >
+                <Plus size={16} /> Tambah Media Baru
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {publicMediaItems.map((item) => (
+                <div key={item.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-start gap-4">
+                  <img
+                    src={item.photoUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=800'}
+                    alt={item.title}
+                    className="w-24 h-20 rounded-xl object-cover shrink-0 border border-slate-200 bg-white"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${
+                        item.category === 'ESKUL' ? 'bg-blue-600' : 'bg-amber-500'
+                      }`}>
+                        {item.category}
+                      </span>
+                      {item.dateOrYear && <span className="text-[10px] text-slate-400">{item.dateOrYear}</span>}
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900 truncate">{item.title}</h4>
+                    <p className="text-[11px] text-slate-600 line-clamp-2">{item.description}</p>
+                    {item.youtubeUrl && (
+                      <div className="text-[10px] text-red-600 font-medium truncate flex items-center gap-1 pt-1">
+                        <Play size={10} fill="currentColor" />
+                        <span className="truncate">{item.youtubeUrl}</span>
+                      </div>
+                    )}
+                    <div className="pt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingMedia(item);
+                          setMediaForm(item);
+                          setShowMediaModal(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-[10px] flex items-center gap-1 transition-all"
+                      >
+                        <Edit2 size={11} /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMedia(item.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold text-[10px] flex items-center gap-1 transition-all"
+                      >
+                        <Trash2 size={11} /> Hapus
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
         {/* OVERVIEW TAB */}
         {tab === 'overview' && (
           <div className="space-y-6">

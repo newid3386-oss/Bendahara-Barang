@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowRightLeft, Plus, Search, Check, FileCheck, ArrowRight } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { MutasiAset, Asset } from '../types';
@@ -91,14 +91,14 @@ export const MutasiView: React.FC = () => {
     });
   };
 
-  const filtered = mutations.filter(
+  const filtered = useMemo(() => mutations.filter(
     (m) =>
       !search ||
       m.KODE_ASET.toLowerCase().includes(search.toLowerCase()) ||
       m.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
       m.NOMOR_BA_MUTASI.toLowerCase().includes(search.toLowerCase()) ||
       m.PJ_BARU.toLowerCase().includes(search.toLowerCase())
-  );
+  ), [mutations, search]);
 
   return (
     <div className="space-y-5">

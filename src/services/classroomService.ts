@@ -11,6 +11,9 @@ import {
   QuizAttempt,
   LearningMaterial,
   ClassScheduleItem,
+  ClassroomMedia,
+  MediaSubmission,
+  MediaType,
 } from '../types/classroom';
 
 const STORAGE_KEYS = {
@@ -24,6 +27,8 @@ const STORAGE_KEYS = {
   QUIZ_ATTEMPTS: 'BB_CLASSROOM_QUIZ_ATTEMPTS_V3',
   MATERIALS: 'BB_CLASSROOM_MATERIALS_V3',
   SCHEDULES: 'BB_CLASSROOM_SCHEDULES_V3',
+  MEDIA: 'BB_CLASSROOM_MEDIA_V1',
+  MEDIA_SUBMISSIONS: 'BB_CLASSROOM_MEDIA_SUBMISSIONS_V1',
   SEEDED: 'BB_CLASSROOM_SEEDED_V4',
 };
 
@@ -601,9 +606,51 @@ const DEFAULT_SCHEDULES: ClassScheduleItem[] = [
   // Kelas 5
   { ID: 'SCH-501', KELAS: 'Kelas 5', HARI: 'Senin', JAM_MULAI: '07:45', JAM_SELESAI: '09:45', MAPEL: 'Matematika & Pecahan', GURU_NAMA: 'M. Rizky Pratama, S.Pd.', RUANGAN: 'Ruang Kelas 5' },
   { ID: 'SCH-502', KELAS: 'Kelas 5', HARI: 'Rabu', JAM_MULAI: '08:00', JAM_SELESAI: '10:00', MAPEL: 'Informatika & Koding SD', GURU_NAMA: 'M. Rizky Pratama, S.Pd.', RUANGAN: 'Lab Komputer SDN 6' },
+];
 
-  // Kelas 6
-  { ID: 'SCH-601', KELAS: 'Kelas 6', HARI: 'Senin', JAM_MULAI: '07:45', JAM_SELESAI: '10:30', MAPEL: 'Persiapan Asesmen Standar & Tryout', GURU_NAMA: 'Drs. H. Mulyadi, M.Pd.', RUANGAN: 'Ruang Kelas 6' },
+const DEFAULT_MEDIA: ClassroomMedia[] = [
+  {
+    ID: 'MED-001',
+    COURSE_ID: 'CRS-001',
+    JUDUL: 'Video Interaktif: Pengenalan Lingkungan & Alam Sekitar',
+    DESKRIPSI: 'Video animasi interaktif mengenal tanaman, hewan, dan cara merawat kebersihan lingkungan rumah.',
+    KATEGORI: 'VIDEO',
+    MEDIA_URL: 'https://www.youtube.com/watch?v=sample-lingkungan',
+    TUJUAN_PEMBELAJARAN: 'Siswa dapat mengidentifikasi 3 cara merawat tanaman dan menjaga kebersihan lingkungan.',
+    TUGAS_INTERAKTIF: 'Sebutkan apa tanaman kesukaanmu di rumah dan bagaimana caramu menyiramnya setiap hari?',
+    GURU_ID: 'ACC-CLS-002',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    CREATED_AT: nowISO(),
+    TARGET_KELAS: 'Kelas 1',
+  },
+  {
+    ID: 'MED-002',
+    COURSE_ID: 'CRS-005',
+    JUDUL: 'Modul Digital & Simulasi Logika Koding IF-THEN',
+    DESKRIPSI: 'Modul e-book interaktif pengenalan dasar algoritma percabangan untuk siswa sekolah dasar.',
+    KATEGORI: 'MODUL_EBOOK',
+    MEDIA_URL: 'https://drive.google.com/file/d/sample-modul-koding',
+    TUJUAN_PEMBELAJARAN: 'Siswa memahami alur logika pengambilan keputusan (IF-ELSE) dalam kehidupan sehari-hari.',
+    TUGAS_INTERAKTIF: 'Buatlah 1 contoh kalimat syarat (Jika ... maka ...) yang biasa kamu lakukan sebelum berangkat ke sekolah.',
+    GURU_ID: 'ACC-CLS-006',
+    GURU_NAMA: 'M. Rizky Pratama, S.Pd.',
+    CREATED_AT: nowISO(),
+    TARGET_KELAS: 'Kelas 5',
+  }
+];
+
+const DEFAULT_MEDIA_SUBMISSIONS: MediaSubmission[] = [
+  {
+    ID: 'MSUB-001',
+    MEDIA_ID: 'MED-001',
+    SISWA_ID: 'SISWA-001',
+    SISWA_NAMA: 'Aisyah Putri Rahmadani',
+    STATUS: 'SELESAI',
+    JAWABAN_TUGAS: 'Tanaman kesukaan saya adalah bunga melati di teras rumah. Setiap sore saya siram dan bersihkan daunnya.',
+    UPDATED_AT: nowISO(),
+    NILAI: 90,
+    FEEDBACK: 'Sangat bagus dan rajin! Pertahankan semangatnya ya Aisyah.',
+  }
 ];
 
 class ClassroomService {
@@ -639,6 +686,8 @@ class ClassroomService {
       this.setItem(STORAGE_KEYS.QUIZ_ATTEMPTS, []);
       this.setItem(STORAGE_KEYS.MATERIALS, DEFAULT_MATERIALS);
       this.setItem(STORAGE_KEYS.SCHEDULES, DEFAULT_SCHEDULES);
+      this.setItem(STORAGE_KEYS.MEDIA, DEFAULT_MEDIA);
+      this.setItem(STORAGE_KEYS.MEDIA_SUBMISSIONS, DEFAULT_MEDIA_SUBMISSIONS);
       localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
     }
   }
@@ -1417,6 +1466,60 @@ class ClassroomService {
       { kelas: 'Kelas 5', rataRataTugas: 88, rataRataKuis: 91, rataRataPresensi: 97, nilaiAkhirKelas: 91, jumlahSiswa: 4 },
       { kelas: 'Kelas 6', rataRataTugas: 90, rataRataKuis: 92, rataRataPresensi: 98, nilaiAkhirKelas: 92, jumlahSiswa: 4 },
     ];
+  }
+
+  // --- Media Pembelajaran Methods ---
+  public getMediaItems(courseId?: string): ClassroomMedia[] {
+    this.initClassroom();
+    const items = this.getItem<ClassroomMedia[]>(STORAGE_KEYS.MEDIA, DEFAULT_MEDIA);
+    if (courseId) {
+      return items.filter(m => m.COURSE_ID === courseId);
+    }
+    return items;
+  }
+
+  public saveMediaItem(media: ClassroomMedia): void {
+    this.initClassroom();
+    const items = this.getMediaItems();
+    const index = items.findIndex(m => m.ID === media.ID);
+    if (index >= 0) {
+      items[index] = media;
+    } else {
+      items.unshift(media);
+    }
+    this.setItem(STORAGE_KEYS.MEDIA, items);
+  }
+
+  public deleteMediaItem(id: string): void {
+    this.initClassroom();
+    const items = this.getMediaItems().filter(m => m.ID !== id);
+    this.setItem(STORAGE_KEYS.MEDIA, items);
+  }
+
+  public getMediaSubmissions(mediaId?: string, siswaId?: string): MediaSubmission[] {
+    this.initClassroom();
+    const subs = this.getItem<MediaSubmission[]>(STORAGE_KEYS.MEDIA_SUBMISSIONS, DEFAULT_MEDIA_SUBMISSIONS);
+    let result = subs;
+    if (mediaId) result = result.filter(s => s.MEDIA_ID === mediaId);
+    if (siswaId) result = result.filter(s => s.SISWA_ID === siswaId);
+    return result;
+  }
+
+  public getAllMediaSubmissions(): MediaSubmission[] {
+    this.initClassroom();
+    return this.getItem<MediaSubmission[]>(STORAGE_KEYS.MEDIA_SUBMISSIONS, DEFAULT_MEDIA_SUBMISSIONS);
+  }
+
+  public saveMediaSubmission(sub: MediaSubmission): void {
+    this.initClassroom();
+    const subs = this.getAllMediaSubmissions();
+    const index = subs.findIndex(s => s.ID === sub.ID || (s.MEDIA_ID === sub.MEDIA_ID && s.SISWA_ID === sub.SISWA_ID));
+    if (index >= 0) {
+      subs[index] = { ...subs[index], ...sub };
+    } else {
+      subs.push(sub);
+    }
+    this.setItem(STORAGE_KEYS.MEDIA_SUBMISSIONS, subs);
   }
 }
 

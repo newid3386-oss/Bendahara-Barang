@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowDownLeft, Plus, Search, Check, Camera, Image as ImageIcon, Upload, Sparkles } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { BarangMasuk, Item } from '../types';
@@ -164,14 +164,14 @@ export const BarangMasukView: React.FC = () => {
     setFotoLink('');
   };
 
-  const filtered = list.filter(
+  const filtered = useMemo(() => list.filter(
     (m) =>
       !search ||
       m.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
       m.KODE_BARANG.toLowerCase().includes(search.toLowerCase()) ||
       m.NAMA_TOKO.toLowerCase().includes(search.toLowerCase()) ||
       m.NOMOR_KWITANSI.toLowerCase().includes(search.toLowerCase())
-  );
+  ), [list, search]);
 
   const totalPengadaanFormatted = (jumlah * hargaSatuan).toLocaleString('id-ID');
 

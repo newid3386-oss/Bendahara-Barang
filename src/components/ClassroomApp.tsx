@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BookOpen, GraduationCap, FileText, ClipboardList, LogOut, School, Plus,
   ChevronRight, ArrowLeft, CheckCircle2, Clock, Award, Users, Calendar, X,
@@ -20,6 +20,7 @@ import { ClassroomQuizCBTView } from './classroom/ClassroomQuizCBTView';
 import { ClassroomMaterialsView } from './classroom/ClassroomMaterialsView';
 import { ClassroomGradebookView } from './classroom/ClassroomGradebookView';
 import { ClassroomScheduleView } from './classroom/ClassroomScheduleView';
+import { ClassroomMediaView } from './classroom/ClassroomMediaView';
 
 // ==========================================
 // DEADLINE WARNING NOTIFICATION UTILITY (<24h)
@@ -75,6 +76,7 @@ type ClassPage =
   | 'attendance'
   | 'quizzes'
   | 'materials'
+  | 'media'
   | 'courses'
   | 'students'
   | 'assignments'
@@ -142,6 +144,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     { id: 'attendance', label: 'Presensi & Kehadiran', icon: UserCheck },
     { id: 'quizzes', label: 'Kuis & Ujian CBT', icon: Award },
     { id: 'materials', label: 'Bahan Ajar & Modul', icon: BookOpen },
+    { id: 'media', label: 'Media Pembelajaran', icon: Video },
     { id: 'courses', label: 'Kelas Saya', icon: School },
     { id: 'assignments', label: 'Tugas & PR Siswa', icon: ClipboardList },
     { id: 'gradebook', label: 'Buku Nilai & E-Rapor', icon: Printer },
@@ -347,6 +350,13 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             <ClassroomMaterialsView
               account={account}
               onRefresh={refresh}
+            />
+          )}
+          {page === 'media' && (
+            <ClassroomMediaView
+              account={account}
+              courses={courses}
+              refresh={refresh}
             />
           )}
           {page === 'courses' && (
@@ -2497,6 +2507,29 @@ const ReviewAssignmentSubmissionsModal: React.FC<{
   const submissions = classroomService.getSubmissions(assignment.ID);
   const [selectedSub, setSelectedSub] = useState<ClassroomSubmission | null>(null);
 
+  const course = useMemo(() => classroomService.getCourses().find((c) => c.ID === assignment.COURSE_ID), [assignment.COURSE_ID]);
+  const enrolledStudents = useMemo(() => accountService.getStudents().filter((s) => course?.SISWA_IDS.includes(s.ID)), [course]);
+  
+  const missingStudents = useMemo(() => {
+    const submittedIds = submissions.map((s) => s.SISWA_ID);
+    return enrolledStudents.filter((s) => !submittedIds.includes(s.ID));
+  }, [submissions, enrolledStudents]);
+
+  const handleRemindAll = () => {
+    if (missingStudents.length === 0) {
+      alert("Semua siswa sudah mengumpulkan tugas.");
+      return;
+    }
+    const emails = missingStudents.map(s => s.EMAIL).filter(Boolean).join(',');
+    if (!emails) {
+      alert("Tidak ada alamat email yang ditemukan untuk siswa yang belum mengumpulkan.");
+      return;
+    }
+    const subject = `Peringatan: Tugas Belum Terkumpul - ${assignment.JUDUL}`;
+    const body = `Halo,\n\nMengingatkan bahwa tugas "${assignment.JUDUL}" untuk kelas ${course?.JUDUL || ''} belum Anda kumpulkan.\nMohon segera diselesaikan sebelum batas waktu.\n\nTerima kasih.`;
+    window.open(`mailto:${emails}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 backdrop-blur-xs">
       <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl p-6 space-y-4 border border-slate-200 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
@@ -2508,9 +2541,19 @@ const ReviewAssignmentSubmissionsModal: React.FC<{
             <h3 className="text-base font-black text-slate-900 mt-1">{assignment.JUDUL}</h3>
             <p className="text-xs text-slate-500">Daftar jawaban dan pengumpulan tugas dari siswa</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-3">
+            {missingStudents.length > 0 && (
+              <button
+                onClick={handleRemindAll}
+                className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <Mail size={14} /> Remind {missingStudents.length} Siswa
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-2xl">

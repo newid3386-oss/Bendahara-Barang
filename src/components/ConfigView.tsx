@@ -203,6 +203,8 @@ export const ConfigView: React.FC = () => {
           </div>
         </div>
 
+
+
         {/* Google Sheets Auto-Sync Configuration Card */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">

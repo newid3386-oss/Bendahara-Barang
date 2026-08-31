@@ -211,3 +211,33 @@ export interface ClassScheduleItem {
   GURU_NAMA: string;
   RUANGAN: string;
 }
+
+// 6. Media Pembelajaran Interaktif (Guru buat, Siswa kerjakan, Kepsek monitor)
+export type MediaType = 'VIDEO' | 'MODUL_EBOOK' | 'INTERAKTIF' | 'INFOGRAFIS' | 'AUDIO';
+
+export interface ClassroomMedia {
+  ID: string;
+  COURSE_ID: string;
+  JUDUL: string;
+  DESKRIPSI: string;
+  KATEGORI: MediaType;
+  MEDIA_URL?: string; // YouTube, Google Drive, PDF, etc.
+  TUJUAN_PEMBELAJARAN: string;
+  TUGAS_INTERAKTIF?: string; // Reflection or check question
+  GURU_ID: string;
+  GURU_NAMA: string;
+  CREATED_AT: string;
+  TARGET_KELAS?: string;
+}
+
+export interface MediaSubmission {
+  ID: string;
+  MEDIA_ID: string;
+  SISWA_ID: string;
+  SISWA_NAMA: string;
+  STATUS: 'BELUM_MULAI' | 'SEDANG_DIPELAJARI' | 'SELESAI';
+  JAWABAN_TUGAS?: string;
+  UPDATED_AT: string;
+  NILAI?: number;
+  FEEDBACK?: string;
+}

@@ -24,6 +24,13 @@ export interface Config {
   BA_DEFAULT_CITY?: string;
   BA_SHOW_DOCUMENTATION?: 'YA' | 'TIDAK';
   QR_PROVIDER?: string;
+  PUBLIC_WEB_TITLE?: string;
+  PUBLIC_WEB_WELCOME_TITLE?: string;
+  PUBLIC_WEB_WELCOME_DESC?: string;
+  PUBLIC_WEB_HERO_IMAGE?: string;
+  PUBLIC_WEB_VISI?: string;
+  PUBLIC_WEB_MISI?: string;
+  PUBLIC_WEB_FOOTER_DESC?: string;
 }
 
 export interface User {
@@ -521,6 +528,16 @@ export interface QRStickerPreset {
   SHOW_PRICE: boolean;
 }
 
+export interface PublicMediaItem {
+  id: string;
+  title: string;
+  category: 'ESKUL' | 'PRESTASI';
+  description: string;
+  photoUrl: string;
+  youtubeUrl: string;
+  dateOrYear?: string;
+}
+
 export type ActivePage =
   | 'dashboard'
   | 'master'
@@ -547,5 +564,6 @@ export type ActivePage =
   | 'control_center'
   | 'config'
   | 'google_sheets_sync';
+
 
 

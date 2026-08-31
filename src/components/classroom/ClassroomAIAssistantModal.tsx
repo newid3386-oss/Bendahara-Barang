@@ -20,7 +20,7 @@ import {
   Star,
   CheckCircle2,
 } from 'lucide-react';
-import { Account } from '../../types';
+import { Account } from '../../types/classroom';
 
 interface ClassroomAIAssistantModalProps {
   isOpen: boolean;

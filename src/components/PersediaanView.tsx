@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layers, Search, AlertTriangle, Download, RefreshCw, Filter, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { StockSummary } from '../types';
@@ -33,18 +33,23 @@ export const PersediaanView: React.FC = () => {
     excelService.exportPersediaan(items, stockMap, config);
   };
 
-  const filtered = stockList.filter((s) => {
-    const matchSearch =
-      !search ||
-      s.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
-      s.KODE_BARANG.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'ALL' || s.STATUS === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const { filtered, totalItemCount, lowStockCount, totalFisikStok } = useMemo(() => {
+    const f = stockList.filter((s) => {
+      const matchSearch =
+        !search ||
+        s.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
+        s.KODE_BARANG.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === 'ALL' || s.STATUS === statusFilter;
+      return matchSearch && matchStatus;
+    });
 
-  const totalItemCount = stockList.length;
-  const lowStockCount = stockList.filter((s) => s.STATUS === 'MINIMUM').length;
-  const totalFisikStok = stockList.reduce((sum, s) => sum + s.STOK, 0);
+    return {
+      filtered: f,
+      totalItemCount: stockList.length,
+      lowStockCount: stockList.filter((s) => s.STATUS === 'MINIMUM').length,
+      totalFisikStok: stockList.reduce((sum, s) => sum + s.STOK, 0)
+    };
+  }, [stockList, search, statusFilter]);
 
   return (
     <div className="space-y-5">

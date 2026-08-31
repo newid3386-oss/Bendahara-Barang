@@ -58,16 +58,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [activeQuickTab, setActiveQuickTab] = useState<'ALL' | 'INVENTORY' | 'MAINTENANCE' | 'PROCUREMENT'>('ALL');
 
   // ─── Financial & Asset Calculations ───────────────────────
-  const totalAssetValue = assets.reduce(
-    (sum, a) => sum + (Number(a.TOTAL_NILAI) || Number(a.JUMLAH || 1) * Number(a.HARGA_SATUAN || 0)),
-    0
-  );
-  const totalAssetUnits = assets.reduce((sum, a) => sum + (Number(a.JUMLAH) || 1), 0);
-  const assetBaik = assets.filter((a) => a.KONDISI === 'BAIK');
-  const assetRusakRingan = assets.filter((a) => a.KONDISI === 'RUSAK RINGAN');
-  const assetRusakBerat = assets.filter((a) => a.KONDISI === 'RUSAK BERAT');
-  const totalBarangRusak = assetRusakRingan.length + assetRusakBerat.length;
-  const healthRate = assets.length > 0 ? Math.round((assetBaik.length / assets.length) * 100) : 100;
+  const { totalAssetValue, totalAssetUnits, assetBaik, assetRusakRingan, assetRusakBerat, totalBarangRusak, healthRate } = useMemo(() => {
+    const value = assets.reduce(
+      (sum, a) => sum + (Number(a.TOTAL_NILAI) || Number(a.JUMLAH || 1) * Number(a.HARGA_SATUAN || 0)),
+      0
+    );
+    const units = assets.reduce((sum, a) => sum + (Number(a.JUMLAH) || 1), 0);
+    const baik = assets.filter((a) => a.KONDISI === 'BAIK');
+    const rr = assets.filter((a) => a.KONDISI === 'RUSAK RINGAN');
+    const rb = assets.filter((a) => a.KONDISI === 'RUSAK BERAT');
+    
+    return {
+      totalAssetValue: value,
+      totalAssetUnits: units,
+      assetBaik: baik,
+      assetRusakRingan: rr,
+      assetRusakBerat: rb,
+      totalBarangRusak: rr.length + rb.length,
+      healthRate: assets.length > 0 ? Math.round((baik.length / assets.length) * 100) : 100
+    };
+  }, [assets]);
 
   // ─── Inventory (Persediaan Habis Pakai & ATK) ─────────────
   const totalStockUnits = useMemo(() => {
@@ -82,12 +92,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }, 0);
   }, [stockSummary, items]);
 
-  const safeStockItems = stockSummary.filter((s) => s.STATUS === 'AMAN');
-  const lowStockItems = stockSummary.filter((s) => s.STATUS === 'MINIMUM');
-  const outOfStockItems = stockSummary.filter((s) => s.STOK === 0);
-  const stockAvailabilityRate = stockSummary.length > 0
-    ? Math.round((safeStockItems.length / stockSummary.length) * 100)
-    : 100;
+  const { safeStockItems, lowStockItems, outOfStockItems, stockAvailabilityRate } = useMemo(() => {
+    const safe = stockSummary.filter((s) => s.STATUS === 'AMAN');
+    const low = stockSummary.filter((s) => s.STATUS === 'MINIMUM');
+    const out = stockSummary.filter((s) => s.STOK === 0);
+    return {
+      safeStockItems: safe,
+      lowStockItems: low,
+      outOfStockItems: out,
+      stockAvailabilityRate: stockSummary.length > 0 ? Math.round((safe.length / stockSummary.length) * 100) : 100
+    };
+  }, [stockSummary]);
 
   const totalCombinedValuation = totalAssetValue + totalStockValue;
   const totalCombinedUnits = totalAssetUnits + totalStockUnits;
@@ -144,23 +159,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const activePlansCount = procurementPlans.filter((p) => p.STATUS === 'DIAJUKAN').length;
 
+  const now = useMemo(() => new Date(), []);
+  
   // ─── Month-over-Month Trend ────────────────────────────────
-  const now = new Date();
-  const currentYM = now.toISOString().slice(0, 7);
-  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevYM = prevMonthDate.toISOString().slice(0, 7);
+  const { currentYM, prevYM, masukBulanIniList, masukBulanIni, totalNilaiMasukBulanIni, masukBulanLaluList, masukBulanLalu, growthPercentage } = useMemo(() => {
+    const curYM = now.toISOString().slice(0, 7);
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prYM = prevMonthDate.toISOString().slice(0, 7);
 
-  const masukBulanIniList = masukList.filter((m) => m.TANGGAL.startsWith(currentYM));
-  const masukBulanIni = masukBulanIniList.reduce((sum, m) => sum + Number(m.JUMLAH || 0), 0);
-  const totalNilaiMasukBulanIni = masukBulanIniList.reduce(
-    (sum, m) => sum + (Number(m.TOTAL_PENGADAAN) || Number(m.JUMLAH || 0) * Number(m.HARGA_SATUAN || 0)),
-    0
-  );
-  const masukBulanLaluList = masukList.filter((m) => m.TANGGAL.startsWith(prevYM));
-  const masukBulanLalu = masukBulanLaluList.reduce((sum, m) => sum + Number(m.JUMLAH || 0), 0);
-  const growthPercentage = masukBulanLalu > 0
-    ? Math.round(((masukBulanIni - masukBulanLalu) / masukBulanLalu) * 100)
-    : masukBulanIni > 0 ? 100 : 0;
+    const masukBulanIniList = masukList.filter((m) => m.TANGGAL.startsWith(curYM));
+    const masukBulanIni = masukBulanIniList.reduce((sum, m) => sum + Number(m.JUMLAH || 0), 0);
+    const totalNilaiMasukBulanIni = masukBulanIniList.reduce(
+      (sum, m) => sum + (Number(m.TOTAL_PENGADAAN) || Number(m.JUMLAH || 0) * Number(m.HARGA_SATUAN || 0)),
+      0
+    );
+    const masukBulanLaluList = masukList.filter((m) => m.TANGGAL.startsWith(prYM));
+    const masukBulanLalu = masukBulanLaluList.reduce((sum, m) => sum + Number(m.JUMLAH || 0), 0);
+    const growthPercentage = masukBulanLalu > 0
+      ? Math.round(((masukBulanIni - masukBulanLalu) / masukBulanLalu) * 100)
+      : masukBulanIni > 0 ? 100 : 0;
+      
+    return {
+      currentYM: curYM,
+      prevYM: prYM,
+      masukBulanIniList,
+      masukBulanIni,
+      totalNilaiMasukBulanIni,
+      masukBulanLaluList,
+      masukBulanLalu,
+      growthPercentage
+    };
+  }, [masukList, now]);
 
   // ─── 6-Month Trend for Area Chart ──────────────────────────
   const monthlyTrend = useMemo(() => {

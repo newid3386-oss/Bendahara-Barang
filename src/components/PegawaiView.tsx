@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -216,27 +216,32 @@ export const PegawaiView: React.FC = () => {
   };
 
   // Filter logic
-  const filteredUsers = users.filter((u) => {
-    if (roleFilter !== 'SEMUA') {
-      if (roleFilter === 'GURU' && u.ROLE !== 'GURU') return false;
-      if (roleFilter === 'PIMPINAN' && u.ROLE !== 'KEPALA SEKOLAH' && u.ROLE !== 'BENDAHARA') return false;
-      if (roleFilter === 'STAFF' && u.ROLE !== 'STAFF' && u.ROLE !== 'OPERATOR' && u.ROLE !== 'ADMIN') return false;
-    }
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      u.NAMA.toLowerCase().includes(q) ||
-      (u.NIP || '').toLowerCase().includes(q) ||
-      (u.JABATAN || '').toLowerCase().includes(q) ||
-      (u.GOLONGAN_RUANG || '').toLowerCase().includes(q) ||
-      u.ROLE.toLowerCase().includes(q)
-    );
-  });
+  const { filteredUsers, totalPegawai, totalGuru, totalBerNIP, totalStaff } = useMemo(() => {
+    const filtered = users.filter((u) => {
+      if (roleFilter !== 'SEMUA') {
+        if (roleFilter === 'GURU' && u.ROLE !== 'GURU') return false;
+        if (roleFilter === 'PIMPINAN' && u.ROLE !== 'KEPALA SEKOLAH' && u.ROLE !== 'BENDAHARA') return false;
+        if (roleFilter === 'STAFF' && u.ROLE !== 'STAFF' && u.ROLE !== 'OPERATOR' && u.ROLE !== 'ADMIN') return false;
+      }
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
+        u.NAMA.toLowerCase().includes(q) ||
+        (u.NIP || '').toLowerCase().includes(q) ||
+        (u.JABATAN || '').toLowerCase().includes(q) ||
+        (u.GOLONGAN_RUANG || '').toLowerCase().includes(q) ||
+        u.ROLE.toLowerCase().includes(q)
+      );
+    });
 
-  const totalPegawai = users.length;
-  const totalGuru = users.filter((u) => u.ROLE === 'GURU').length;
-  const totalBerNIP = users.filter((u) => u.NIP && u.NIP.trim().length > 5).length;
-  const totalStaff = users.filter((u) => u.ROLE !== 'GURU').length;
+    return {
+      filteredUsers: filtered,
+      totalPegawai: users.length,
+      totalGuru: users.filter((u) => u.ROLE === 'GURU').length,
+      totalBerNIP: users.filter((u) => u.NIP && u.NIP.trim().length > 5).length,
+      totalStaff: users.filter((u) => u.ROLE !== 'GURU').length
+    };
+  }, [users, roleFilter, search]);
 
   return (
     <div className="space-y-5">

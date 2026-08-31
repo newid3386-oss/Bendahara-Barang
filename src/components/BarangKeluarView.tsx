@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowUpRight,
   Plus,
@@ -215,21 +215,25 @@ export const BarangKeluarView: React.FC = () => {
     });
   };
 
-  const pendingApprovals = list.filter((b) => b.STATUS_TRANSAKSI === 'MENUNGGU_PERSETUJUAN');
-  const groupedPending: Record<string, BarangKeluar[]> = {};
-  pendingApprovals.forEach((b) => {
-    groupedPending[b.NOMOR_DOKUMEN] = groupedPending[b.NOMOR_DOKUMEN] || [];
-    groupedPending[b.NOMOR_DOKUMEN].push(b);
-  });
+  const { pendingApprovals, groupedPending, filteredHistory } = useMemo(() => {
+    const pending = list.filter((b) => b.STATUS_TRANSAKSI === 'MENUNGGU_PERSETUJUAN');
+    const grouped: Record<string, BarangKeluar[]> = {};
+    pending.forEach((b) => {
+      grouped[b.NOMOR_DOKUMEN] = grouped[b.NOMOR_DOKUMEN] || [];
+      grouped[b.NOMOR_DOKUMEN].push(b);
+    });
 
-  const filteredHistory = list.filter(
-    (b) =>
-      !search ||
-      b.NOMOR_DOKUMEN.toLowerCase().includes(search.toLowerCase()) ||
-      b.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
-      b.PENERIMA.toLowerCase().includes(search.toLowerCase()) ||
-      b.UNIT_RUANGAN.toLowerCase().includes(search.toLowerCase())
-  );
+    const filtered = list.filter(
+      (b) =>
+        !search ||
+        b.NOMOR_DOKUMEN.toLowerCase().includes(search.toLowerCase()) ||
+        b.NAMA_BARANG.toLowerCase().includes(search.toLowerCase()) ||
+        b.PENERIMA.toLowerCase().includes(search.toLowerCase()) ||
+        b.UNIT_RUANGAN.toLowerCase().includes(search.toLowerCase())
+    );
+
+    return { pendingApprovals: pending, groupedPending: grouped, filteredHistory: filtered };
+  }, [list, search]);
 
   return (
     <div className="space-y-5">

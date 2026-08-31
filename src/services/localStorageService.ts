@@ -26,6 +26,7 @@ import {
   QRStickerPreset,
   BATemplate,
   BATemplateVersion,
+  PublicMediaItem,
 } from '../types';
 import {
   DATASET_VERSION,
@@ -71,6 +72,7 @@ const STORAGE_KEYS = {
   QR_STICKER_PRESETS: 'BB_QR_STICKER_PRESETS',
   BA_TEMPLATES: 'BB_BA_TEMPLATES',
   BA_TEMPLATE_VERSIONS: 'BB_BA_TEMPLATE_VERSIONS',
+  PUBLIC_MEDIA_ITEMS: 'BB_PUBLIC_MEDIA_ITEMS',
   DATASET_VERSION: 'BB_DATASET_VERSION',
 };
 
@@ -82,6 +84,45 @@ const DEFAULT_BARANG_MASUK: BarangMasuk[] = OFFICIAL_BARANG_MASUK;
 const DEFAULT_BARANG_KELUAR: BarangKeluar[] = OFFICIAL_BARANG_KELUAR;
 const DEFAULT_ASSETS: Asset[] = OFFICIAL_ASSETS;
 const DEFAULT_ARKAS_ACCOUNTS: ARKASAccount[] = OFFICIAL_ARKAS_ACCOUNTS;
+
+const DEFAULT_PUBLIC_MEDIA: PublicMediaItem[] = [
+  {
+    id: 'PUB-MED-01',
+    title: 'Pramuka Penggalang & Siaga SDN Tangerang 6',
+    category: 'ESKUL',
+    description: 'Kegiatan latihan rutin kepramukaan mingguan untuk membentuk disiplin, kemandirian, dan karakter gotong royong peserta didik.',
+    photoUrl: 'https://images.unsplash.com/photo-1529390079861-591de354faf5?auto=format&fit=crop&q=80&w=800',
+    youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    dateOrYear: 'Tahun Ajaran 2025/2026',
+  },
+  {
+    id: 'PUB-MED-02',
+    title: 'Seni Tari Tradisional Betawi & Nusantara',
+    category: 'ESKUL',
+    description: 'Pelatihan tari tradisional untuk melestarikan kebudayaan lokal Banten dan Betawi, rutin tampil dalam acara perpisahan dan lomba seni.',
+    photoUrl: 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=800',
+    youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    dateOrYear: 'Rutin Setiap Jumat',
+  },
+  {
+    id: 'PUB-MED-03',
+    title: 'Juara 1 Lomba Cerdas Cermat Tingkat Kota Tangerang',
+    category: 'PRESTASI',
+    description: 'Tim Cerdas Cermat SDN Tangerang 6 berhasil meraih Juara 1 tingkat Kota Tangerang dalam ajang Kompetisi Sains & Literasi Siswa SD.',
+    photoUrl: 'https://images.unsplash.com/photo-1567168544813-cc03465b4fa8?auto=format&fit=crop&q=80&w=800',
+    youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    dateOrYear: 'Desember 2025',
+  },
+  {
+    id: 'PUB-MED-04',
+    title: 'Festival Tunas Bahasa Ibu (FTBI) - Juara Mendongeng Bahasa Sunda',
+    category: 'PRESTASI',
+    description: 'Siswa perwakilan SDN Tangerang 6 sukses meraih juara pertama mendongeng daerah, membanggakan UPT Dinas Pendidikan Kota Tangerang.',
+    photoUrl: 'https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=800',
+    youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    dateOrYear: 'November 2025',
+  },
+];
 
 class LocalStorageService {
   private getItem<T>(key: string, defaultValue: T): T {
@@ -2462,6 +2503,33 @@ class LocalStorageService {
       docRef,
     });
     return { success: true, count: updatedCount };
+  }
+
+  // --- Public Media Items (Eskul & Prestasi) ---
+  public getPublicMediaItems(): PublicMediaItem[] {
+    return this.getItem<PublicMediaItem[]>(STORAGE_KEYS.PUBLIC_MEDIA_ITEMS, DEFAULT_PUBLIC_MEDIA);
+  }
+
+  public savePublicMediaItem(item: PublicMediaItem): PublicMediaItem {
+    const items = this.getPublicMediaItems();
+    let saved: PublicMediaItem;
+    const index = items.findIndex((i) => i.id === item.id);
+    if (index >= 0) {
+      items[index] = { ...items[index], ...item };
+      saved = items[index];
+    } else {
+      saved = { ...item, id: item.id || `PUB-MED-${Date.now()}` };
+      items.unshift(saved);
+    }
+    this.setItem(STORAGE_KEYS.PUBLIC_MEDIA_ITEMS, items);
+    this.logAudit(index >= 0 ? 'UPDATE' : 'CREATE', 'PUBLIC_MEDIA', saved.id, saved);
+    return saved;
+  }
+
+  public deletePublicMediaItem(id: string): void {
+    const items = this.getPublicMediaItems().filter((i) => i.id !== id);
+    this.setItem(STORAGE_KEYS.PUBLIC_MEDIA_ITEMS, items);
+    this.logAudit('DELETE', 'PUBLIC_MEDIA', id, { deletedId: id });
   }
 }
 

@@ -32,6 +32,9 @@ import {
   HeartHandshake,
   Check,
   Info,
+  Video,
+  Play,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User, Asset, Item } from '../types';
@@ -57,7 +60,9 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
   const items = db.getItems();
   const stockSummary = db.getStockSummary();
 
-  const [activeNav, setActiveNav] = useState<'beranda' | 'profil' | 'sarpras' | 'verifikasi' | 'berita' | 'kontak'>('beranda');
+  const [activeNav, setActiveNav] = useState<'beranda' | 'profil' | 'sarpras' | 'verifikasi' | 'berita' | 'eskul_prestasi' | 'kontak'>('beranda');
+  const [mediaFilter, setMediaFilter] = useState<'ALL' | 'ESKUL' | 'PRESTASI'>('ALL');
+  const publicMediaItems = db.getPublicMediaItems();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialLoginOpen);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
@@ -159,12 +164,16 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             onClick={() => setActiveNav('beranda')}
             className="flex items-center gap-3.5 cursor-pointer group select-none"
           >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-800 via-blue-700 to-blue-900 text-white flex items-center justify-center font-black shadow-md border border-blue-600/40 group-hover:scale-105 transition-transform">
-              <School size={24} className="text-blue-200" />
-            </div>
+            {config.SCHOOL_LOGO_URL ? (
+              <img src={config.SCHOOL_LOGO_URL} alt="Logo" className="w-12 h-12 object-contain group-hover:scale-105 transition-transform" />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-800 via-blue-700 to-blue-900 text-white flex items-center justify-center font-black shadow-md border border-blue-600/40 group-hover:scale-105 transition-transform">
+                <School size={24} className="text-blue-200" />
+              </div>
+            )}
             <div>
               <div className="text-base font-black text-slate-900 tracking-tight leading-none group-hover:text-blue-800 transition-colors">
-                SD NEGERI TANGERANG 6
+                {config.PUBLIC_WEB_TITLE || config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6'}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-1 leading-none">
                 Dinas Pendidikan Pemerintah Kota Tangerang
@@ -213,6 +222,14 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
               }`}
             >
               Berita & Prestasi
+            </button>
+            <button
+              onClick={() => setActiveNav('eskul_prestasi')}
+              className={`px-3.5 py-2 rounded-xl transition-all ${
+                activeNav === 'eskul_prestasi' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              }`}
+            >
+              Eskul & YouTube
             </button>
             <button
               onClick={() => setActiveNav('kontak')}
@@ -288,6 +305,14 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           Berita
         </button>
         <button
+          onClick={() => setActiveNav('eskul_prestasi')}
+          className={`px-3 py-1.5 rounded-lg whitespace-nowrap ${
+            activeNav === 'eskul_prestasi' ? 'bg-blue-800 text-white' : 'bg-slate-100'
+          }`}
+        >
+          Eskul & YouTube
+        </button>
+        <button
           onClick={() => setActiveNav('kontak')}
           className={`px-3 py-1.5 rounded-lg whitespace-nowrap ${
             activeNav === 'kontak' ? 'bg-blue-800 text-white' : 'bg-slate-100'
@@ -313,11 +338,11 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                   </div>
 
                   <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-                    Unggul dalam Prestasi, Berkarakter Luhur & Berwawasan Lingkungan
+                    {config.PUBLIC_WEB_WELCOME_TITLE || 'Unggul dalam Prestasi, Berkarakter Luhur & Berwawasan Lingkungan'}
                   </h1>
 
                   <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-2xl font-normal">
-                    Selamat datang di Laman Resmi UPT Satuan Pendidikan SD Negeri Tangerang 6. Kami berkomitmen menyelenggarakan pembelajaran inovatif yang menyenangkan, berpusat pada murid, serta menjunjung akuntabilitas tata kelola sarana & prasarana sekolah secara transparan.
+                    {config.PUBLIC_WEB_WELCOME_DESC || 'Selamat datang di Laman Resmi UPT Satuan Pendidikan SD Negeri Tangerang 6. Kami berkomitmen menyelenggarakan pembelajaran inovatif yang menyenangkan, berpusat pada murid, serta menjunjung akuntabilitas tata kelola sarana & prasarana sekolah secara transparan.'}
                   </p>
 
                   <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -487,8 +512,11 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                 Profil Satuan Pendidikan
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-                Identitas, Visi, Misi & Dewan Pendidik SDN Tangerang 6
+                Identitas, Visi, Misi, Galeri Sekolah & Dewan Pendidik SDN Tangerang 6
               </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Kenali lebih dekat lingkungan belajar, fasilitas sekolah, serta jajaran guru dan tenaga kependidikan berdedikasi tinggi.
+              </p>
             </div>
 
             {/* School Identity Cards */}
@@ -532,66 +560,178 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                   <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
                     <span className="font-bold text-blue-900 block mb-1">Visi Pendidikan:</span>
                     <p className="text-blue-800 italic font-medium">
-                      "Terwujudnya Peserta Didik yang Beriman, Bertaqwa, Berprestasi, Berkarakter Pancasila, dan Berbudaya Lingkungan Hidup."
+                      "{config.PUBLIC_WEB_VISI || 'Terwujudnya Peserta Didik yang Beriman, Bertaqwa, Berprestasi, Berkarakter Pancasila, dan Berbudaya Lingkungan Hidup.'}"
                     </p>
                   </div>
                   <div className="space-y-1.5 text-slate-600">
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 size={14} className="text-blue-600 mt-0.5 shrink-0" />
-                      <span>Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis kearifan lokal.</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 size={14} className="text-blue-600 mt-0.5 shrink-0" />
-                      <span>Mengembangkan potensi bakat akademik dan non-akademik siswa secara optimal.</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 size={14} className="text-blue-600 mt-0.5 shrink-0" />
-                      <span>Mewujudkan tata kelola sarana prasarana sekolah yang tertib, bersih, dan berwawasan lingkungan hijau.</span>
-                    </div>
+                    {(config.PUBLIC_WEB_MISI 
+                      ? config.PUBLIC_WEB_MISI.split('\n').filter(Boolean) 
+                      : [
+                          'Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis kearifan lokal.',
+                          'Mengembangkan potensi bakat akademik dan non-akademik siswa secara optimal.',
+                          'Mewujudkan tata kelola sarana prasarana sekolah yang tertib, bersih, dan berwawasan lingkungan hijau.'
+                        ]
+                    ).map((misi, idx) => (
+                      <div key={idx} className="flex items-start gap-2">
+                        <CheckCircle2 size={14} className="text-blue-600 mt-0.5 shrink-0" />
+                        <span>{misi.trim()}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Guru & Tenaga Kependidikan Grid */}
+            {/* GALERI FOTO LINGKUNGAN & FASILITAS SEKOLAH */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Dewan Guru & Tenaga Kependidikan</h3>
-                  <p className="text-xs text-slate-500">Pendidik profesional yang berdedikasi membimbing putra-putri bangsa di SDN Tangerang 6.</p>
-                </div>
-                <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full">
-                  {users.length} Tenaga Pendidik
+              <div>
+                <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
+                  Dokumentasi Lingkungan Sekolah
                 </span>
+                <h3 className="text-xl font-black text-slate-900 mt-0.5">
+                  Galeri Foto Gedung & Fasilitas Pembelajaran
+                </h3>
+                <p className="text-xs text-slate-500">Suasana kondusif dan sarana prasarana penunjang kegiatan belajar mengajar di SDN Tangerang 6.</p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {users.map((u) => (
-                  <div
-                    key={u.ID}
-                    className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-300 transition-all flex flex-col justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-800 text-white flex items-center justify-center text-sm font-black shrink-0">
-                        {u.NAMA.charAt(0)}
-                      </div>
-                      <div className="overflow-hidden">
-                        <h4 className="text-xs font-bold text-slate-900 truncate" title={u.NAMA}>
-                          {u.NAMA}
-                        </h4>
-                        <div className="text-[11px] text-blue-800 font-semibold truncate">
-                          {u.JABATAN || u.ROLE}
-                        </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {[
+                  {
+                    title: 'Gedung Utama & Gerbang Sekolah',
+                    desc: 'Tampak depan gedung sekolah bersih, asri, dan aman untuk kegiatan harian siswa.',
+                    img: 'https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&q=80&w=800',
+                  },
+                  {
+                    title: 'Ruang Kelas Interaktif',
+                    desc: 'Ruang belajar yang nyaman dilengkapi pencahayaan optimal dan alat peraga tematik.',
+                    img: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&q=80&w=800',
+                  },
+                  {
+                    title: 'Laboratorium Komputer',
+                    desc: 'Fasilitas Chromebook dan perangkat multimedia untuk asesmen serta literasi digital.',
+                    img: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&q=80&w=800',
+                  },
+                  {
+                    title: 'Perpustakaan & Pojok Baca',
+                    desc: 'Koleksi buku pelajaran dan literasi anak yang lengkap untuk menumbuhkan minat baca.',
+                    img: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&q=80&w=800',
+                  },
+                ].map((gal, idx) => (
+                  <div key={idx} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-lg transition-all group flex flex-col">
+                    <div className="relative aspect-video bg-slate-900 overflow-hidden">
+                      <img
+                        src={gal.img}
+                        alt={gal.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      <div className="absolute bottom-3 left-3 right-3">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 bg-black/40 backdrop-blur-md px-2 py-0.5 rounded">
+                          Fasilitas Sekolah
+                        </span>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                      <span className="font-mono">{u.NIP ? `NIP: ${u.NIP}` : 'Pegawai'}</span>
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600">
-                        {u.ROLE}
-                      </span>
+                    <div className="p-4 flex-1 flex flex-col justify-between space-y-2">
+                      <h4 className="text-xs font-black text-slate-900">{gal.title}</h4>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">{gal.desc}</p>
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* DEWAN GURU & TENAGA KEPENDIDIKAN */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
+                    Tenaga Pendidik Profesional
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 mt-0.5">
+                    Dewan Guru & Tenaga Kependidikan SDN Tangerang 6
+                  </h3>
+                  <p className="text-xs text-slate-500">Pendidik berdedikasi tinggi yang mendampingi tumbuh kembang siswa.</p>
+                </div>
+                <span className="text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl self-start">
+                  Total: {users.length} Pegawai & Guru
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {users.map((u, index) => {
+                  // Curated professional portraits rotation for realistic visual presentation
+                  const portraits = [
+                    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400', // Kepala sekolah
+                    'https://images.unsplash.com/photo-1580894732475-80252b415a20?auto=format&fit=crop&q=80&w=400', // Guru
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', // Guru
+                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', // Guru
+                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400', // Guru
+                    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400', // Guru
+                    'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=400', // Staff
+                    'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=400', // Staff
+                  ];
+                  const photoUrl = portraits[index % portraits.length];
+
+                  return (
+                    <div
+                      key={u.ID}
+                      className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-lg hover:border-blue-300 transition-all flex flex-col group"
+                    >
+                      <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
+                        <img
+                          src={photoUrl}
+                          alt={u.NAMA}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 object-top"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent" />
+                        
+                        <div className="absolute top-3 left-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider text-white shadow-sm ${
+                            u.ROLE === 'KEPALA SEKOLAH' ? 'bg-amber-600' : u.ROLE === 'BENDAHARA' ? 'bg-emerald-600' : 'bg-blue-600'
+                          }`}>
+                            {u.ROLE}
+                          </span>
+                        </div>
+
+                        <div className="absolute bottom-3 left-3 right-3 text-white">
+                          <h4 className="text-xs font-black truncate drop-shadow-sm" title={u.NAMA}>
+                            {u.NAMA}
+                          </h4>
+                          <p className="text-[11px] text-blue-200 font-semibold truncate">
+                            {u.JABATAN || (u.ROLE === 'KEPALA SEKOLAH' ? 'Kepala Sekolah' : 'Guru Kelas / Mata Pelajaran')}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 flex-1 flex flex-col justify-between space-y-3 bg-white">
+                        <div className="space-y-1 text-[11px] text-slate-600">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">NIP / ID:</span>
+                            <span className="font-mono font-bold text-slate-800">{u.NIP || 'Pegawai Resmi'}</span>
+                          </div>
+                          {u.TELEPON && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400 font-medium">Kontak:</span>
+                              <span className="font-medium text-slate-700">{u.TELEPON}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Aktif Mengajar
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                            SDN Tangerang 6
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -869,6 +1009,125 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           </div>
         )}
 
+        {/* ESKUL & PRESTASI MEDIA TAB */}
+        {activeNav === 'eskul_prestasi' && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 animate-in fade-in duration-200">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
+                  Galeri Ekstrakurikuler & Prestasi
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
+                  Dokumentasi Foto & Video YouTube Kegiatan Siswa
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Saksikan keseruan kegiatan ekstrakurikuler serta deretan prestasi membanggakan siswa-siswi SDN Tangerang 6.
+                </p>
+              </div>
+
+              {/* Category Filter */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMediaFilter('ALL')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    mediaFilter === 'ALL' ? 'bg-blue-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Semua Media
+                </button>
+                <button
+                  onClick={() => setMediaFilter('ESKUL')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    mediaFilter === 'ESKUL' ? 'bg-blue-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Ekstrakurikuler
+                </button>
+                <button
+                  onClick={() => setMediaFilter('PRESTASI')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    mediaFilter === 'PRESTASI' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Prestasi
+                </button>
+              </div>
+            </div>
+
+            {/* Media Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {publicMediaItems
+                .filter((item) => mediaFilter === 'ALL' || item.category === mediaFilter)
+                .map((item) => (
+                  <div key={item.id} className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:shadow-lg transition-all overflow-hidden flex flex-col group">
+                    <div className="relative aspect-video bg-slate-900 overflow-hidden">
+                      <img
+                        src={item.photoUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=800'}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
+                      
+                      <div className="absolute top-3 left-3">
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider text-white shadow-md ${
+                          item.category === 'ESKUL' ? 'bg-blue-600' : 'bg-amber-500'
+                        }`}>
+                          {item.category === 'ESKUL' ? 'Ekstrakurikuler' : 'Prestasi Siswa'}
+                        </span>
+                      </div>
+
+                      {item.dateOrYear && (
+                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg">
+                          {item.dateOrYear}
+                        </div>
+                      )}
+
+                      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                        <h3 className="text-white font-bold text-sm line-clamp-1 drop-shadow-sm">
+                          {item.title}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                      <p className="text-xs text-slate-600 leading-relaxed font-normal">
+                        {item.description}
+                      </p>
+
+                      {item.youtubeUrl && (
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                            <Video size={14} className="text-red-500" />
+                            <span>Video Dokumentasi</span>
+                          </span>
+                          <a
+                            href={item.youtubeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all"
+                          >
+                            <Play size={13} fill="white" />
+                            <span>Tonton YouTube</span>
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {publicMediaItems.filter((item) => mediaFilter === 'ALL' || item.category === mediaFilter).length === 0 && (
+              <div className="text-center py-20 bg-white rounded-3xl border border-slate-200">
+                <Video size={48} className="mx-auto text-slate-300 mb-3" />
+                <h3 className="text-base font-bold text-slate-700">Belum ada media untuk kategori ini</h3>
+                <p className="text-xs text-slate-400 mt-1">Silakan tambahkan melalui Panel Administrator.</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* KONTAK TAB */}
         {activeNav === 'kontak' && (
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 animate-in fade-in duration-200">
@@ -938,11 +1197,15 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center gap-2.5 text-white font-black text-sm">
-              <School size={20} className="text-blue-400" />
-              <span>SD NEGERI TANGERANG 6</span>
+              {config.SCHOOL_LOGO_URL ? (
+                <img src={config.SCHOOL_LOGO_URL} alt="Logo" className="w-8 h-8 object-contain" />
+              ) : (
+                <School size={20} className="text-blue-400" />
+              )}
+              <span>{config.PUBLIC_WEB_TITLE || config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6'}</span>
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed max-w-md">
-              UPT Satuan Pendidikan SD Negeri Tangerang 6 di bawah naungan Dinas Pendidikan Pemerintah Kota Tangerang. Berkomitmen membentuk insan beriman, berprestasi, dan berakhlak mulia.
+              {config.PUBLIC_WEB_FOOTER_DESC || `UPT Satuan Pendidikan ${config.SCHOOL_NAME || 'SD Negeri Tangerang 6'} di bawah naungan Dinas Pendidikan Pemerintah Kota Tangerang. Berkomitmen membentuk insan beriman, berprestasi, dan berakhlak mulia.`}
             </p>
             <div className="text-[11px] text-slate-500">
               NPSN: {config.SCHOOL_NPSN || '20606016'} • Akreditasi A
@@ -975,7 +1238,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 mt-8 border-t border-blue-900 text-center text-[11px] text-slate-500">
-          © {new Date().getFullYear()} UPT Satuan Pendidikan SDN Tangerang 6. Hak Cipta Dilindungi Undang-Undang.
+          © {new Date().getFullYear()} UPT Satuan Pendidikan {config.SCHOOL_NAME || 'SDN Tangerang 6'}. Hak Cipta Dilindungi Undang-Undang.
         </div>
       </footer>
 

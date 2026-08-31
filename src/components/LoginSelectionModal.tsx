@@ -21,9 +21,6 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
   const [step, setStep] = useState<'select' | 'siperseda' | 'classroom' | 'admin'>('select');
 
   // SIPERSEDA login state
-  const sipersedaUsers = db.getUsers().filter(
-    (u) => u.STATUS === 'AKTIF' && (u.ROLE === 'OPERATOR' || u.ROLE === 'KEPALA SEKOLAH')
-  );
   const [sipersedaQuery, setSipersedaQuery] = useState('');
   const [sipersedaPass, setSipersedaPass] = useState('');
   const [sipersedaError, setSipersedaError] = useState<string | null>(null);
@@ -38,25 +35,70 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
     e.preventDefault();
     setSipersedaError(null);
     const query = sipersedaQuery.trim().toLowerCase();
-    const found = sipersedaUsers.find(
-      (u) =>
-        (u.NIP && u.NIP.replace(/\s+/g, '') === query.replace(/\s+/g, '')) ||
-        (u.EMAIL && u.EMAIL.toLowerCase() === query) ||
-        u.NAMA.toLowerCase().includes(query)
-    );
-    if (!found) {
-      setSipersedaError('Akun Operator/Kepala Sekolah tidak ditemukan. Periksa kembali NIP, Email, atau Nama.');
+
+    if (!query) {
+      setSipersedaError('Masukkan NIP, Email, Username, atau Nama akun Anda.');
       return;
     }
+
+    // 1. Search in db.getUsers() (Master Pegawai)
+    const allUsers = db.getUsers();
+    let foundUser: User | null = null;
+
+    const matchedUser = allUsers.find(
+      (u) =>
+        (u.STATUS || 'AKTIF').toUpperCase() === 'AKTIF' &&
+        (
+          (u.NIP && u.NIP.replace(/\s+/g, '') === query.replace(/\s+/g, '')) ||
+          (u.EMAIL && u.EMAIL.toLowerCase() === query) ||
+          u.NAMA.toLowerCase().includes(query)
+        )
+    );
+
+    if (matchedUser) {
+      foundUser = matchedUser;
+    } else {
+      // 2. Search in accountService accounts (Admin Panel accounts)
+      const allAccounts = accountService.getAccounts();
+      const matchedAcc = allAccounts.find(
+        (a) =>
+          a.STATUS === 'AKTIF' &&
+          (
+            a.USERNAME.toLowerCase() === query ||
+            a.EMAIL.toLowerCase() === query ||
+            (a.NIP && a.NIP.replace(/\s+/g, '') === query.replace(/\s+/g, '')) ||
+            a.NAMA.toLowerCase().includes(query)
+          )
+      );
+
+      if (matchedAcc) {
+        foundUser = {
+          ID: matchedAcc.ID,
+          NIP: matchedAcc.NIP || '',
+          NAMA: matchedAcc.NAMA,
+          EMAIL: matchedAcc.EMAIL,
+          ROLE: (matchedAcc.ROLE === 'SISWA' ? 'STAFF' : matchedAcc.ROLE) as any,
+          STATUS: 'AKTIF',
+          JABATAN: matchedAcc.ROLE,
+          TELEPON: matchedAcc.TELEPON,
+        };
+      }
+    }
+
+    if (!foundUser) {
+      setSipersedaError('Akun tidak ditemukan atau status non-aktif. Pastikan akun sudah ditambahkan di panel Admin dan periksa kembali NIP / Nama.');
+      return;
+    }
+
     setIsLoggingIn(true);
     setTimeout(() => {
-      db.setActiveUser(found);
-      db.logAudit('LOGIN', 'AUTH_PORTAL', found.NIP || found.NAMA, {
+      db.setActiveUser(foundUser!);
+      db.logAudit('LOGIN', 'AUTH_PORTAL', foundUser!.NIP || foundUser!.NAMA, {
         method: 'SIPERSEDA_LOGIN',
-        role: found.ROLE,
+        role: foundUser!.ROLE,
       });
       setIsLoggingIn(false);
-      onEnterSiperseda(found);
+      onEnterSiperseda(foundUser!);
     }, 300);
   };
 
@@ -119,16 +161,6 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
   ];
 
   const renderCredentialForm = (sistem: SystemType, accent: string) => {
-    const demoHints =
-      sistem === 'CLASSROOM'
-        ? [
-            { label: 'Guru Baru (Uji Kunci Kelas 1x)', val: 'gurubaru / guru123' },
-            { label: 'Guru Kls 1 (Terkunci)', val: 'nurul / guru123' },
-            { label: 'Guru Kls 3 (Terkunci)', val: 'fauzi / guru123' },
-            { label: 'Siswa Kls 1', val: 'aisyah / siswa123' },
-            { label: 'Kepsek', val: 'kepsek / kepala123' },
-          ]
-        : [{ label: 'Super Admin', val: 'admin / admin123' }];
     return (
       <form onSubmit={handleCredentialLogin(sistem)} className="space-y-3">
         {formError && (
@@ -182,25 +214,6 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
               </>
             )}
           </button>
-        </div>
-        <div className="pt-2 border-t border-slate-100">
-          <p className="text-[10px] text-slate-400 font-semibold mb-1">Pilih Cepat Akun Demo (Klik untuk mengisi):</p>
-          <div className="flex flex-wrap gap-1">
-            {demoHints.map((h) => {
-              const [u, p] = h.val.split(' / ');
-              return (
-                <button
-                  type="button"
-                  key={h.val}
-                  onClick={() => { setUsername(u); setPassword(p); }}
-                  className="text-[10px] bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 px-2 py-0.5 rounded font-mono transition-colors"
-                  title="Klik untuk mengisi formulir"
-                >
-                  <strong className="font-sans font-bold text-slate-900">{h.label}:</strong> {h.val}
-                </button>
-              );
-            })}
-          </div>
         </div>
       </form>
     );
@@ -270,45 +283,6 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
 
           {step === 'siperseda' && (
             <div className="space-y-4">
-              {/* Quick select */}
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <UserCheck size={15} className="text-emerald-700" />
-                  Pilih Akun (Operator / Kepala Sekolah)
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                  {sipersedaUsers.map((u) => (
-                    <button
-                      key={u.ID}
-                      type="button"
-                      onClick={() => {
-                        db.setActiveUser(u);
-                        db.logAudit('LOGIN', 'AUTH_PORTAL', u.NIP || u.NAMA, { method: 'QUICK_LOGIN', role: u.ROLE });
-                        onEnterSiperseda(u);
-                      }}
-                      className="p-3 rounded-2xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/50 text-left transition-all flex items-center justify-between group shadow-xs"
-                    >
-                      <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                          {u.NAMA.charAt(0)}
-                        </div>
-                        <div className="overflow-hidden">
-                          <div className="text-xs font-bold text-slate-800 truncate">{u.NAMA}</div>
-                          <div className="text-[10px] text-slate-500 truncate">{u.JABATAN || u.ROLE}</div>
-                        </div>
-                      </div>
-                      <ChevronRight size={14} className="text-slate-400 group-hover:text-emerald-700 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-200" />
-                <span className="shrink mx-3 text-[11px] font-bold text-slate-400 uppercase">Atau Masuk Manual</span>
-                <div className="flex-grow border-t border-slate-200" />
-              </div>
-
               <form onSubmit={handleSipersedaLogin} className="space-y-3">
                 {sipersedaError && (
                   <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">

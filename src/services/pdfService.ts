@@ -1086,7 +1086,7 @@ export class PdfService {
       line1: 'PEMERINTAH KOTA TANGERANG',
       line2: 'DINAS PENDIDIKAN',
       line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
-      line4: `${config.SCHOOL_ADDRESS || 'Jl. Perintis Kemerdekaan No. 6 Babakan'} • NPSN: ${config.SCHOOL_NPSN || '20606016'}`,
+      line4: `${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6 Babakan'} • NPSN: ${config.SCHOOL_NPSN || '20606016'}`,
     });
 
     let currentY = 48;
