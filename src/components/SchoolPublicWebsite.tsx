@@ -35,11 +35,15 @@ import {
   Video,
   Play,
   Image as ImageIcon,
+  Filter,
+  Camera,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User, Asset, Item } from '../types';
 import { LoginSelectionModal } from './LoginSelectionModal';
 import { SchoolWebsiteAIAssistantModal } from './SchoolWebsiteAIAssistantModal';
+import { SchoolGallery } from './SchoolGallery';
+import { useTheme } from '../utils/theme';
 
 interface SchoolPublicWebsiteProps {
   onEnterApp: (user?: User) => void;
@@ -55,6 +59,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
   initialLoginOpen = false,
 }) => {
   const config = db.getConfig();
+  const { styles: activeTheme } = useTheme();
   const users = db.getUsers();
   const assets = db.getAssets();
   const items = db.getItems();
@@ -62,6 +67,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
 
   const [activeNav, setActiveNav] = useState<'beranda' | 'profil' | 'sarpras' | 'verifikasi' | 'berita' | 'eskul_prestasi' | 'kontak'>('beranda');
   const [mediaFilter, setMediaFilter] = useState<'ALL' | 'ESKUL' | 'PRESTASI'>('ALL');
+  const [teacherCategoryFilter, setTeacherCategoryFilter] = useState<'ALL' | 'GURU_KELAS' | 'GURU_MAPEL' | 'STAFF_TU'>('ALL');
   const publicMediaItems = db.getPublicMediaItems();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialLoginOpen);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
@@ -167,12 +173,12 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             {config.SCHOOL_LOGO_URL ? (
               <img src={config.SCHOOL_LOGO_URL} alt="Logo" className="w-12 h-12 object-contain group-hover:scale-105 transition-transform" />
             ) : (
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-800 via-blue-700 to-blue-900 text-white flex items-center justify-center font-black shadow-md border border-blue-600/40 group-hover:scale-105 transition-transform">
-                <School size={24} className="text-blue-200" />
+              <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${activeTheme.heroGrad} text-white flex items-center justify-center font-black shadow-md border border-white/10 group-hover:scale-105 transition-transform`}>
+                <School size={24} className="opacity-90" />
               </div>
             )}
             <div>
-              <div className="text-base font-black text-slate-900 tracking-tight leading-none group-hover:text-blue-800 transition-colors">
+              <div className={`text-base font-black text-slate-900 tracking-tight leading-none group-hover:${activeTheme.textAccent} transition-colors`}>
                 {config.PUBLIC_WEB_TITLE || config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6'}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-1 leading-none">
@@ -185,56 +191,56 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           <nav className="hidden lg:flex items-center gap-1 text-xs font-bold text-slate-600">
             <button
               onClick={() => setActiveNav('beranda')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'beranda' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'beranda' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Beranda
             </button>
             <button
               onClick={() => setActiveNav('profil')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'profil' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'profil' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Profil & Guru
             </button>
             <button
               onClick={() => setActiveNav('sarpras')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'sarpras' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'sarpras' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Sarpras & Fasilitas
             </button>
             <button
               onClick={() => setActiveNav('verifikasi')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'verifikasi' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'verifikasi' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Cek QR Aset
             </button>
             <button
               onClick={() => setActiveNav('berita')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'berita' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'berita' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Berita & Prestasi
             </button>
             <button
               onClick={() => setActiveNav('eskul_prestasi')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'eskul_prestasi' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'eskul_prestasi' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Eskul & YouTube
             </button>
             <button
               onClick={() => setActiveNav('kontak')}
-              className={`px-3.5 py-2 rounded-xl transition-all ${
-                activeNav === 'kontak' ? 'bg-blue-50 text-blue-800 font-extrabold' : 'hover:bg-slate-100'
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
+                activeNav === 'kontak' ? `${activeTheme.bgSoft} ${activeTheme.textAccent} font-extrabold` : 'hover:bg-slate-100'
               }`}
             >
               Kontak
@@ -245,7 +251,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           <div className="flex items-center gap-2 sm:gap-2.5">
             <button
               onClick={() => setIsAIModalOpen(true)}
-              className="px-3.5 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300/80 font-extrabold text-xs transition-all flex items-center gap-1.5 shadow-xs"
+              className={`px-3.5 py-2.5 rounded-xl ${activeTheme.bgSoft} hover:opacity-90 ${activeTheme.textAccent} border ${activeTheme.borderAccent} font-extrabold text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer`}
               title="Tanya AI Informasi PPDB & Sekolah"
             >
               <Sparkles size={14} className="text-amber-500 animate-pulse" />
@@ -253,7 +259,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             </button>
             <button
               onClick={() => setIsLoginModalOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-2 group"
+              className={`px-5 py-2.5 rounded-xl bg-gradient-to-r ${activeTheme.primaryGrad} hover:opacity-95 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-2 group cursor-pointer`}
             >
               <LogIn size={15} className="group-hover:translate-x-0.5 transition-transform" />
               <span>LOGIN</span>
@@ -328,12 +334,12 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
         {activeNav === 'beranda' && (
           <div className="space-y-16 pb-20 animate-in fade-in duration-200">
             {/* Hero Section */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 text-white pt-16 pb-24 px-4 sm:px-6 lg:px-8">
-              <div className="absolute inset-0 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
+            <section className={`relative overflow-hidden bg-gradient-to-br ${activeTheme.heroGrad} text-white pt-16 pb-24 px-4 sm:px-6 lg:px-8`}>
+              <div className="absolute inset-0 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px] opacity-10" />
               <div className="max-w-7xl mx-auto relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
                 <div className="lg:col-span-7 space-y-6">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-bold tracking-wide">
-                    <Sparkles size={14} className="text-blue-400" />
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white/90 text-xs font-bold tracking-wide">
+                    <Sparkles size={14} className="text-amber-300 animate-pulse" />
                     <span>Satuan Pendidikan Unggul & Ramah Anak Kota Tangerang</span>
                   </div>
 
@@ -341,28 +347,28 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                     {config.PUBLIC_WEB_WELCOME_TITLE || 'Unggul dalam Prestasi, Berkarakter Luhur & Berwawasan Lingkungan'}
                   </h1>
 
-                  <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-2xl font-normal">
+                  <p className="text-white/80 text-sm sm:text-base leading-relaxed max-w-2xl font-normal">
                     {config.PUBLIC_WEB_WELCOME_DESC || 'Selamat datang di Laman Resmi UPT Satuan Pendidikan SD Negeri Tangerang 6. Kami berkomitmen menyelenggarakan pembelajaran inovatif yang menyenangkan, berpusat pada murid, serta menjunjung akuntabilitas tata kelola sarana & prasarana sekolah secara transparan.'}
                   </p>
 
                   <div className="flex flex-wrap items-center gap-3 pt-2">
                     <button
                       onClick={() => setIsLoginModalOpen(true)}
-                      className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-blue-900/40 transition-all flex items-center gap-2"
+                      className={`px-6 py-3 rounded-xl ${activeTheme.buttonBase} text-xs sm:text-sm font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer`}
                     >
                       <LogIn size={16} />
-                      <span>LOGIN</span>
+                      <span>LOGIN PORTAL</span>
                     </button>
                     <button
                       onClick={() => setActiveNav('sarpras')}
-                      className="px-5 py-3 rounded-xl bg-blue-950/60 hover:bg-blue-900/80 text-blue-100 border border-blue-500/50 font-bold text-xs sm:text-sm transition-all flex items-center gap-2"
+                      className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/30 font-bold text-xs sm:text-sm transition-all flex items-center gap-2 cursor-pointer"
                     >
-                      <Box size={16} className="text-blue-400" />
+                      <Box size={16} className="text-white/80" />
                       <span>Lihat Fasilitas & Aset</span>
                     </button>
                     <button
                       onClick={() => setActiveNav('verifikasi')}
-                      className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-blue-300 border border-blue-500/30 font-bold text-xs sm:text-sm transition-all flex items-center gap-2"
+                      className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/90 border border-white/15 font-bold text-xs sm:text-sm transition-all flex items-center gap-2 cursor-pointer"
                     >
                       <QrCode size={16} />
                       <span>Validasi QR Aset</span>
@@ -370,60 +376,60 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                   </div>
 
                   {/* Highlights Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-blue-900/50">
-                    <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-700/40">
-                      <div className="text-2xl font-black text-blue-300">750+</div>
-                      <div className="text-[11px] text-blue-200 font-medium">Peserta Didik Aktif</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-white/10">
+                    <div className="p-3 rounded-xl bg-white/10 border border-white/10">
+                      <div className="text-2xl font-black text-white">750+</div>
+                      <div className="text-[11px] text-white/80 font-medium">Peserta Didik Aktif</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-700/40">
-                      <div className="text-2xl font-black text-blue-300">{totalTeachers}</div>
-                      <div className="text-[11px] text-blue-200 font-medium">Guru & Tenaga Tendik</div>
+                    <div className="p-3 rounded-xl bg-white/10 border border-white/10">
+                      <div className="text-2xl font-black text-white">{totalTeachers}</div>
+                      <div className="text-[11px] text-white/80 font-medium">Guru & Tenaga Tendik</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-700/40">
-                      <div className="text-2xl font-black text-amber-400">{totalAssetsCount}</div>
-                      <div className="text-[11px] text-blue-200 font-medium">Aset Tetap Terdata</div>
+                    <div className="p-3 rounded-xl bg-white/10 border border-white/10">
+                      <div className="text-2xl font-black text-amber-300">{totalAssetsCount}</div>
+                      <div className="text-[11px] text-white/80 font-medium">Aset Tetap Terdata</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-700/40">
-                      <div className="text-2xl font-black text-sky-300">100%</div>
-                      <div className="text-[11px] text-blue-200 font-medium">Digital Akuntabel</div>
+                    <div className="p-3 rounded-xl bg-white/10 border border-white/10">
+                      <div className="text-2xl font-black text-white">100%</div>
+                      <div className="text-[11px] text-white/80 font-medium">Digital Akuntabel</div>
                     </div>
                   </div>
                 </div>
 
                 {/* Right Card: Kepala Sekolah Welcome Note */}
                 <div className="lg:col-span-5">
-                  <div className="bg-blue-950/80 border border-blue-400/30 rounded-3xl p-6 sm:p-7 shadow-2xl relative backdrop-blur-xl">
-                    <div className="flex items-center gap-4 border-b border-blue-800/50 pb-5">
-                      <div className="w-16 h-16 rounded-2xl bg-blue-700/50 border-2 border-blue-400 flex items-center justify-center text-white text-2xl font-black shrink-0">
+                  <div className="bg-black/25 border border-white/15 rounded-3xl p-6 sm:p-7 shadow-2xl relative backdrop-blur-xl">
+                    <div className="flex items-center gap-4 border-b border-white/10 pb-5">
+                      <div className="w-16 h-16 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center text-white text-2xl font-black shrink-0">
                         LK
                       </div>
                       <div>
-                        <div className="text-xs font-extrabold text-blue-400 uppercase tracking-wider">
+                        <div className="text-xs font-extrabold text-amber-300 uppercase tracking-wider">
                           Sambutan Kepala Sekolah
                         </div>
                         <h3 className="text-base font-bold text-white mt-0.5">
                           {config.HEADMASTER || 'Liestya Kusuma Sari, S.Pd., M.Pd.'}
                         </h3>
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[11px] text-white/60">
                           NIP. {config.HEADMASTER_NIP || '198406192009022007'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="py-4 text-xs sm:text-sm text-slate-300 leading-relaxed space-y-3 font-normal">
+                    <div className="py-4 text-xs sm:text-sm text-white/90 leading-relaxed space-y-3 font-normal">
                       <p>
-                        "Pendidikan adalah lentera masa depan. Di SDN Tangerang 6, kami mendidik setiap anak dengan hati, membina karakter berlandaskan Profil Pelajar Pancasila, serta menjamin seluruh fasilitas pembelajaran terpelihara dengan baik demi kenyamanan anak-anak kita."
+                        "Pendidikan adalah lentera masa depan. Di SDN Tangerang 6, kami mendidik setiap child dengan hati, membina karakter berlandaskan Profil Pelajar Pancasila, serta menjamin seluruh fasilitas pembelajaran terpelihara dengan baik demi kenyamanan anak-anak kita."
                       </p>
-                      <p className="text-slate-400 text-xs">
+                      <p className="text-white/65 text-xs">
                         "Melalui integrasi SIPERSEDA, kami mewujudkan tata kelola aset dan persediaan BOS yang transparan, akuntabel, dan siap diaudit."
                       </p>
                     </div>
 
-                    <div className="pt-4 border-t border-blue-800/50 flex items-center justify-between text-xs">
-                      <span className="text-slate-400 font-mono text-[11px]">NPSN: {config.SCHOOL_NPSN || '20606016'}</span>
+                    <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-white/60 font-mono text-[11px]">NPSN: {config.SCHOOL_NPSN || '20606016'}</span>
                       <button
                         onClick={() => setActiveNav('profil')}
-                        className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
+                        className="text-white hover:underline font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <span>Baca Profil Lengkap</span>
                         <ChevronRight size={14} />
@@ -437,7 +443,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             {/* Quick Feature Pillars */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="text-center max-w-2xl mx-auto mb-10">
-                <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
+                <span className={`text-xs font-extrabold ${activeTheme.textAccent} uppercase tracking-wider`}>
                   Program Unggulan Sekolah
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
@@ -585,8 +591,8 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             {/* GALERI FOTO LINGKUNGAN & FASILITAS SEKOLAH */}
             <div className="space-y-4">
               <div>
-                <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
-                  Dokumentasi Lingkungan Sekolah
+                <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Building2 size={14} /> Dokumentasi Lingkungan Sekolah
                 </span>
                 <h3 className="text-xl font-black text-slate-900 mt-0.5">
                   Galeri Foto Gedung & Fasilitas Pembelajaran
@@ -617,23 +623,27 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                     img: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&q=80&w=800',
                   },
                 ].map((gal, idx) => (
-                  <div key={idx} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-lg transition-all group flex flex-col">
+                  <div
+                    key={idx}
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-2xl hover:border-blue-400 transition-all duration-300 ease-out transform hover:-translate-y-1.5 group flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards"
+                    style={{ animationDelay: `${idx * 80}ms` }}
+                  >
                     <div className="relative aspect-video bg-slate-900 overflow-hidden">
                       <img
                         src={gal.img}
                         alt={gal.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
                         referrerPolicy="no-referrer"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
                       <div className="absolute bottom-3 left-3 right-3">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 bg-black/40 backdrop-blur-md px-2 py-0.5 rounded">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 bg-slate-950/60 backdrop-blur-md px-2 py-0.5 rounded border border-blue-400/30">
                           Fasilitas Sekolah
                         </span>
                       </div>
                     </div>
                     <div className="p-4 flex-1 flex flex-col justify-between space-y-2">
-                      <h4 className="text-xs font-black text-slate-900">{gal.title}</h4>
+                      <h4 className="text-xs font-black text-slate-900 group-hover:text-blue-700 transition-colors">{gal.title}</h4>
                       <p className="text-[11px] text-slate-600 leading-relaxed">{gal.desc}</p>
                     </div>
                   </div>
@@ -641,98 +651,169 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
               </div>
             </div>
 
-            {/* DEWAN GURU & TENAGA KEPENDIDIKAN */}
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* DEWAN GURU & TENAGA KEPENDIDIKAN WITH CATEGORY FILTERS & HOVER ANIMATIONS */}
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider">
-                    Tenaga Pendidik Profesional
+                  <span className="text-xs font-extrabold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users size={14} /> Tenaga Pendidik Profesional
                   </span>
                   <h3 className="text-xl font-black text-slate-900 mt-0.5">
                     Dewan Guru & Tenaga Kependidikan SDN Tangerang 6
                   </h3>
                   <p className="text-xs text-slate-500">Pendidik berdedikasi tinggi yang mendampingi tumbuh kembang siswa.</p>
                 </div>
-                <span className="text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl self-start">
-                  Total: {users.length} Pegawai & Guru
+                <span className="text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 px-3.5 py-1.5 rounded-xl self-start">
+                  Total Terdaftar: {users.length} Pegawai
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {users.map((u, index) => {
-                  // Curated professional portraits rotation for realistic visual presentation
-                  const portraits = [
-                    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400', // Kepala sekolah
-                    'https://images.unsplash.com/photo-1580894732475-80252b415a20?auto=format&fit=crop&q=80&w=400', // Guru
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', // Guru
-                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', // Guru
-                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400', // Guru
-                    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400', // Guru
-                    'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=400', // Staff
-                    'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=400', // Staff
-                  ];
-                  const photoUrl = portraits[index % portraits.length];
+              {/* Category Filter Pills for Dewan Guru */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                {[
+                  { id: 'ALL', label: 'Semua Dewan Guru' },
+                  { id: 'GURU_KELAS', label: 'Guru Kelas' },
+                  { id: 'GURU_MAPEL', label: 'Guru Mapel / Spesialis' },
+                  { id: 'STAFF_TU', label: 'Pimpinan & Staff TU' },
+                ].map((filterTab) => {
+                  const filteredCount = users.filter((u) => {
+                    if (filterTab.id === 'ALL') return true;
+                    const jab = (u.JABATAN || '').toLowerCase();
+                    const role = (u.ROLE || '').toLowerCase();
+                    if (filterTab.id === 'GURU_KELAS') {
+                      return jab.includes('kelas') || (role === 'guru' && !jab.includes('mapel') && !jab.includes('pjok') && !jab.includes('agama'));
+                    }
+                    if (filterTab.id === 'GURU_MAPEL') {
+                      return jab.includes('mapel') || jab.includes('pjok') || jab.includes('agama') || jab.includes('inggris') || jab.includes('seni') || jab.includes('pai');
+                    }
+                    if (filterTab.id === 'STAFF_TU') {
+                      return role === 'kepala sekolah' || role === 'bendahara' || role === 'admin' || role === 'staff' || jab.includes('tu') || jab.includes('kepala') || jab.includes('tata usaha') || jab.includes('bendahara');
+                    }
+                    return true;
+                  }).length;
 
+                  const isActive = teacherCategoryFilter === filterTab.id;
                   return (
-                    <div
-                      key={u.ID}
-                      className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-lg hover:border-blue-300 transition-all flex flex-col group"
+                    <button
+                      key={filterTab.id}
+                      onClick={() => setTeacherCategoryFilter(filterTab.id as any)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center gap-2 whitespace-nowrap ${
+                        isActive
+                          ? 'bg-blue-800 text-white shadow-md shadow-blue-800/20 scale-105'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
                     >
-                      <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
-                        <img
-                          src={photoUrl}
-                          alt={u.NAMA}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 object-top"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent" />
-                        
-                        <div className="absolute top-3 left-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider text-white shadow-sm ${
-                            u.ROLE === 'KEPALA SEKOLAH' ? 'bg-amber-600' : u.ROLE === 'BENDAHARA' ? 'bg-emerald-600' : 'bg-blue-600'
-                          }`}>
-                            {u.ROLE}
-                          </span>
-                        </div>
-
-                        <div className="absolute bottom-3 left-3 right-3 text-white">
-                          <h4 className="text-xs font-black truncate drop-shadow-sm" title={u.NAMA}>
-                            {u.NAMA}
-                          </h4>
-                          <p className="text-[11px] text-blue-200 font-semibold truncate">
-                            {u.JABATAN || (u.ROLE === 'KEPALA SEKOLAH' ? 'Kepala Sekolah' : 'Guru Kelas / Mata Pelajaran')}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between space-y-3 bg-white">
-                        <div className="space-y-1 text-[11px] text-slate-600">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 font-medium">NIP / ID:</span>
-                            <span className="font-mono font-bold text-slate-800">{u.NIP || 'Pegawai Resmi'}</span>
-                          </div>
-                          {u.TELEPON && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400 font-medium">Kontak:</span>
-                              <span className="font-medium text-slate-700">{u.TELEPON}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Aktif Mengajar
-                          </span>
-                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                            SDN Tangerang 6
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                      <Filter size={13} className={isActive ? 'text-amber-300' : 'text-slate-400'} />
+                      <span>{filterTab.label}</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {filteredCount}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
+
+              {/* Grid Dewan Guru */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {users
+                  .filter((u) => {
+                    if (teacherCategoryFilter === 'ALL') return true;
+                    const jab = (u.JABATAN || '').toLowerCase();
+                    const role = (u.ROLE || '').toLowerCase();
+                    if (teacherCategoryFilter === 'GURU_KELAS') {
+                      return jab.includes('kelas') || (role === 'guru' && !jab.includes('mapel') && !jab.includes('pjok') && !jab.includes('agama'));
+                    }
+                    if (teacherCategoryFilter === 'GURU_MAPEL') {
+                      return jab.includes('mapel') || jab.includes('pjok') || jab.includes('agama') || jab.includes('inggris') || jab.includes('seni') || jab.includes('pai');
+                    }
+                    if (teacherCategoryFilter === 'STAFF_TU') {
+                      return role === 'kepala sekolah' || role === 'bendahara' || role === 'admin' || role === 'staff' || jab.includes('tu') || jab.includes('kepala') || jab.includes('tata usaha') || jab.includes('bendahara');
+                    }
+                    return true;
+                  })
+                  .map((u, index) => {
+                    const portraits = [
+                      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400', // Kepala sekolah
+                      'https://images.unsplash.com/photo-1580894732475-80252b415a20?auto=format&fit=crop&q=80&w=400', // Guru
+                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', // Guru
+                      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', // Guru
+                      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400', // Guru
+                      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400', // Guru
+                      'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=400', // Staff
+                      'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=400', // Staff
+                    ];
+                    const photoUrl = portraits[index % portraits.length];
+
+                    return (
+                      <div
+                        key={u.ID}
+                        className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-2xl hover:border-blue-400 transition-all duration-300 ease-out transform hover:-translate-y-1.5 flex flex-col group animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards"
+                        style={{ animationDelay: `${(index % 8) * 60}ms` }}
+                      >
+                        <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
+                          <img
+                            src={photoUrl}
+                            alt={u.NAMA}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out object-top"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
+                          
+                          <div className="absolute top-3 left-3">
+                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider text-white shadow-md backdrop-blur-md ${
+                              u.ROLE === 'KEPALA SEKOLAH' ? 'bg-amber-600/90' : u.ROLE === 'BENDAHARA' ? 'bg-emerald-600/90' : 'bg-blue-600/90'
+                            }`}>
+                              {u.ROLE}
+                            </span>
+                          </div>
+
+                          <div className="absolute bottom-3 left-3 right-3 text-white">
+                            <h4 className="text-xs font-black truncate drop-shadow-md group-hover:text-amber-200 transition-colors" title={u.NAMA}>
+                              {u.NAMA}
+                            </h4>
+                            <p className="text-[11px] text-blue-200 font-semibold truncate">
+                              {u.JABATAN || (u.ROLE === 'KEPALA SEKOLAH' ? 'Kepala Sekolah' : 'Guru Kelas / Mata Pelajaran')}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="p-4 flex-1 flex flex-col justify-between space-y-3 bg-white">
+                          <div className="space-y-1 text-[11px] text-slate-600">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400 font-medium">NIP / ID:</span>
+                              <span className="font-mono font-bold text-slate-800">{u.NIP || 'Pegawai Resmi'}</span>
+                            </div>
+                            {u.TELEPON && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400 font-medium">Kontak:</span>
+                                <span className="font-medium text-slate-700">{u.TELEPON}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Aktif Mengajar
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                              SDN Tangerang 6
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* INTEGRATED SCHOOL GALLERY WITH CAMERA SNAPSHOT FEATURE */}
+            <div className="pt-6 border-t border-slate-200">
+              <SchoolGallery users={users} />
             </div>
           </div>
         )}

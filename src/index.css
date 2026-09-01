@@ -125,4 +125,108 @@
   .card-hover:hover {
     transform: translateY(-2px);
   }
+
+  /* Luxury Premium Visual Utilities */
+  .hover-luxury {
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .hover-luxury:hover {
+    transform: translateY(-3px) scale(1.005);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+  }
+
+  .glow-blue-subtle {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.08);
+  }
+
+  .glow-emerald-subtle {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.08);
+  }
+
+  .smooth-font {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Responsive Typography Scales */
+  .text-responsive-h1 {
+    font-size: clamp(1.5rem, 4vw + 1rem, 2.75rem);
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+  }
+
+  .text-responsive-h2 {
+    font-size: clamp(1.25rem, 3vw + 0.75rem, 2.25rem);
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+  }
+
+  .text-responsive-h3 {
+    font-size: clamp(1.125rem, 2vw + 0.625rem, 1.75rem);
+    line-height: 1.3;
+  }
+
+  .text-responsive-body {
+    font-size: clamp(0.875rem, 0.5vw + 0.75rem, 1rem);
+    line-height: 1.6;
+  }
+
+  .text-responsive-lead {
+    font-size: clamp(1rem, 1vw + 0.875rem, 1.25rem);
+    line-height: 1.5;
+  }
+
+  .text-responsive-small {
+    font-size: clamp(0.75rem, 0.3vw + 0.7rem, 0.875rem);
+    line-height: 1.4;
+  }
+
+  .high-contrast-mode {
+    background-color: #050811 !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+  }
+
+  .high-contrast-mode .bg-white {
+    background-color: #0F172A !important;
+    color: #FFFFFF !important;
+    border-color: #38BDF8 !important;
+  }
+
+  .high-contrast-mode .bg-slate-50,
+  .high-contrast-mode .bg-slate-100 {
+    background-color: #1E293B !important;
+    color: #F8FAFC !important;
+  }
+
+  .high-contrast-mode .text-slate-900,
+  .high-contrast-mode .text-slate-800,
+  .high-contrast-mode .text-slate-700 {
+    color: #FFFFFF !important;
+  }
+
+  .high-contrast-mode .text-slate-600,
+  .high-contrast-mode .text-slate-500 {
+    color: #E2E8F0 !important;
+  }
+
+  .high-contrast-mode .border-slate-200,
+  .high-contrast-mode .border-slate-300,
+  .high-contrast-mode .border-slate-100 {
+    border-color: #475569 !important;
+  }
+
+  .high-contrast-mode button,
+  .high-contrast-mode input,
+  .high-contrast-mode select {
+    outline-offset: 2px !important;
+  }
+
+  .high-contrast-mode .bg-blue-900,
+  .high-contrast-mode .from-blue-900 {
+    background: #020617 !important;
+    border-bottom: 2px solid #FACC15 !important;
+  }
 }

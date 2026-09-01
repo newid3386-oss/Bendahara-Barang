@@ -9,14 +9,25 @@ import { classroomService } from '../../services/classroomService';
 interface ClassroomQuizCBTViewProps {
   account: Account;
   onRefresh: () => void;
+  onTriggerMilestone?: (
+    studentName: string, 
+    title: string, 
+    category?: string, 
+    points?: number
+  ) => void;
 }
 
-export const ClassroomQuizCBTView: React.FC<ClassroomQuizCBTViewProps> = ({ account, onRefresh }) => {
+export const ClassroomQuizCBTView: React.FC<ClassroomQuizCBTViewProps> = ({ 
+  account, 
+  onRefresh,
+  onTriggerMilestone
+}) => {
   const isGuru = account.ROLE === 'GURU';
   const isSiswa = account.ROLE === 'SISWA';
   const isKepsek = account.ROLE === 'KEPALA SEKOLAH';
 
-  const [activeTab, setActiveTab] = useState<'available' | 'results' | 'create'>('available');
+  const [activeTab, setActiveTab] = useState<'available' | 'results' | 'leaderboard' | 'create'>('available');
+  const [selectedLeaderboardQuiz, setSelectedLeaderboardQuiz] = useState<string>('ALL');
   const [activeQuizForTest, setActiveQuizForTest] = useState<ClassroomQuiz | null>(null);
 
   // Active Test State
@@ -92,6 +103,18 @@ export const ClassroomQuizCBTView: React.FC<ClassroomQuizCBTViewProps> = ({ acco
 
     setTestResult(attempt);
     onRefresh();
+
+    const kkm = activeQuizForTest.KKM || 75;
+    if (onTriggerMilestone && attempt.SCORE >= kkm) {
+      setTimeout(() => {
+        onTriggerMilestone(
+          account.NAMA,
+          `🎯 Lulus Kuis: ${activeQuizForTest.JUDUL}! (Nilai: ${attempt.SCORE})`,
+          'Prestasi Akademik (Tuntas KKM)',
+          300 + (attempt.SCORE - kkm) * 8
+        );
+      }, 300);
+    }
   };
 
   // Close Exam Window
@@ -218,6 +241,18 @@ export const ClassroomQuizCBTView: React.FC<ClassroomQuizCBTViewProps> = ({ acco
           }`}
         >
           <BarChart2 size={14} /> Hasil & Skor Ujian ({attempts.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('leaderboard')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activeTab === 'leaderboard'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-amber-50 hover:text-amber-700'
+          }`}
+        >
+          <Sparkles size={14} className={activeTab === 'leaderboard' ? 'text-amber-200' : 'text-amber-500'} />
+          Leaderboard Real-Time 🏆
         </button>
       </div>
 
@@ -389,6 +424,223 @@ export const ClassroomQuizCBTView: React.FC<ClassroomQuizCBTViewProps> = ({ acco
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* 2.5 REAL-TIME LEADERBOARD VIEW */}
+      {activeTab === 'leaderboard' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Header & Filter */}
+          <div className="bg-gradient-to-r from-slate-900 via-purple-950 to-amber-950 rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-400 flex items-center justify-center font-black text-xl shadow-inner">
+                🏆
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 tracking-wider">
+                    Competency Rankings
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" /> Real-Time Updates
+                  </span>
+                </div>
+                <h3 className="text-lg font-black tracking-tight text-white">Leaderboard Kuis & Evaluasi Siswa</h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Peringkat skor tertinggi pengerjaan kuis interaktif SDN Tangerang 6
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-300 whitespace-nowrap">Pilih Kuis:</span>
+              <select
+                value={selectedLeaderboardQuiz}
+                onChange={(e) => setSelectedLeaderboardQuiz(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs border border-slate-700 focus:outline-amber-500"
+              >
+                <option value="ALL">Semua Paket Kuis CBT</option>
+                {quizzes.map((q) => (
+                  <option key={q.ID} value={q.ID}>
+                    {q.JUDUL} ({q.KELAS})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Top 3 Podium (If enough attempts exist) */}
+          {(() => {
+            const filteredAttempts = attempts.filter((a) =>
+              selectedLeaderboardQuiz === 'ALL' ? true : a.QUIZ_ID === selectedLeaderboardQuiz
+            );
+
+            // Sort by score desc, then by date asc
+            const sorted = [...filteredAttempts].sort((a, b) => b.SCORE - a.SCORE);
+            const top1 = sorted[0];
+            const top2 = sorted[1];
+            const top3 = sorted[2];
+
+            if (sorted.length === 0) {
+              return (
+                <div className="bg-white rounded-2xl p-12 text-center text-slate-400 border border-slate-200">
+                  <Award size={36} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-sm font-bold text-slate-600">Belum ada data pengerjaan kuis untuk leaderboard ini.</p>
+                  <p className="text-xs text-slate-400 mt-1">Siswa yang menyelesaikan kuis akan otomatis masuk ke peringkat tertinggi di sini.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6">
+                {/* Podium Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2">
+                  {/* Rank 2 */}
+                  {top2 && (
+                    <div className="bg-white rounded-2xl p-5 border-2 border-slate-300 shadow-md text-center space-y-2 order-2 md:order-1 relative overflow-hidden">
+                      <div className="absolute top-0 inset-x-0 h-1.5 bg-slate-300" />
+                      <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 text-slate-600 font-black text-xl flex items-center justify-center border-2 border-slate-300 shadow-xs">
+                        🥈
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full inline-block">
+                        Juara 2
+                      </span>
+                      <h4 className="font-extrabold text-sm text-slate-900 truncate">{top2.SISWA_NAMA}</h4>
+                      <p className="text-[11px] text-slate-500 font-semibold">{top2.KELAS}</p>
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-1 text-slate-800 font-black text-base">
+                        <Award size={16} className="text-slate-500" /> {top2.SCORE} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rank 1 (CENTER - GOLD) */}
+                  {top1 && (
+                    <div className="bg-gradient-to-b from-amber-50 to-white rounded-3xl p-6 border-2 border-amber-400 shadow-xl text-center space-y-2 order-1 md:order-2 relative overflow-hidden transform md:-translate-y-2">
+                      <div className="absolute top-0 inset-x-0 h-2 bg-amber-400" />
+                      <div className="w-16 h-16 mx-auto rounded-full bg-amber-100 text-amber-600 font-black text-3xl flex items-center justify-center border-4 border-amber-300 shadow-md animate-bounce">
+                        👑
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-900 bg-amber-200/80 px-3 py-1 rounded-full inline-block shadow-2xs">
+                        🥇 Juara 1 • Top Performer
+                      </span>
+                      <h4 className="font-black text-base text-slate-900 truncate">{top1.SISWA_NAMA}</h4>
+                      <p className="text-xs text-amber-800 font-bold">{top1.KELAS}</p>
+                      <div className="pt-2 border-t border-amber-200/60 flex items-center justify-center gap-1 text-amber-900 font-black text-2xl">
+                        <Award size={20} className="text-amber-500 fill-amber-300" /> {top1.SCORE} <span className="text-xs font-medium text-slate-500">/ 100</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rank 3 */}
+                  {top3 && (
+                    <div className="bg-white rounded-2xl p-5 border-2 border-amber-200/80 shadow-md text-center space-y-2 order-3 relative overflow-hidden">
+                      <div className="absolute top-0 inset-x-0 h-1.5 bg-amber-600/60" />
+                      <div className="w-12 h-12 mx-auto rounded-full bg-amber-50 text-amber-800 font-black text-xl flex items-center justify-center border-2 border-amber-400/60 shadow-xs">
+                        🥉
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full inline-block">
+                        Juara 3
+                      </span>
+                      <h4 className="font-extrabold text-sm text-slate-900 truncate">{top3.SISWA_NAMA}</h4>
+                      <p className="text-[11px] text-slate-500 font-semibold">{top3.KELAS}</p>
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-1 text-slate-800 font-black text-base">
+                        <Award size={16} className="text-amber-600" /> {top3.SCORE} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Full Ranking Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <BarChart2 size={14} className="text-purple-600" /> Seluruh Peringkat Nilai ({sorted.length} Siswa)
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-400">Diurutkan Berdasarkan Nilai Tertinggi</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-white border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase">
+                          <th className="p-3.5 text-center w-16">Peringkat</th>
+                          <th className="p-3.5">Nama Siswa</th>
+                          <th className="p-3.5">Kelas</th>
+                          <th className="p-3.5">Judul Kuis</th>
+                          <th className="p-3.5 text-center">Skor Akhir</th>
+                          <th className="p-3.5 text-center">Jawaban Benar</th>
+                          <th className="p-3.5 text-center">Status KKM</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {sorted.map((att, index) => {
+                          const quiz = quizzes.find((q) => q.ID === att.QUIZ_ID);
+                          const isTop3 = index < 3;
+                          const rankBadge =
+                            index === 0
+                              ? '🥇 1'
+                              : index === 1
+                              ? '🥈 2'
+                              : index === 2
+                              ? '🥉 3'
+                              : `#${index + 1}`;
+
+                          return (
+                            <tr
+                              key={att.ID}
+                              className={`transition ${
+                                isTop3
+                                  ? 'bg-amber-50/30 hover:bg-amber-50/70 font-semibold'
+                                  : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <td className="p-3.5 text-center font-black">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded-full text-xs ${
+                                    index === 0
+                                      ? 'bg-amber-300 text-amber-950 font-black shadow-2xs'
+                                      : index === 1
+                                      ? 'bg-slate-200 text-slate-800 font-bold'
+                                      : index === 2
+                                      ? 'bg-amber-100 text-amber-900 font-bold'
+                                      : 'text-slate-500 font-bold'
+                                  }`}
+                                >
+                                  {rankBadge}
+                                </span>
+                              </td>
+                              <td className="p-3.5 font-bold text-slate-900">{att.SISWA_NAMA}</td>
+                              <td className="p-3.5 text-slate-600">{att.KELAS}</td>
+                              <td className="p-3.5 text-slate-700 font-medium">{quiz?.JUDUL || att.QUIZ_ID}</td>
+                              <td className="p-3.5 text-center">
+                                <span className="font-black text-sm text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                                  {att.SCORE}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center text-slate-600 font-bold">
+                                {att.BENAR} / {att.TOTAL_SOAL}
+                              </td>
+                              <td className="p-3.5 text-center">
+                                {att.PASSED ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                    <CheckCircle2 size={11} /> Tuntas
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+                                    <XCircle size={11} /> Remedial
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

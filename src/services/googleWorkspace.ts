@@ -256,6 +256,11 @@ class GoogleWorkspaceService {
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/presentations',
+    'https://www.googleapis.com/auth/meetings.space.created',
+    'https://www.googleapis.com/auth/drive.metadata.readonly'
   ];
 
   public getClientId(): string {
@@ -1122,6 +1127,237 @@ class GoogleWorkspaceService {
     return {
       fileId: uploadJson.id,
       url: uploadJson.webViewLink || `https://drive.google.com/file/d/${uploadJson.id}/view`,
+    };
+  }
+
+  // --- Google Docs ---
+  public async createGoogleDoc(accessToken: string, title: string, contentText: string): Promise<{ id: string; url: string }> {
+    const res = await fetch('https://docs.googleapis.com/v1/documents', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Gagal membuat Google Doc.');
+    }
+    const doc = await res.json();
+    const documentId = doc.documentId;
+
+    const updateRes = await fetch(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            insertText: {
+              location: { index: 1 },
+              text: contentText,
+            },
+          },
+        ],
+      }),
+    });
+
+    if (!updateRes.ok) {
+      const err = await updateRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Gagal menambahkan konten ke Google Doc.');
+    }
+
+    return {
+      id: documentId,
+      url: `https://docs.google.com/document/d/${documentId}/edit`,
+    };
+  }
+
+  // --- Google Calendar & Google Meet ---
+  public async createCalendarEvent(
+    accessToken: string,
+    event: {
+      summary: string;
+      description: string;
+      location?: string;
+      startTime: string; // ISO format
+      endTime: string; // ISO format
+      addMeetLink?: boolean;
+    }
+  ): Promise<{ id: string; htmlLink: string; meetLink?: string }> {
+    const body: any = {
+      summary: event.summary,
+      description: event.description,
+      location: event.location,
+      start: {
+        dateTime: event.startTime,
+        timeZone: 'Asia/Jakarta',
+      },
+      end: {
+        dateTime: event.endTime,
+        timeZone: 'Asia/Jakarta',
+      },
+    };
+
+    if (event.addMeetLink) {
+      body.conferenceData = {
+        createRequest: {
+          requestId: `meet-${Date.now()}`,
+          conferenceSolutionKey: {
+            type: 'hangoutsMeet',
+          },
+        },
+      };
+    }
+
+    const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Gagal membuat acara di Google Calendar.');
+    }
+
+    const data = await res.json();
+    let meetLink = undefined;
+    if (data.conferenceData && data.conferenceData.entryPoints) {
+      const meetEntryPoint = data.conferenceData.entryPoints.find((ep: any) => ep.entryPointType === 'video');
+      if (meetEntryPoint) {
+        meetLink = meetEntryPoint.uri;
+      }
+    }
+
+    return {
+      id: data.id,
+      htmlLink: data.htmlLink,
+      meetLink,
+    };
+  }
+
+  // --- Google Slides ---
+  public async createInventorySlides(
+    accessToken: string,
+    title: string,
+    slidesData: Array<{ heading: string; bullets: string[] }>
+  ): Promise<{ id: string; url: string }> {
+    const res = await fetch('https://slides.googleapis.com/v1/presentations', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Gagal membuat presentasi Google Slides.');
+    }
+
+    const presentation = await res.json();
+    const presentationId = presentation.presentationId;
+
+    const requests: any[] = [];
+    slidesData.forEach((slide, idx) => {
+      const slideId = `slide_page_${idx}`;
+      requests.push({
+        createSlide: {
+          objectId: slideId,
+          insertionIndex: idx + 1,
+          slideLayoutReference: {
+            predefinedLayout: 'TITLE_AND_BODY',
+          },
+        },
+      });
+
+      const titleBoxId = `title_box_${idx}`;
+      const bodyBoxId = `body_box_${idx}`;
+
+      requests.push(
+        {
+          createShape: {
+            objectId: titleBoxId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                width: { magnitude: 600, unit: 'PT' },
+                height: { magnitude: 80, unit: 'PT' },
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: 50,
+                translateY: 50,
+                unit: 'PT',
+              },
+            },
+          },
+        },
+        {
+          insertText: {
+            objectId: titleBoxId,
+            text: slide.heading,
+          },
+        },
+        {
+          createShape: {
+            objectId: bodyBoxId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                width: { magnitude: 600, unit: 'PT' },
+                height: { magnitude: 300, unit: 'PT' },
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: 50,
+                translateY: 150,
+                unit: 'PT',
+              },
+            },
+          },
+        },
+        {
+          insertText: {
+            objectId: bodyBoxId,
+            text: slide.bullets.map((b) => `• ${b}`).join('\n'),
+          },
+        }
+      );
+    });
+
+    if (requests.length > 0) {
+      const updateRes = await fetch(`https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests }),
+      });
+
+      if (!updateRes.ok) {
+        const err = await updateRes.json().catch(() => ({}));
+        console.warn('Gagal memproses batchUpdate slides:', err);
+      }
+    }
+
+    return {
+      id: presentationId,
+      url: `https://docs.google.com/presentation/d/${presentationId}/edit`,
     };
   }
 }

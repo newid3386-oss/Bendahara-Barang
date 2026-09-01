@@ -53,12 +53,36 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [removeToast]);
 
-  const toast = {
-    success: (message: string, title?: string) => addToast('success', message, title),
-    error: (message: string, title?: string) => addToast('error', message, title, 5000),
-    info: (message: string, title?: string) => addToast('info', message, title),
-    warning: (message: string, title?: string) => addToast('warning', message, title, 4000),
-  };
+  const toast = React.useMemo(
+    () => ({
+      success: (message: string, title?: string) => addToast('success', message, title),
+      error: (message: string, title?: string) => addToast('error', message, title, 5000),
+      info: (message: string, title?: string) => addToast('info', message, title),
+      warning: (message: string, title?: string) => addToast('warning', message, title, 4000),
+    }),
+    [addToast]
+  );
+
+  // Safely hook window.alert to non-blocking elegant toasts for seamless iFrame compatibility
+  React.useEffect(() => {
+    const originalAlert = window.alert;
+    window.alert = (msg?: any) => {
+      const messageStr = typeof msg === 'string' ? msg : String(msg ?? '');
+      if (messageStr.toLowerCase().includes('gagal') || messageStr.toLowerCase().includes('error') || messageStr.toLowerCase().includes('habis')) {
+        toast.error(messageStr, 'Pemberitahuan Sistem');
+      } else if (messageStr.toLowerCase().includes('berhasil') || messageStr.toLowerCase().includes('sukses')) {
+        toast.success(messageStr, 'Berhasil');
+      } else if (messageStr.toLowerCase().includes('peringatan') || messageStr.toLowerCase().includes('wajib') || messageStr.toLowerCase().includes('mohon')) {
+        toast.warning(messageStr, 'Perhatian');
+      } else {
+        toast.info(messageStr, 'Informasi');
+      }
+    };
+
+    return () => {
+      window.alert = originalAlert;
+    };
+  }, [toast]);
 
   const confirm = useCallback((options: ConfirmDialogOptions) => {
     setConfirmDialog(options);

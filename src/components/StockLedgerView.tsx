@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { BookOpen, Search, Download, Filter, FileSpreadsheet } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { StockLedger, Item } from '../types';
@@ -6,16 +6,22 @@ import { pdfService } from '../services/pdfService';
 import { excelService } from '../services/excelService';
 
 export const StockLedgerView: React.FC = () => {
-  const items = db.getItems();
+  const items = useMemo(() => db.getItems(), []);
   const [selectedSku, setSelectedSku] = useState<string>(items[0]?.KODE_BARANG || '');
   const [ledgers, setLedgers] = useState<StockLedger[]>(db.getStockLedger());
 
-  const selectedItem = items.find((i) => i.KODE_BARANG === selectedSku);
-  const itemLedgers = ledgers
-    .filter((l) => l.KODE_BARANG === selectedSku)
-    .sort((a, b) => new Date(a.TIMESTAMP).getTime() - new Date(b.TIMESTAMP).getTime());
+  const selectedItem = useMemo(() => {
+    return items.find((i) => i.KODE_BARANG === selectedSku);
+  }, [items, selectedSku]);
+
+  const itemLedgers = useMemo(() => {
+    return ledgers
+      .filter((l) => l.KODE_BARANG === selectedSku)
+      .sort((a, b) => new Date(a.TIMESTAMP).getTime() - new Date(b.TIMESTAMP).getTime());
+  }, [ledgers, selectedSku]);
 
   const handleExportPDF = () => {
+
     if (!selectedItem) return;
     pdfService.generateKartuStok(selectedItem.KODE_BARANG);
   };

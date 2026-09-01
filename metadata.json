@@ -2,7 +2,8 @@
   "name": "Remix Sistem Bendahara Barang",
   "description": "Sistem Informasi Manajemen Barang, Inventaris Aset, dan Persediaan SD Negeri Tangerang 6 dengan penelusuran NIP terintegrasi, pencarian barang & pegawai instan, dan sinkronisasi data real-time.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

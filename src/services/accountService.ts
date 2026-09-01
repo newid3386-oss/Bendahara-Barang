@@ -585,8 +585,20 @@ class AccountService {
   }
 
   public initAccounts(): void {
-    const existing = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-    if (!existing || !localStorage.getItem(STORAGE_KEYS.ACCOUNTS_SEEDED)) {
+    const existingRaw = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
+    let existingCount = 0;
+    try {
+      if (existingRaw) {
+        const parsed = JSON.parse(existingRaw);
+        if (Array.isArray(parsed)) {
+          existingCount = parsed.length;
+        }
+      }
+    } catch (e) {
+      existingCount = 0;
+    }
+
+    if (existingCount === 0 || !localStorage.getItem(STORAGE_KEYS.ACCOUNTS_SEEDED)) {
       this.setItem(STORAGE_KEYS.ACCOUNTS, DEFAULT_ACCOUNTS);
       localStorage.setItem(STORAGE_KEYS.ACCOUNTS_SEEDED, 'true');
     }

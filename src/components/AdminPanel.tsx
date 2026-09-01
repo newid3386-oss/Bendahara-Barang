@@ -3,12 +3,15 @@ import {
   ShieldCheck, Users, LogOut, Plus, Search, X, Edit2, Trash2,
   KeyRound, School, GraduationCap, Settings, BookOpen, CheckCircle2, Ban,
   Lock, Unlock, AlertTriangle, ArrowRight, ArrowLeftRight, Check, UserPlus,
-  Sparkles, Save, Video, Play, ExternalLink, Image as ImageIcon,
+  Sparkles, Save, Video, Play, ExternalLink, Image as ImageIcon, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { Account, SystemType, AccountRole } from '../types/classroom';
 import { db } from '../services/localStorageService';
 import { Config, PublicMediaItem } from '../types';
+import { themes, useTheme } from '../utils/theme';
+import { ClassroomAutoImporterModal } from './ClassroomAutoImporterModal';
+import * as XLSX from 'xlsx';
 
 interface AdminPanelProps {
   onLogout: () => void;
@@ -17,15 +20,61 @@ interface AdminPanelProps {
 type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin' | 'website';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
+  const { styles, setThemeId, setThemeMode, setPreview, previewThemeId, previewThemeMode } = useTheme();
   const [admin, setAdmin] = useState<Account | null>(accountService.getActiveAdminAccount());
   const [tab, setTab] = useState<AdminTab>('overview');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('Semua');
   const [notification, setNotification] = useState<string | null>(null);
   const [config, setConfig] = useState<Config>(db.getConfig());
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json<any>(ws);
+
+        let importedCount = 0;
+        data.forEach((row) => {
+          if (row.NAMA && (row.USERNAME || row.EMAIL)) {
+            const role = row.ROLE ? String(row.ROLE).toUpperCase() : 'SISWA';
+            const accountData: Partial<Account> = {
+              NAMA: row.NAMA,
+              USERNAME: row.USERNAME || row.NAMA.toLowerCase().replace(/\s+/g, ''),
+              PASSWORD: row.PASSWORD || 'siswa123',
+              EMAIL: row.EMAIL || `${row.USERNAME || row.NAMA.toLowerCase().replace(/\s+/g, '')}@sekolah.id`,
+              ROLE: (role as AccountRole) || 'SISWA',
+              SISTEM: 'CLASSROOM',
+              STATUS: 'AKTIF',
+              KELAS: row.KELAS ? String(row.KELAS) : '',
+            };
+            accountService.saveAccount(accountData as Account);
+            importedCount++;
+          }
+        });
+        
+        loadAccounts();
+        showNotify(`Berhasil mengimpor ${importedCount} akun Classroom dari Excel.`);
+      } catch (err) {
+        console.error(err);
+        alert('Gagal membaca file Excel. Pastikan format sesuai.');
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsBinaryString(file);
+  };
 
   // Public Media (Eskul & Prestasi) state
   const [publicMediaItems, setPublicMediaItems] = useState<PublicMediaItem[]>(db.getPublicMediaItems());
@@ -78,6 +127,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   useEffect(() => {
     accountService.initAccounts();
     loadAccounts();
+  }, [tab]);
+
+  useEffect(() => {
+    return () => {
+      setPreview(null, null);
+    };
   }, [tab]);
 
   const loadAccounts = () => {
@@ -156,7 +211,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
     db.saveConfig(config);
-    showNotify('Pengaturan Tampilan Website Publik berhasil disimpan.');
+    setThemeId(config.SYSTEM_THEME || 'classic_blue');
+    setThemeMode(config.SYSTEM_THEME_MODE || 'light');
+    setPreview(null, null);
+    showNotify('Pengaturan Tampilan Website Publik & Tema Sistem berhasil disimpan.');
   };
 
   const tabs: { id: AdminTab; label: string; icon: any; color: string; badge?: string }[] = [
@@ -172,7 +230,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     tab === 'siperseda' ? 'SIPERSEDA' : tab === 'classroom' ? 'CLASSROOM' : tab === 'admin' ? 'ADMIN' : null;
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans antialiased">
+    <div className={`min-h-screen ${styles.bgApp} flex flex-col font-sans antialiased`}>
       {/* Notification Toast */}
       {notification && (
         <div className="fixed top-20 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
@@ -180,6 +238,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           <span>{notification}</span>
         </div>
       )}
+
+      {/* Hidden File Input for Excel Import */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImportExcel} 
+        accept=".xlsx, .xls, .csv" 
+        className="hidden" 
+      />
 
       {/* Media Add/Edit Modal */}
       {showMediaModal && (
@@ -348,9 +415,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <Sparkles size={20} className="text-amber-600" /> Pengaturan Tampilan Website Publik
+                  <Sparkles size={20} className="text-amber-600" /> Pengaturan Tampilan & Tema Sistem
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Kelola logo, judul, banner, visi, misi, dan teks footer yang tampil di halaman utama website sekolah.</p>
+                <p className="text-xs text-slate-500 mt-0.5">Kelola logo, judul, banner, visi, misi, dan sesuaikan tema visual utama yang berlaku di seluruh portal.</p>
               </div>
               <button
                 type="submit"
@@ -358,6 +425,125 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               >
                 <Save size={16} /> Simpan Perubahan
               </button>
+            </div>
+
+            {/* Live Preview Active Notice */}
+            {(previewThemeId || previewThemeMode) && (
+              <div className="p-4 bg-amber-500/10 border border-amber-300/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
+                <div className="flex items-center gap-2 text-amber-900 text-xs font-bold">
+                  <Sparkles size={16} className="text-amber-600 shrink-0" />
+                  <span>✨ Live Preview Aktif: Anda sedang melihat simulasi tema baru secara real-time!</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfig({
+                        ...config,
+                        SYSTEM_THEME: (db.getConfig().SYSTEM_THEME || 'classic_blue') as any,
+                        SYSTEM_THEME_MODE: (db.getConfig().SYSTEM_THEME_MODE || 'light') as any,
+                      });
+                      setPreview(null, null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] transition-all cursor-pointer"
+                  >
+                    Kembalikan Ke Semula
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* THEME SELECTION BENTO CARD */}
+            <div className="p-5 sm:p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  🎨 Kustomisasi Tema Visual Aplikasi (Semua Halaman)
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Sesuaikan palet warna, gradasi premium, dan gaya tombol untuk Website Publik, Classroom, dan SIPERSEDA secara instan.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 pt-2">
+                {Object.values(themes).map((t) => {
+                  const isSelected = config.SYSTEM_THEME === t.id || (!config.SYSTEM_THEME && t.id === 'classic_blue');
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setConfig({ ...config, SYSTEM_THEME: t.id as any });
+                        setPreview(t.id, config.SYSTEM_THEME_MODE || 'light');
+                      }}
+                      className={`flex flex-col text-left p-3.5 rounded-xl border-2 transition-all cursor-pointer hover:scale-[1.02] ${
+                        isSelected
+                          ? 'border-slate-900 bg-white shadow-md ring-2 ring-slate-900/10'
+                          : 'border-slate-200 bg-white/60 hover:bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-2">
+                        <span className="text-[11px] font-black text-slate-900 leading-tight">
+                          {t.name.split(' ').slice(1).join(' ') || t.name}
+                        </span>
+                        {isSelected && (
+                          <span className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center">
+                            <Check size={10} className="stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Visual swatch simulation */}
+                      <div className="h-6 w-full rounded-md bg-slate-100 overflow-hidden flex mt-auto border border-slate-200/50">
+                        <div className={`w-1/3 h-full bg-gradient-to-br ${t.primaryGrad}`} />
+                        <div className={`w-1/3 h-full ${t.bgSoft}`} />
+                        <div className={`w-1/3 h-full bg-white flex items-center justify-center`}>
+                          <div className={`w-2.5 h-2.5 rounded-full bg-gradient-to-br ${t.heroGrad}`} />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* THEME MODE SELECTION BENTO CARD */}
+            <div className="p-5 sm:p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  🌓 Mode Tampilan Sistem (Tema Global Sekolah)
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Pilih mode tampilan default antara Mode Terang, Mode Gelap, atau Mode Kontras Tinggi untuk mengoptimalkan aksesibilitas.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                {[
+                  { id: 'light', name: '☀️ Mode Terang (Light)', desc: 'Tampilan bersih, cerah dan profesional' },
+                  { id: 'dark', name: '🌙 Mode Gelap (Dark)', desc: 'Tampilan obsidian modern yang ramah mata' },
+                  { id: 'high_contrast', name: '👁️ Kontras Tinggi (High Contrast)', desc: 'Desain ramah aksesibilitas dengan kontras ekstrem' },
+                ].map((m) => {
+                  const isSelected = config.SYSTEM_THEME_MODE === m.id || (!config.SYSTEM_THEME_MODE && m.id === 'light');
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setConfig({ ...config, SYSTEM_THEME_MODE: m.id as any });
+                        setPreview(config.SYSTEM_THEME || 'classic_blue', m.id as any);
+                      }}
+                      className={`flex flex-col text-left p-4 rounded-xl border-2 transition-all cursor-pointer hover:scale-[1.01] ${
+                        isSelected
+                          ? 'border-slate-900 bg-white shadow-md ring-2 ring-slate-900/10'
+                          : 'border-slate-200 bg-white/60 hover:bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-xs font-black text-slate-900 mb-1">{m.name}</span>
+                      <span className="text-[10px] text-slate-500">{m.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -604,6 +790,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setShowImporter(true)}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                >
+                  <FileSpreadsheet size={14} /> Auto-Importer Siswa
+                </button>
+                <button
                   onClick={() => {
                     setEditAccount({
                       ID: '',
@@ -784,12 +976,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   {currentSistem === 'ADMIN' && 'Administrator sistem'}
                 </p>
               </div>
-              <button
-                onClick={() => { setEditAccount(null); setShowForm(true); }}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-              >
-                <Plus size={14} /> Tambah Akun
-              </button>
+              <div className="flex items-center gap-2">
+                {currentSistem === 'CLASSROOM' && (
+                  <button
+                    onClick={() => setShowImporter(true)}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                  >
+                    <FileSpreadsheet size={14} /> Auto-Importer Siswa
+                  </button>
+                )}
+                <button
+                  onClick={() => { setEditAccount(null); setShowForm(true); }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus size={14} /> Tambah Akun
+                </button>
+              </div>
             </div>
 
             <div className="relative max-w-sm">
@@ -940,6 +1142,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           account={editAccount}
           onClose={() => setShowForm(false)}
           onSaved={() => { setShowForm(false); loadAccounts(); showNotify('Data akun berhasil disimpan.'); }}
+        />
+      )}
+
+      {/* MODAL: AUTO IMPORTER */}
+      {showImporter && (
+        <ClassroomAutoImporterModal 
+          onClose={() => setShowImporter(false)}
+          onSuccess={(count) => {
+            setShowImporter(false);
+            loadAccounts();
+            showNotify(`Berhasil mengimpor ${count} data akun Classroom.`);
+          }}
         />
       )}
     </div>

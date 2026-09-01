@@ -14,11 +14,24 @@ export default defineConfig(() => {
     server: {
       host: true,
       allowedHosts: true as true,
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
+      // Completely disable HMR on the client and server side to suppress WebSocket connection errors
+      hmr: false,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom'],
+            charts: ['recharts', 'd3'],
+            icons: ['lucide-react'],
+            utils: ['jspdf', 'xlsx', 'jszip', 'qrcode'],
+            ui: ['motion', 'react-markdown'],
+          },
+        },
+      },
     },
   };
 });

@@ -125,11 +125,18 @@ const DEFAULT_PUBLIC_MEDIA: PublicMediaItem[] = [
 ];
 
 class LocalStorageService {
+  private cache: Record<string, any> = {};
+
   private getItem<T>(key: string, defaultValue: T): T {
+    if (this.cache[key] !== undefined) {
+      return this.cache[key] as T;
+    }
     try {
       const data = localStorage.getItem(key);
       if (!data) return defaultValue;
-      return JSON.parse(data) as T;
+      const parsed = JSON.parse(data) as T;
+      this.cache[key] = parsed;
+      return parsed;
     } catch {
       return defaultValue;
     }
@@ -137,6 +144,7 @@ class LocalStorageService {
 
   private setItem<T>(key: string, value: T, notify = true): void {
     try {
+      this.cache[key] = value;
       localStorage.setItem(key, JSON.stringify(value));
       if (notify && typeof window !== 'undefined') {
         setTimeout(() => {
@@ -146,6 +154,10 @@ class LocalStorageService {
     } catch (e) {
       console.error(`Error saving to localStorage [${key}]:`, e);
     }
+  }
+
+  public clearCache(): void {
+    this.cache = {};
   }
 
   public subscribe(callback: (key: string) => void): () => void {
@@ -180,25 +192,38 @@ class LocalStorageService {
     if (!localStorage.getItem(STORAGE_KEYS.CONFIG)) {
       this.setItem(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
+    
+    // Self-healing check for empty arrays to prevent blank database issues
+    const getStoredLength = (key: string): number => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return 0;
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.length : 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    if (!localStorage.getItem(STORAGE_KEYS.USERS) || getStoredLength(STORAGE_KEYS.USERS) === 0) {
       this.setItem(STORAGE_KEYS.USERS, DEFAULT_USERS);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.SUPPLIERS)) {
+    if (!localStorage.getItem(STORAGE_KEYS.SUPPLIERS) || getStoredLength(STORAGE_KEYS.SUPPLIERS) === 0) {
       this.setItem(STORAGE_KEYS.SUPPLIERS, DEFAULT_SUPPLIERS);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.ITEMS)) {
+    if (!localStorage.getItem(STORAGE_KEYS.ITEMS) || getStoredLength(STORAGE_KEYS.ITEMS) === 0) {
       this.setItem(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.BARANG_MASUK)) {
+    if (!localStorage.getItem(STORAGE_KEYS.BARANG_MASUK) || getStoredLength(STORAGE_KEYS.BARANG_MASUK) === 0) {
       this.setItem(STORAGE_KEYS.BARANG_MASUK, DEFAULT_BARANG_MASUK);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.BARANG_KELUAR)) {
+    if (!localStorage.getItem(STORAGE_KEYS.BARANG_KELUAR) || getStoredLength(STORAGE_KEYS.BARANG_KELUAR) === 0) {
       this.setItem(STORAGE_KEYS.BARANG_KELUAR, DEFAULT_BARANG_KELUAR);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.ASSETS)) {
+    if (!localStorage.getItem(STORAGE_KEYS.ASSETS) || getStoredLength(STORAGE_KEYS.ASSETS) === 0) {
       this.setItem(STORAGE_KEYS.ASSETS, DEFAULT_ASSETS);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.ARKAS_ACCOUNTS)) {
+    if (!localStorage.getItem(STORAGE_KEYS.ARKAS_ACCOUNTS) || getStoredLength(STORAGE_KEYS.ARKAS_ACCOUNTS) === 0) {
       this.setItem(STORAGE_KEYS.ARKAS_ACCOUNTS, DEFAULT_ARKAS_ACCOUNTS);
     }
     if (!localStorage.getItem(STORAGE_KEYS.ACTIVE_USER)) {

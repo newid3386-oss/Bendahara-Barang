@@ -92,7 +92,7 @@ export const AsetView: React.FC = () => {
       JENIS_SATUAN: 'Unit',
       HARGA_PEROLEHAN: 0,
       TOTAL_NILAI: 0,
-      TAHUN_PEROLEHAN: year,
+      TAHUN_PEROLEHAN: String(year),
       LOKASI: 'Ruang Lab Komputer',
       PENANGGUNG_JAWAB: 'Pengelola Lab',
       KONDISI: 'BAIK',
@@ -764,8 +764,8 @@ export const AsetView: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Tahun Perolehan</label>
                   <input
                     type="number"
-                    value={editingAsset.TAHUN_PEROLEHAN || new Date().getFullYear()}
-                    onChange={(e) => setEditingAsset({ ...editingAsset, TAHUN_PEROLEHAN: Number(e.target.value) })}
+                    value={editingAsset.TAHUN_PEROLEHAN || String(new Date().getFullYear())}
+                    onChange={(e) => setEditingAsset({ ...editingAsset, TAHUN_PEROLEHAN: e.target.value })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-emerald-700 font-bold"
                   />
                 </div>

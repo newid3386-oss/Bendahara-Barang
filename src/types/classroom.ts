@@ -66,6 +66,7 @@ export interface ClassroomAssignment {
   CREATED_AT: string;
   GURU_ID: string;
   GURU_NAMA: string;
+  IS_PRIORITY?: boolean;
 }
 
 export interface ClassroomSubmission {
@@ -80,6 +81,7 @@ export interface ClassroomSubmission {
   STATUS: 'DRAFT' | 'SUBMITTED' | 'GRADED';
   NILAI?: number;
   FEEDBACK?: string;
+  VOICE_NOTE?: string;
   GRADED_BY?: string;
   GRADED_AT?: string;
 }
@@ -241,3 +243,73 @@ export interface MediaSubmission {
   NILAI?: number;
   FEEDBACK?: string;
 }
+
+// 7. Virtual Live Class (Tatap Muka Daring)
+export interface VirtualLiveClassSession {
+  ID: string;
+  KELAS: string;
+  MAPEL: string;
+  JUDUL: string;
+  DESKRIPSI: string;
+  TANGGAL: string; // YYYY-MM-DD
+  JAM_MULAI: string; // HH:mm e.g. "08:00"
+  JAM_SELESAI: string; // HH:mm e.g. "09:30"
+  MEET_URL: string;
+  PLATFORM: 'GOOGLE_MEET' | 'ZOOM' | 'WEBRTC' | 'TEAMS';
+  GURU_ID: string;
+  GURU_NAMA: string;
+  STATUS: 'JADWAL' | 'BERLANGSUNG' | 'SELESAI';
+  CREATED_AT: string;
+}
+
+// 8. Notification System
+export interface ClassroomNotification {
+  ID: string;
+  USER_ID?: string; // specific user or undefined for all in class
+  KELAS?: string;
+  TITLE: string;
+  MESSAGE: string;
+  TYPE: 'DEADLINE' | 'LIVE_CLASS' | 'GRADE' | 'FORUM' | 'MATERIAL';
+  LINK_PAGE?: string; // target view tab
+  CREATED_AT: string;
+  IS_READ: boolean;
+}
+
+// 9. Custom Grade Weighting Config
+export interface GradeWeightConfig {
+  KELAS: string;
+  MAPEL: string;
+  BOBOT_TUGAS: number; // default 40%
+  BOBOT_KUIS: number; // default 40%
+  BOBOT_PRESENSI: number; // default 20%
+  BOBOT_PORTOFOLIO: number; // default 0%
+  UPDATED_AT: string;
+  UPDATED_BY: string;
+}
+
+// 10. Digital Student Portfolio
+export interface StudentPortfolioItem {
+  ID: string;
+  SISWA_ID: string;
+  SISWA_NAMA: string;
+  KELAS: string;
+  JUDUL: string;
+  DESKRIPSI: string;
+  KATEGORI: 'KARYA_SENI' | 'PROYEK_KODING' | 'ESAI_LITERASI' | 'PRAKTIKUM' | 'DESAIN' | 'LAINNYA';
+  IMAGE_URL?: string;
+  ATTACHMENT_URL?: string;
+  LIKES: string[]; // user IDs
+  COMMENTS: PortfolioComment[];
+  CREATED_AT: string;
+  IS_FEATURED?: boolean;
+}
+
+export interface PortfolioComment {
+  ID: string;
+  AUTHOR_ID: string;
+  AUTHOR_NAMA: string;
+  AUTHOR_ROLE: AccountRole;
+  CONTENT: string;
+  CREATED_AT: string;
+}
+

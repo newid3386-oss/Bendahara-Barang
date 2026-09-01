@@ -22,6 +22,8 @@ import {
 import { db } from '../services/localStorageService';
 import { firebaseService, FirebaseSyncStatus } from '../services/firebaseService';
 import { User, ActivePage } from '../types';
+import { OfflineSyncIndicator } from './OfflineSyncIndicator';
+import { useTheme } from '../utils/theme';
 
 interface NavbarProps {
   onOpenSearch?: () => void;
@@ -52,6 +54,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
   notificationCount,
 }) => {
+  const { styles } = useTheme();
+  const activeTheme = styles;
   const config = db.getConfig();
   const activeUser = db.getActiveUser();
   const notifications = db.getNotifications().filter((n) => n.STATUS === 'UNREAD');
@@ -187,122 +191,131 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-3 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
-      {/* Left: Mobile trigger & School Title */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleToggleMenu}
-          className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-          aria-label="Buka Menu"
-        >
-          <Menu size={20} />
-        </button>
+    <div className="sticky top-0 z-30 flex flex-col w-full">
+      <header className={`flex items-center justify-between px-4 sm:px-6 py-3 ${styles.isHighContrast ? 'bg-black text-white border-b-2 border-white' : styles.isDark ? 'bg-slate-950/95 text-slate-100 border-b border-slate-800 shadow-md' : 'bg-white/95 text-slate-800 border-b border-slate-200 shadow-2xs'} backdrop-blur-md transition-all`}>
+        {/* Left: Mobile trigger & School Title */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleToggleMenu}
+            className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            aria-label="Buka Menu"
+          >
+            <Menu size={20} />
+          </button>
 
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              Bendahara Barang V8.1.6
-            </span>
-            <span className="hidden sm:inline-block text-[11px] text-slate-400">•</span>
-            <span className="hidden sm:inline-block text-xs font-bold text-slate-700 truncate max-w-[280px]">
-              {config.SCHOOL_NAME}
-            </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider ${activeTheme.textAccent} ${activeTheme.bgSoft} px-2 py-0.5 rounded-md border ${activeTheme.borderAccent}`}>
+                Bendahara Barang V8.1.6
+              </span>
+              <span className="hidden sm:inline-block text-[11px] text-slate-400">•</span>
+              <span className="hidden sm:inline-block text-xs font-bold text-slate-700 truncate max-w-[280px]">
+                {config.SCHOOL_NAME}
+              </span>
+            </div>
+            <p className="hidden sm:block text-[11px] text-slate-500 truncate max-w-[240px] sm:max-w-md">
+              {config.ADDRESS}
+            </p>
           </div>
-          <p className="text-[11px] text-slate-500 truncate max-w-[240px] sm:max-w-md">
-            {config.ADDRESS}
-          </p>
         </div>
-      </div>
 
-      {/* Center/Right: Universal Search Shortcut, Google Sheet Sync Chip, Notif, User */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Search Shortcut Bar */}
-        <button
-          type="button"
-          onClick={() => onOpenSearch && onOpenSearch()}
-          className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-600 text-xs font-medium transition-all border border-slate-200 shadow-2xs group"
-        >
-          <Search size={14} className="text-slate-400 group-hover:text-emerald-700" />
-          <span>Cari cepat...</span>
-          <kbd className="px-1.5 py-0.5 rounded bg-white text-[10px] font-mono border border-slate-200 text-slate-500 shadow-2xs">
-            /
-          </kbd>
-        </button>
+        {/* Center/Right: Universal Search Shortcut, Google Sheet Sync Chip, Notif, User */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Search Shortcut Bar */}
+          <button
+            type="button"
+            onClick={() => onOpenSearch && onOpenSearch()}
+            className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-600 text-xs font-medium transition-all border border-slate-200 shadow-2xs group cursor-pointer"
+          >
+            <Search size={14} className={`text-slate-400 group-hover:${activeTheme.textAccent}`} />
+            <span>Cari cepat...</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-white text-[10px] font-mono border border-slate-200 text-slate-500 shadow-2xs">
+              /
+            </kbd>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onOpenSearch && onOpenSearch()}
-          className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-          title="Pencarian Universal"
-        >
-          <Search size={18} />
-        </button>
+          <button
+            type="button"
+            onClick={() => onOpenSearch && onOpenSearch()}
+            className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Pencarian Universal"
+          >
+            <Search size={18} />
+          </button>
 
-        {/* In-App QR Scanner Button */}
-        <button
-          type="button"
-          onClick={() => onOpenQRScanner && onOpenQRScanner()}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
-          title="Scan QR / Barcode Aset & Berkas"
-        >
-          <QrCode size={15} className="text-emerald-700" />
-          <span className="hidden sm:inline">Scan QR</span>
-        </button>
+          {/* In-App QR Scanner Button - Hidden on Mobile, Shown in Sub-header */}
+          <button
+            type="button"
+            onClick={() => onOpenQRScanner && onOpenQRScanner()}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${activeTheme.bgSoft} hover:opacity-90 ${activeTheme.textAccent} border ${activeTheme.borderAccent} shadow-2xs cursor-pointer`}
+            title="Scan QR / Barcode Aset & Berkas (Shortcut: Ctrl+Shift+S)"
+          >
+            <QrCode size={15} className={`${activeTheme.textAccent}`} />
+            <span className="hidden sm:inline">Scan QR</span>
+            <span className={`hidden xl:inline text-[9px] px-1.5 py-0.5 rounded bg-white/70 ${activeTheme.textAccent} font-mono font-extrabold border ${activeTheme.borderAccent}`}>
+              Ctrl+Shift+S
+            </span>
+          </button>
 
-        {/* School Website Portal Button */}
-        <button
-          type="button"
-          onClick={() => onOpenSchoolWebsite && onOpenSchoolWebsite()}
-          className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-emerald-900 border border-slate-300 shadow-2xs"
-          title="Buka Website Resmi SDN Tangerang 6"
-        >
-          <School size={15} className="text-emerald-700" />
-          <span>Website Sekolah</span>
-        </button>
+          {/* School Website Portal Button */}
+          <button
+            type="button"
+            onClick={() => onOpenSchoolWebsite && onOpenSchoolWebsite()}
+            className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-2xs cursor-pointer"
+            title="Buka Website Resmi SDN Tangerang 6"
+          >
+            <School size={15} className={`${activeTheme.textAccent}`} />
+            <span>Website Sekolah</span>
+          </button>
 
-        {/* Gemini AI Assistant Button */}
-        <button
-          type="button"
-          onClick={() => onOpenAIAssistant && onOpenAIAssistant()}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black transition-all bg-linear-to-r from-emerald-800 via-emerald-700 to-teal-800 hover:opacity-95 text-white shadow-xs border border-emerald-600"
-          title="Buka Asisten AI Gemini Pengelola Barang"
-        >
-          <Sparkles size={15} className="text-emerald-300" />
-          <span className="hidden sm:inline">Asisten AI</span>
-        </button>
+          {/* Gemini AI Assistant Button - Hidden on Mobile, Shown in Sub-header */}
+          <button
+            type="button"
+            onClick={() => onOpenAIAssistant && onOpenAIAssistant()}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black transition-all bg-gradient-to-r ${activeTheme.primaryGrad} hover:opacity-95 text-white shadow-xs border border-white/10 cursor-pointer`}
+            title="Buka Asisten AI Gemini Pengelola Barang"
+          >
+            <Sparkles size={15} className="text-amber-300 animate-pulse" />
+            <span className="hidden sm:inline">Asisten AI</span>
+          </button>
 
-        {/* Firebase Firestore Cloud Sync Button */}
-        <button
-          type="button"
-          onClick={() => onOpenFirebaseSync && onOpenFirebaseSync()}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300 shadow-2xs"
-          title="Sinkronisasi Database Cloud Firebase Terpusat"
-        >
-          <Cloud size={15} className="text-blue-700" />
-          <span className="hidden md:inline font-semibold">Cloud Sync</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Realtime Live"></span>
-        </button>
+          {/* Firebase Firestore Cloud Sync Button - Hidden on Mobile, Shown in Sub-header */}
+          <button
+            type="button"
+            onClick={() => onOpenFirebaseSync && onOpenFirebaseSync()}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${activeTheme.bgSoft} hover:opacity-95 ${activeTheme.textAccent} border ${activeTheme.borderAccent} shadow-2xs cursor-pointer`}
+            title="Sinkronisasi Database Cloud Firebase Terpusat"
+          >
+            <Cloud size={15} className={`${activeTheme.textAccent}`} />
+            <span className="hidden md:inline font-semibold">Cloud Sync</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Realtime Live"></span>
+          </button>
 
-        {/* Dynamic Google Sheets Connection Status Indicator */}
-        <button
-          type="button"
-          onClick={handleOpenSheets}
-          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${syncStatus.badgeStyle}`}
-          title={syncStatus.tooltip}
-        >
-          <FileSpreadsheet size={15} className={syncStatus.iconStyle} />
-          <span className="hidden md:inline font-semibold">
-            {syncStatus.label}
-          </span>
-          <span className="hidden sm:inline md:hidden font-semibold">
-            {syncStatus.shortLabel}
-          </span>
-          <span className={`w-2 h-2 rounded-full ${syncStatus.dotStyle}`}></span>
-        </button>
+          {/* Centralized Offline Sync - Hidden on Mobile, Shown in Sub-header */}
+          <div className="hidden sm:block">
+            <OfflineSyncIndicator compact={true} />
+          </div>
 
-        {/* Notifications Dropdown */}
-        <div className="relative">
+          {/* Dynamic Google Sheets Connection Status Indicator - Hidden on Mobile, Shown in Sub-header */}
+          <button
+            type="button"
+            onClick={handleOpenSheets}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${syncStatus.badgeStyle}`}
+            title={syncStatus.tooltip}
+          >
+            <FileSpreadsheet size={15} className={syncStatus.iconStyle} />
+            <span className="hidden md:inline font-semibold">
+              {syncStatus.label}
+            </span>
+            <span className="hidden sm:inline md:hidden font-semibold">
+              {syncStatus.shortLabel}
+            </span>
+            <span className={`w-2 h-2 rounded-full ${syncStatus.dotStyle}`}></span>
+          </button>
+
+          {/* Notifications Dropdown */}
+          <div className="relative">
           <button
             type="button"
             onClick={() => setShowNotifMenu(!showNotifMenu)}
@@ -445,5 +458,60 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
     </header>
-  );
+
+    {/* Mobile Sub-Header Status Strip */}
+    <div className={`sm:hidden flex items-center gap-2.5 px-4 py-2 border-b overflow-x-auto scrollbar-none transition-all ${
+      styles.isHighContrast 
+        ? 'bg-black text-white border-b-2 border-white' 
+        : styles.isDark 
+        ? 'bg-slate-900 border-b border-slate-800' 
+        : 'bg-slate-50 border-b border-slate-200'
+    }`}>
+      {/* Mobile QR Trigger */}
+      <button
+        type="button"
+        onClick={() => onOpenQRScanner && onOpenQRScanner()}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold shrink-0 border ${activeTheme.bgSoft} ${activeTheme.textAccent} ${activeTheme.borderAccent} cursor-pointer`}
+      >
+        <QrCode size={12} className={activeTheme.textAccent} />
+        <span>Scan QR</span>
+      </button>
+
+      {/* Mobile AI Assistant Trigger */}
+      <button
+        type="button"
+        onClick={() => onOpenAIAssistant && onOpenAIAssistant()}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black shrink-0 bg-gradient-to-r ${activeTheme.primaryGrad} text-white cursor-pointer`}
+      >
+        <Sparkles size={12} className="text-amber-300 animate-pulse" />
+        <span>Asisten AI</span>
+      </button>
+
+      {/* Mobile Cloud Sync Trigger */}
+      <button
+        type="button"
+        onClick={() => onOpenFirebaseSync && onOpenFirebaseSync()}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold shrink-0 border ${activeTheme.bgSoft} ${activeTheme.textAccent} ${activeTheme.borderAccent} cursor-pointer`}
+      >
+        <Cloud size={12} className={activeTheme.textAccent} />
+        <span>Cloud Sync</span>
+      </button>
+
+      {/* Mobile Sheets Sync Trigger */}
+      <button
+        type="button"
+        onClick={handleOpenSheets}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold shrink-0 border ${syncStatus.badgeStyle} cursor-pointer`}
+      >
+        <FileSpreadsheet size={12} className={syncStatus.iconStyle} />
+        <span>Sheets</span>
+      </button>
+
+      {/* Mobile Compact Offline Sync Indicator */}
+      <div className="shrink-0 scale-[0.85] origin-left">
+        <OfflineSyncIndicator compact={true} showDetailsButton={true} />
+      </div>
+    </div>
+  </div>
+);
 };

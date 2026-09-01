@@ -1552,7 +1552,7 @@ export const DocumentCenterView: React.FC = () => {
                   {filteredDocs.length > 0 ? (
                     filteredDocs.map((doc) => (
                       <tr key={doc.ID} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{doc.TANGGAL}</td>
+                        <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{(doc as any).TANGGAL || doc.TIMESTAMP.split('T')[0]}</td>
                         <td className="py-3 px-4 font-mono font-bold text-purple-950 whitespace-nowrap">
                           {doc.NOMOR_DOKUMEN}
                         </td>

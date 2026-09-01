@@ -31,6 +31,8 @@ export interface Config {
   PUBLIC_WEB_VISI?: string;
   PUBLIC_WEB_MISI?: string;
   PUBLIC_WEB_FOOTER_DESC?: string;
+  SYSTEM_THEME?: 'classic_blue' | 'luxury_gold' | 'emerald_nature' | 'dark_violet' | 'crimson_scholastic';
+  SYSTEM_THEME_MODE?: 'light' | 'dark' | 'high_contrast';
 }
 
 export interface User {

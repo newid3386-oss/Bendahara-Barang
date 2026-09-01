@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ForumPost, Account, AccountRole } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
+import { PeerReviewLeaderboard } from './PeerReviewLeaderboard';
 
 interface ClassroomForumViewProps {
   account: Account;
@@ -142,6 +143,9 @@ export const ClassroomForumView: React.FC<ClassroomForumViewProps> = ({ account,
           </button>
         </div>
       </div>
+
+      {/* Peer Review Leaderboard Widget */}
+      <PeerReviewLeaderboard />
 
       {/* Filter Chips */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">

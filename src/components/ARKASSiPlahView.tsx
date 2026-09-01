@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { ARKASAccount, BarangMasuk, Asset } from '../types';
+import { ARKASOfficialSPJModal } from './ARKASOfficialSPJModal';
 
 export const ARKASSiPlahView: React.FC = () => {
   const [accounts, setAccounts] = useState<ARKASAccount[]>(db.getARKASAccounts());
@@ -30,6 +31,7 @@ export const ARKASSiPlahView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'OPERASIONAL' | 'MODAL_ASET'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showSPJModal, setShowSPJModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<ARKASAccount | null>(null);
 
   // Form state
@@ -142,11 +144,18 @@ export const ARKASSiPlahView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setShowSPJModal(true)}
+            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-amber-300" />
+            <span>Cetak SPJ BOS (ARKAS K7a)</span>
+          </button>
           <button
             id="btn-export-arkas"
             onClick={exportCSV}
-            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-xs border border-white/20 transition-colors flex items-center gap-2 shadow-xs"
+            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-xs border border-white/20 transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
           >
             <Download className="w-4 h-4" />
             Ekspor CSV
@@ -154,7 +163,7 @@ export const ARKASSiPlahView: React.FC = () => {
           <button
             id="btn-add-arkas"
             onClick={handleOpenAdd}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-2"
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Tambah Kode Rekening
@@ -517,6 +526,12 @@ export const ARKASSiPlahView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ARKAS Official SPJ BOS Document Generator Modal */}
+      <ARKASOfficialSPJModal
+        isOpen={showSPJModal}
+        onClose={() => setShowSPJModal(false)}
+      />
     </div>
   );
 };

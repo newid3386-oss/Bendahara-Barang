@@ -1,30 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
-import { SchoolPublicWebsite } from './components/SchoolPublicWebsite';
-import { DashboardView } from './components/DashboardView';
-import { MasterBarangView } from './components/MasterBarangView';
-import { PenyediaView } from './components/PenyediaView';
-import { BarangMasukView } from './components/BarangMasukView';
-import { BarangKeluarView } from './components/BarangKeluarView';
-import { PersediaanView } from './components/PersediaanView';
-import { StockLedgerView } from './components/StockLedgerView';
-import { PengambilanATKView } from './components/PengambilanATKView';
-import { AsetView } from './components/AsetView';
-import { AssetLifecycleView } from './components/AssetLifecycleView';
-import { MutasiView } from './components/MutasiView';
-import { StockOpnameView } from './components/StockOpnameView';
-import { PemeliharaanPenghapusanView } from './components/PemeliharaanPenghapusanView';
-import { ProcurementPlannerView } from './components/ProcurementPlannerView';
-import { DocumentCenterView } from './components/DocumentCenterView';
-import { LaporanView } from './components/LaporanView';
-import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
-import { AuditControlView } from './components/AuditControlView';
-import { ConfigView } from './components/ConfigView';
-import { PegawaiView } from './components/PegawaiView';
-import { ARKASSiPlahView } from './components/ARKASSiPlahView';
-import { DepresiasiAsetView } from './components/DepresiasiAsetView';
-import { MultiSchoolConsolidationView } from './components/MultiSchoolConsolidationView';
 import { UniversalSearchModal } from './components/UniversalSearchModal';
 import { GoogleSheetsIntegrationModal } from './components/GoogleSheetsIntegrationModal';
 import { FirebaseCloudSyncModal } from './components/FirebaseCloudSyncModal';
@@ -32,14 +8,43 @@ import { AIAssistantModal } from './components/AIAssistantModal';
 import { QRScannerModal } from './components/QRScannerModal';
 import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
 import { QRStickerModal } from './components/QRStickerModal';
-import { ClassroomApp } from './components/ClassroomApp';
-import { AdminPanel } from './components/AdminPanel';
+import { DataReconciliationDialog } from './components/DataReconciliationDialog';
 import { accountService } from './services/accountService';
 import { classroomService } from './services/classroomService';
 import { db } from './services/localStorageService';
 import { Asset, ActivePage, User } from './types';
+import { useTheme } from './utils/theme';
+
+// Lazy loaded views to optimize bundle size
+const SchoolPublicWebsite = lazy(() => import('./components/SchoolPublicWebsite').then(module => ({ default: module.SchoolPublicWebsite })));
+const DashboardView = lazy(() => import('./components/DashboardView').then(module => ({ default: module.DashboardView })));
+const MasterBarangView = lazy(() => import('./components/MasterBarangView').then(module => ({ default: module.MasterBarangView })));
+const PenyediaView = lazy(() => import('./components/PenyediaView').then(module => ({ default: module.PenyediaView })));
+const BarangMasukView = lazy(() => import('./components/BarangMasukView').then(module => ({ default: module.BarangMasukView })));
+const BarangKeluarView = lazy(() => import('./components/BarangKeluarView').then(module => ({ default: module.BarangKeluarView })));
+const PersediaanView = lazy(() => import('./components/PersediaanView').then(module => ({ default: module.PersediaanView })));
+const StockLedgerView = lazy(() => import('./components/StockLedgerView').then(module => ({ default: module.StockLedgerView })));
+const PengambilanATKView = lazy(() => import('./components/PengambilanATKView').then(module => ({ default: module.PengambilanATKView })));
+const AsetView = lazy(() => import('./components/AsetView').then(module => ({ default: module.AsetView })));
+const AssetLifecycleView = lazy(() => import('./components/AssetLifecycleView').then(module => ({ default: module.AssetLifecycleView })));
+const MutasiView = lazy(() => import('./components/MutasiView').then(module => ({ default: module.MutasiView })));
+const StockOpnameView = lazy(() => import('./components/StockOpnameView').then(module => ({ default: module.StockOpnameView })));
+const PemeliharaanPenghapusanView = lazy(() => import('./components/PemeliharaanPenghapusanView').then(module => ({ default: module.PemeliharaanPenghapusanView })));
+const ProcurementPlannerView = lazy(() => import('./components/ProcurementPlannerView').then(module => ({ default: module.ProcurementPlannerView })));
+const DocumentCenterView = lazy(() => import('./components/DocumentCenterView').then(module => ({ default: module.DocumentCenterView })));
+const LaporanView = lazy(() => import('./components/LaporanView').then(module => ({ default: module.LaporanView })));
+const GoogleSheetsSyncView = lazy(() => import('./components/GoogleSheetsSyncView').then(module => ({ default: module.GoogleSheetsSyncView })));
+const AuditControlView = lazy(() => import('./components/AuditControlView').then(module => ({ default: module.AuditControlView })));
+const ConfigView = lazy(() => import('./components/ConfigView').then(module => ({ default: module.ConfigView })));
+const PegawaiView = lazy(() => import('./components/PegawaiView').then(module => ({ default: module.PegawaiView })));
+const ARKASSiPlahView = lazy(() => import('./components/ARKASSiPlahView').then(module => ({ default: module.ARKASSiPlahView })));
+const DepresiasiAsetView = lazy(() => import('./components/DepresiasiAsetView').then(module => ({ default: module.DepresiasiAsetView })));
+const MultiSchoolConsolidationView = lazy(() => import('./components/MultiSchoolConsolidationView').then(module => ({ default: module.MultiSchoolConsolidationView })));
+const ClassroomApp = lazy(() => import('./components/ClassroomApp').then(module => ({ default: module.ClassroomApp })));
+const AdminPanel = lazy(() => import('./components/AdminPanel').then(module => ({ default: module.AdminPanel })));
 
 export default function App() {
+  const { styles } = useTheme();
   const [viewMode, setViewMode] = useState<'app' | 'website' | 'classroom' | 'admin'>('website');
   const [activePage, setActivePage] = useState<ActivePage>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -94,12 +99,18 @@ export default function App() {
     setNotificationCount(lowStock + pendingApprovals);
   }, [activePage, viewMode]);
 
-  // Global keyboard shortcut for search (Ctrl+K or Cmd+K)
+  // Global keyboard shortcut for search (Ctrl+K / Cmd+K) and QR Scanner (Ctrl+Shift+S / Cmd+Shift+S)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      // Ctrl+K or Cmd+K -> Universal Search
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setIsSearchOpen((prev) => !prev);
+      }
+      // Ctrl+Shift+S or Cmd+Shift+S -> QR Scanner
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        setIsQRScannerOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -132,7 +143,7 @@ export default function App() {
   };
 
   const renderActiveView = () => {
-    switch (activePage) {
+    switch (activePage as any) {
       case 'dashboard':
         return (
           <DashboardView
@@ -208,26 +219,36 @@ export default function App() {
 
   // Classroom module — separate from SIPERSEDA
   if (viewMode === 'classroom') {
-    return <ClassroomApp onLogout={() => setViewMode('website')} />;
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-screen bg-slate-50"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+        <ClassroomApp onLogout={() => setViewMode('website')} />
+      </Suspense>
+    );
   }
 
   // Admin management panel
   if (viewMode === 'admin') {
-    return <AdminPanel onLogout={() => setViewMode('website')} />;
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-screen bg-slate-50"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div></div>}>
+        <AdminPanel onLogout={() => setViewMode('website')} />
+      </Suspense>
+    );
   }
 
   // If currently in Public Website mode, display the official school portal
   if (viewMode === 'website') {
     return (
       <>
-        <SchoolPublicWebsite
-          onEnterApp={(user?: User) => {
-            if (user) db.setActiveUser(user);
-            setViewMode('app');
-          }}
-          onEnterClassroom={() => setViewMode('classroom')}
-          onEnterAdmin={() => setViewMode('admin')}
-        />
+        <Suspense fallback={<div className="flex items-center justify-center h-screen bg-white"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div></div>}>
+          <SchoolPublicWebsite
+            onEnterApp={(user?: User) => {
+              if (user) db.setActiveUser(user);
+              setViewMode('app');
+            }}
+            onEnterClassroom={() => setViewMode('classroom')}
+            onEnterAdmin={() => setViewMode('admin')}
+          />
+        </Suspense>
 
         {/* Global Modals accessible if opened from website actions */}
         {scannedCode && (
@@ -247,7 +268,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-800 flex flex-col font-sans antialiased selection:bg-blue-900 selection:text-white">
+    <div className={`min-h-screen ${styles.bgApp} flex flex-col font-sans antialiased selection:bg-blue-900 selection:text-white`}>
       {/* Top Navigation */}
       <Navbar
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -281,7 +302,9 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-          {renderActiveView()}
+          <Suspense fallback={<div className="flex items-center justify-center h-full w-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div></div>}>
+            {renderActiveView()}
+          </Suspense>
         </main>
       </div>
 
@@ -349,6 +372,9 @@ export default function App() {
           onClose={() => setSelectedAssetDetail(null)}
         />
       )}
+
+      {/* Connection & Offline Conflict Reconciliation Dialog */}
+      <DataReconciliationDialog />
     </div>
   );
 }

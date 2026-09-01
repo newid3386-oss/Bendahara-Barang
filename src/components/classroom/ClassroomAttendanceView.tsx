@@ -317,7 +317,7 @@ export const ClassroomAttendanceView: React.FC<ClassroomAttendanceViewProps> = (
 
       {/* SISWA VIEW: MY ATTENDANCE SUMMARY */}
       {isSiswa && studentRecap && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <span className="text-[11px] font-bold text-slate-400 block mb-1">Tingkat Kehadiran</span>
             <div className="flex items-baseline gap-1">

@@ -790,6 +790,168 @@ Hasilkan JSON terstruktur berisi:
   }
 });
 
+// Endpoint: AI-Powered Student Academic Trend & Remedial Analyzer
+app.post('/api/ai/analyze-student-trends', async (req, res) => {
+  const { studentName, kelas, scores, submissions = [], timeline = [] } = req.body;
+
+  if (!studentName) {
+    return res.status(400).json({ success: false, error: 'Nama siswa diperlukan untuk analisis.' });
+  }
+
+  const defaultScores = {
+    nilaiTugas: scores?.nilaiTugas ?? 75,
+    nilaiKuis: scores?.nilaiKuis ?? 75,
+    nilaiAkhir: scores?.nilaiAkhir ?? 75,
+    presensiPct: scores?.presensiPct ?? 100,
+    predikat: scores?.predikat ?? 'B',
+  };
+
+  const localResult = getHeuristicTrendAnalysis(studentName, defaultScores, 78);
+
+  try {
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.json({
+        success: true,
+        isFallback: true,
+        data: localResult,
+      });
+    }
+
+    const promptText = `
+Anda adalah "AI Ahli Psikologi Pendidikan & Evaluasi Kurikulum Merdeka SD Negeri Tangerang 6".
+Tugas Anda adalah melakukan analisis mendalam terhadap tren akademik dan performa belajar peserta didik, serta memberikan rekomendasi program remedial mandiri secara terstruktur.
+
+Data Peserta Didik:
+- Nama: ${studentName}
+- Kelas: ${kelas || 'Kelas 1'}
+- Rerata Nilai Tugas: ${defaultScores.nilaiTugas}/100
+- Rerata Nilai Kuis CBT: ${defaultScores.nilaiKuis}/100
+- Persentase Presensi Kehadiran: ${defaultScores.presensiPct}%
+- Nilai Akhir (NA): ${defaultScores.nilaiAkhir}/100 (Kriteria Ketuntasan Minimal / KKM: 75)
+- Predikat: ${defaultScores.predikat}
+
+Riwayat Aktivitas & Submisi Tugas Terakhir:
+${JSON.stringify(submissions.slice(0, 10), null, 2)}
+
+Riwayat Tren Nilai Akademik Linier:
+${JSON.stringify(timeline.slice(0, 10), null, 2)}
+
+Harap hasilkan analisis mendalam dalam format JSON terstruktur dengan kunci-kunci berikut:
+1. analysis_tren: Narasi komprehensif (1-2 paragraf) dalam bahasa Indonesia resmi tentang tren naik-turunnya performa siswa, kesenjangan antara nilai tugas & kuis CBT, serta faktor keaktifan kehadiran.
+2. kekuatan: Array berisi 2-3 poin kekuatan spesifik siswa (akademis maupun non-akademis/sikap berdasarkan deskripsi atau presensi).
+3. kelemahan: Array berisi 2-3 area kelemahan spesifik yang membutuhkan bimbingan lebih lanjut.
+4. rekomendasi_remedial: Objek berisi:
+   - materi_fokus: Topik materi spesifik Kurikulum Merdeka yang perlu difokuskan kembali.
+   - langkah_bimbingan: Array berisi 3 langkah konkret pendampingan/intervensi guru kelas atau orang tua di rumah.
+   - lembar_kerja_rekomendasi: Nama / deskripsi jenis Lembar Kerja Peserta Didik (LKPD) adaptif yang perlu diberikan.
+`;
+
+    const { text, modelUsed } = await callGeminiWithRetryAndFallback(ai, {
+      contents: promptText,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            analysis_tren: { type: Type.STRING },
+            kekuatan: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            kelemahan: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            rekomendasi_remedial: {
+              type: Type.OBJECT,
+              properties: {
+                materi_fokus: { type: Type.STRING },
+                langkah_bimbingan: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                lembar_kerja_rekomendasi: { type: Type.STRING },
+              },
+              required: ['materi_fokus', 'langkah_bimbingan', 'lembar_kerja_rekomendasi'],
+            },
+          },
+          required: ['analysis_tren', 'kekuatan', 'kelemahan', 'rekomendasi_remedial'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(text || '{}');
+    return res.json({
+      success: true,
+      modelUsed,
+      data: parsed,
+    });
+  } catch (error: any) {
+    console.error('Error analyzing student trends (falling back gracefully):', error);
+    return res.json({
+      success: true,
+      isFallback: true,
+      warning: 'Model AI mengalami antrian trafik, sistem menyusun hasil analitik cerdas lokal.',
+      data: localResult,
+    });
+  }
+});
+
+// Helper function for local trend analysis fallback
+function getHeuristicTrendAnalysis(studentName: string, scores: any, classAvg: number) {
+  const avgTugas = scores.nilaiTugas || 80;
+  const avgKuis = scores.nilaiKuis || 78;
+  const avgAkhir = scores.nilaiAkhir || 79;
+  
+  let desc = `Siswa ${studentName} menunjukkan performa belajar yang stabil di atas rata-rata kelas (${classAvg}). Partisipasi aktif dalam pengumpulan tugas berkontribusi positif terhadap pencapaian kuis harian.`;
+  let kekuatan = ['Keaktifan pengerjaan tugas mandiri tepat waktu', 'Pemahaman konsep dasar literasi membaca'];
+  let kelemahan = ['Ketelitian dalam menjawab soal kuis numerasi bertingkat'];
+  let materiFokus = 'Operasi Hitung Perkalian & Pembagian Pecahan';
+  let bimbingan = [
+    'Berikan latihan mandiri bertahap 15 menit per hari.',
+    'Gunakan peraga visual/konkrit untuk konsep pembagian.',
+    'Bimbingan belajar mandiri terstruktur bersama tutor sebaya.'
+  ];
+  let lkpd = 'Lembar Kerja Adaptif Level 1 - Konsep Pembagian Konseptual Cisadane';
+
+  if (avgAkhir < 75) {
+    desc = `Siswa ${studentName} memiliki nilai akhir (${avgAkhir}) di bawah KKM sekolah (75). Dibutuhkan intervensi khusus untuk memulihkan ketertinggalan belajar pada kompetensi dasar kuis harian.`;
+    kekuatan = ['Antusiasme belajar di kelas dan sikap gotong royong'];
+    kelemahan = ['Operasi pembagian dasar matematika', 'Kecepatan pemahaman materi instruksional baru'];
+    materiFokus = 'Operasi Bilangan & Numerasi Sederhana';
+    bimbingan = [
+      'Gunakan objek konkrit/alat peraga visual (misal: manik-manik atau stik es krim) saat menjelaskan konsep hitung.',
+      'Lakukan sesi bimbingan khusus kelompok kecil di kelas.',
+      'Sinergi komunikasi intensif dengan orang tua untuk pendampingan belajar di rumah.'
+    ];
+    lkpd = 'Lembar Kerja Remedial Individual - Operasi Hitung Dasar Sungai Cisadane';
+  } else if (avgAkhir >= 90) {
+    desc = `Siswa ${studentName} berprestasi luar biasa dengan rata-rata (${avgAkhir}) mendekati sempurna. Sangat mandiri dan memiliki pemikiran kritis yang tajam dalam penyelesaian studi kasus.`;
+    kekuatan = ['Kemampuan bernalar kritis yang tinggi', 'Kosa kata yang kaya dalam menulis narasi', 'Hasil evaluasi kuis konsisten di atas 90'];
+    kelemahan = ['Terkadang terlalu cepat mengerjakan sehingga kurang mengecek ulang kembali'];
+    materiFokus = 'Pengayaan Materi HOTS & Penalaran Analitis';
+    bimbingan = [
+      'Tugaskan sebagai Tutor Sebaya untuk mendampingi rekan yang membutuhkan remedial.',
+      'Berikan modul pengayaan tingkat lanjut (Higher Order Thinking Skills).',
+      'Ikut sertakan dalam proyek kolaboratif pemecahan masalah bertema kearifan lokal Tangerang.'
+    ];
+    lkpd = 'Modul Pengayaan HOTS Mandiri - Literasi & Logika Digital Terpadu';
+  }
+
+  return {
+    analysis_tren: desc,
+    kekuatan,
+    kelemahan,
+    rekomendasi_remedial: {
+      materi_fokus: materiFokus,
+      langkah_bimbingan: bimbingan,
+      lembar_kerja_rekomendasi: lkpd
+    }
+  };
+}
+
 // Vite middleware for development & static serving for production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

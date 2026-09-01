@@ -14,7 +14,13 @@ import {
   ClassroomMedia,
   MediaSubmission,
   MediaType,
+  VirtualLiveClassSession,
+  ClassroomNotification,
+  GradeWeightConfig,
+  StudentPortfolioItem,
+  PortfolioComment,
 } from '../types/classroom';
+import { offlineSyncManager } from './offlineSyncManager';
 
 const STORAGE_KEYS = {
   COURSES: 'BB_CLASSROOM_COURSES',
@@ -29,6 +35,10 @@ const STORAGE_KEYS = {
   SCHEDULES: 'BB_CLASSROOM_SCHEDULES_V3',
   MEDIA: 'BB_CLASSROOM_MEDIA_V1',
   MEDIA_SUBMISSIONS: 'BB_CLASSROOM_MEDIA_SUBMISSIONS_V1',
+  LIVE_CLASSES: 'BB_CLASSROOM_LIVE_CLASSES_V1',
+  NOTIFICATIONS: 'BB_CLASSROOM_NOTIFICATIONS_V1',
+  GRADE_WEIGHTS: 'BB_CLASSROOM_GRADE_WEIGHTS_V1',
+  PORTFOLIO: 'BB_CLASSROOM_PORTFOLIO_V1',
   SEEDED: 'BB_CLASSROOM_SEEDED_V4',
 };
 
@@ -536,7 +546,7 @@ const DEFAULT_MATERIALS: LearningMaterial[] = [
     JUDUL: 'Video Panduan: Menggambar Hewan dari Angka Dasar',
     DESKRIPSI: 'Teknik mudah anak SD menggambar burung dari angka 2 dan ikan dari angka 3.',
     TIPE: 'VIDEO',
-    URL_LINK: 'https://youtube.com',
+    URL_LINK: 'https://www.youtube.com/watch?v=3JZ_D3ELwOQ',
     FILE_SIZE: '10 Menit',
     RINGKASAN_KONTEN: 'Panduan video interaktif melatih motorik halus dan kreativitas visual anak dengan media krayon.',
     CREATED_AT: nowISO(),
@@ -549,7 +559,7 @@ const DEFAULT_MATERIALS: LearningMaterial[] = [
     JUDUL: 'LKPD Siswa: Eksperimen Sederhana Energi Alternatif',
     DESKRIPSI: 'Lembar Kerja Peserta Didik mengamati kincir angin kertas dan pemanfaatan panas matahari.',
     TIPE: 'LKPD',
-    URL_LINK: 'https://belajar.kemdikbud.go.id',
+    URL_LINK: 'https://www.youtube.com/watch?v=kY41gXhLdQ8',
     FILE_SIZE: '1.2 MB',
     RINGKASAN_KONTEN: 'Petunjuk praktikum rumah aman dengan bahan kertas origami, sedotan, dan jarum pentul dengan pengawasan orang tua.',
     CREATED_AT: nowISO(),
@@ -653,24 +663,187 @@ const DEFAULT_MEDIA_SUBMISSIONS: MediaSubmission[] = [
   }
 ];
 
+const DEFAULT_LIVE_CLASSES: VirtualLiveClassSession[] = [
+  {
+    ID: 'LIVE-101',
+    KELAS: 'Kelas 1',
+    MAPEL: 'Tematik & Bahasa Indonesia',
+    JUDUL: 'Sesi Tatap Muka: Diskusi & Storytelling Tematik',
+    DESKRIPSI: 'Sesi live Google Meet menyapa siswa kelas 1, membaca dongeng bersama, dan penugasan melukis.',
+    TANGGAL: todayDate(),
+    JAM_MULAI: '08:30',
+    JAM_SELESAI: '09:30',
+    MEET_URL: 'https://meet.google.com/abc-defg-hij',
+    PLATFORM: 'GOOGLE_MEET',
+    GURU_ID: 'ACC-CLS-002',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    STATUS: 'BERLANGSUNG',
+    CREATED_AT: nowISO(),
+  },
+  {
+    ID: 'LIVE-102',
+    KELAS: 'Kelas 5',
+    MAPEL: 'Informatika / Koding SD',
+    JUDUL: 'Live Coding Scratch: Membuat Game Matematika Interaktif',
+    DESKRIPSI: 'Demonstrasi live streaming cara menyusun blok algoritma matematika di Scratch.',
+    TANGGAL: todayDate(),
+    JAM_MULAI: '10:00',
+    JAM_SELESAI: '11:30',
+    MEET_URL: 'https://meet.google.com/xyz-uvwx-rst',
+    PLATFORM: 'GOOGLE_MEET',
+    GURU_ID: 'ACC-CLS-006',
+    GURU_NAMA: 'M. Rizky Pratama, S.Pd.',
+    STATUS: 'JADWAL',
+    CREATED_AT: nowISO(),
+  }
+];
+
+const DEFAULT_NOTIFICATIONS: ClassroomNotification[] = [
+  {
+    ID: 'NOTIF-001',
+    KELAS: 'Kelas 1',
+    TITLE: '🎥 Kelas Daring Tatap Muka Hari Ini!',
+    MESSAGE: 'Guru Ibu Nurul Hidayah telah mendiskusikan Sesi Live Storytelling pukul 08:30 WIB.',
+    TYPE: 'LIVE_CLASS',
+    LINK_PAGE: 'live_class',
+    CREATED_AT: nowISO(),
+    IS_READ: false,
+  },
+  {
+    ID: 'NOTIF-002',
+    KELAS: 'Kelas 1',
+    TITLE: '⏰ Pengingat Tugas: Menggambar Pohon',
+    MESSAGE: 'Tenggat waktu pengumpulan tugas menggambar pohon mendekati batas waktu.',
+    TYPE: 'DEADLINE',
+    LINK_PAGE: 'assignments',
+    CREATED_AT: nowISO(),
+    IS_READ: false,
+  },
+  {
+    ID: 'NOTIF-003',
+    KELAS: 'Kelas 1',
+    TITLE: '🏆 Lencana Prestasi Baru Terbuka!',
+    MESSAGE: 'Selamat! Kamu telah meraih lencana Pembelajar Cepat karena mengumpulkan tugas tepat waktu.',
+    TYPE: 'GRADE',
+    LINK_PAGE: 'dashboard',
+    CREATED_AT: nowISO(),
+    IS_READ: false,
+  }
+];
+
+const DEFAULT_GRADE_WEIGHTS: GradeWeightConfig[] = [
+  {
+    KELAS: 'Kelas 1',
+    MAPEL: 'Tematik & Bahasa Indonesia',
+    BOBOT_TUGAS: 40,
+    BOBOT_KUIS: 30,
+    BOBOT_PRESENSI: 20,
+    BOBOT_PORTOFOLIO: 10,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'Guru Kelas 1',
+  },
+  {
+    KELAS: 'Kelas 5',
+    MAPEL: 'Informatika / Koding SD',
+    BOBOT_TUGAS: 35,
+    BOBOT_KUIS: 35,
+    BOBOT_PRESENSI: 15,
+    BOBOT_PORTOFOLIO: 15,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'M. Rizky Pratama, S.Pd.',
+  }
+];
+
+const DEFAULT_PORTFOLIO: StudentPortfolioItem[] = [
+  {
+    ID: 'PORT-001',
+    SISWA_ID: 'SISWA-001',
+    SISWA_NAMA: 'Aisyah Putri Rahmadani',
+    KELAS: 'Kelas 1',
+    JUDUL: 'Lukisan Pohon Mangga & Taman Rumahku',
+    DESKRIPSI: 'Hasil karya seni gambar cat air tentang kebersihan lingkungan rumah dan pentingnya menjaga keasrian taman.',
+    KATEGORI: 'KARYA_SENI',
+    IMAGE_URL: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop&q=80',
+    LIKES: ['SISWA-002', 'ACC-CLS-002'],
+    COMMENTS: [
+      {
+        ID: 'PC-101',
+        AUTHOR_ID: 'ACC-CLS-002',
+        AUTHOR_NAMA: 'Nurul Hidayah, S.Pd.',
+        AUTHOR_ROLE: 'GURU',
+        CONTENT: 'Warna cat airnya sangat indah Aisyah! Pemilihan kontras warnanya menunjukkan bakat seni melukis yang kuat.',
+        CREATED_AT: nowISO(),
+      }
+    ],
+    CREATED_AT: nowISO(),
+    IS_FEATURED: true,
+  },
+  {
+    ID: 'PORT-002',
+    SISWA_ID: 'SISWA-017',
+    SISWA_NAMA: 'Fajar Kurniawan',
+    KELAS: 'Kelas 5',
+    JUDUL: 'Game Kuis Sains Scratch: Daur Air & Presipitasi',
+    DESKRIPSI: 'Proyek animasi koding Scratch tempat pengguna menjawab kuis tentang tahapan daur air (Evaporasi, Kondensasi, Presipitasi).',
+    KATEGORI: 'PROYEK_KODING',
+    IMAGE_URL: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80',
+    ATTACHMENT_URL: 'https://scratch.mit.edu/projects/sample',
+    LIKES: ['SISWA-018', 'SISWA-019', 'ACC-CLS-006'],
+    COMMENTS: [
+      {
+        ID: 'PC-102',
+        AUTHOR_ID: 'ACC-CLS-006',
+        AUTHOR_NAMA: 'M. Rizky Pratama, S.Pd.',
+        AUTHOR_ROLE: 'GURU',
+        CONTENT: 'Luar biasa Fajar! Logika koding perulangannya sangat rapi dan ramah dimainkan adik kelas.',
+        CREATED_AT: nowISO(),
+      }
+    ],
+    CREATED_AT: nowISO(),
+    IS_FEATURED: true,
+  }
+];
+
 class ClassroomService {
+  private memoryCache = new Map<string, any>();
+
   private getItem<T>(key: string, defaultValue: T): T {
+    if (this.memoryCache.has(key)) {
+      return this.memoryCache.get(key) as T;
+    }
     try {
-      const data = localStorage.getItem(key);
-      if (!data) return defaultValue;
-      return JSON.parse(data) as T;
+      const data = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+      if (!data) {
+        this.memoryCache.set(key, defaultValue);
+        return defaultValue;
+      }
+      const parsed = JSON.parse(data) as T;
+      this.memoryCache.set(key, parsed);
+      return parsed;
     } catch {
+      this.memoryCache.set(key, defaultValue);
       return defaultValue;
     }
   }
 
   private setItem<T>(key: string, value: T): void {
-    localStorage.setItem(key, JSON.stringify(value));
+    this.memoryCache.set(key, value);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        console.warn('Failed to write to localStorage for key:', key, e);
+      }
+    }
     if (typeof window !== 'undefined') {
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('bb_storage_sync', { detail: { key } }));
       }, 0);
     }
+  }
+
+  public clearMemoryCache(): void {
+    this.memoryCache.clear();
   }
 
   public initClassroom(): void {
@@ -688,6 +861,10 @@ class ClassroomService {
       this.setItem(STORAGE_KEYS.SCHEDULES, DEFAULT_SCHEDULES);
       this.setItem(STORAGE_KEYS.MEDIA, DEFAULT_MEDIA);
       this.setItem(STORAGE_KEYS.MEDIA_SUBMISSIONS, DEFAULT_MEDIA_SUBMISSIONS);
+      this.setItem(STORAGE_KEYS.LIVE_CLASSES, DEFAULT_LIVE_CLASSES);
+      this.setItem(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
+      this.setItem(STORAGE_KEYS.GRADE_WEIGHTS, DEFAULT_GRADE_WEIGHTS);
+      this.setItem(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
       localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
     }
   }
@@ -865,6 +1042,7 @@ class ClassroomService {
         CREATED_AT: nowISO(),
         GURU_ID: assignment.GURU_ID || '',
         GURU_NAMA: assignment.GURU_NAMA || '',
+        IS_PRIORITY: assignment.IS_PRIORITY ?? false,
       };
       list.push(saved);
     }
@@ -875,6 +1053,13 @@ class ClassroomService {
   public deleteAssignment(id: string): void {
     this.setItem(STORAGE_KEYS.ASSIGNMENTS, this.getAssignments().filter((a) => a.ID !== id));
     this.setItem(STORAGE_KEYS.SUBMISSIONS, this.getSubmissions().filter((s) => s.ASSIGNMENT_ID !== id));
+  }
+
+  public deleteAssignments(ids: string[]): void {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    this.setItem(STORAGE_KEYS.ASSIGNMENTS, this.getAssignments().filter((a) => !idSet.has(a.ID)));
+    this.setItem(STORAGE_KEYS.SUBMISSIONS, this.getSubmissions().filter((s) => !idSet.has(s.ASSIGNMENT_ID)));
   }
 
   // --- Submissions ---
@@ -921,20 +1106,50 @@ class ClassroomService {
       list.push(saved);
     }
     this.setItem(STORAGE_KEYS.SUBMISSIONS, list);
+    offlineSyncManager.addPendingChange(
+      'STUDENT_SUBMISSION',
+      `Tugas ${saved.ASSIGNMENT_ID} siswa ${saved.SISWA_NAMA} (${saved.STATUS})`,
+      saved
+    );
     return saved;
   }
 
-  public gradeSubmission(id: string, nilai: number, feedback: string, gradedBy: string): void {
+  public gradeSubmission(id: string, nilai: number, feedback: string, gradedBy: string, voiceNote?: string): void {
     const list = this.getItem<ClassroomSubmission[]>(STORAGE_KEYS.SUBMISSIONS, []);
     const sub = list.find((s) => s.ID === id);
     if (sub) {
       sub.NILAI = nilai;
       sub.FEEDBACK = feedback;
+      if (voiceNote !== undefined) sub.VOICE_NOTE = voiceNote;
       sub.GRADED_BY = gradedBy;
       sub.GRADED_AT = ts();
       sub.STATUS = 'GRADED';
       this.setItem(STORAGE_KEYS.SUBMISSIONS, list);
+      offlineSyncManager.addPendingChange(
+        'STUDENT_SUBMISSION',
+        `Nilai tugas ${sub.SISWA_NAMA}: ${nilai}/100 oleh ${gradedBy}`,
+        sub
+      );
     }
+  }
+
+  public gradeSubmissionsBulk(
+    updates: Array<{ id: string; nilai: number; feedback?: string; voiceNote?: string }>,
+    gradedBy: string
+  ): void {
+    const list = this.getItem<ClassroomSubmission[]>(STORAGE_KEYS.SUBMISSIONS, []);
+    updates.forEach(({ id, nilai, feedback, voiceNote }) => {
+      const sub = list.find((s) => s.ID === id);
+      if (sub) {
+        sub.NILAI = nilai;
+        if (feedback !== undefined) sub.FEEDBACK = feedback;
+        if (voiceNote !== undefined) sub.VOICE_NOTE = voiceNote;
+        sub.GRADED_BY = gradedBy;
+        sub.GRADED_AT = ts();
+        sub.STATUS = 'GRADED';
+      }
+    });
+    this.setItem(STORAGE_KEYS.SUBMISSIONS, list);
   }
 
   // --- Reports ---
@@ -1468,6 +1683,56 @@ class ClassroomService {
     ];
   }
 
+  public getWeeklyClassGradeTrends(targetKelas?: string): {
+    minggu: string;
+    mingguKe: number;
+    rataRataTugas: number;
+    rataRataKuis: number;
+    rataRataGabungan: number;
+    kkm: number;
+    jumlahTugasDikumpul: number;
+    status: string;
+  }[] {
+    this.initClassroom();
+    const classOffsetMap: Record<string, number> = {
+      'Kelas 1': 2,
+      'Kelas 2': -1,
+      'Kelas 3': 3,
+      'Kelas 4': 0,
+      'Kelas 5': 4,
+      'Kelas 6': 5,
+    };
+    const offset = targetKelas && targetKelas !== 'Semua' ? (classOffsetMap[targetKelas] || 0) : 1;
+
+    const baseWeeks = [
+      { minggu: 'Minggu 1', mingguKe: 1, tugas: 80, kuis: 78, tumpul: 12 },
+      { minggu: 'Minggu 2', mingguKe: 2, tugas: 82, kuis: 81, tumpul: 15 },
+      { minggu: 'Minggu 3', mingguKe: 3, tugas: 83, kuis: 80, tumpul: 18 },
+      { minggu: 'Minggu 4', mingguKe: 4, tugas: 86, kuis: 84, tumpul: 20 },
+      { minggu: 'Minggu 5', mingguKe: 5, tugas: 85, kuis: 87, tumpul: 22 },
+      { minggu: 'Minggu 6', mingguKe: 6, tugas: 88, kuis: 89, tumpul: 25 },
+      { minggu: 'Minggu 7', mingguKe: 7, tugas: 89, kuis: 88, tumpul: 24 },
+      { minggu: 'Minggu 8', mingguKe: 8, tugas: 91, kuis: 92, tumpul: 28 },
+    ];
+
+    return baseWeeks.map((w) => {
+      const avgTugas = Math.min(100, Math.max(60, w.tugas + offset));
+      const avgKuis = Math.min(100, Math.max(60, w.kuis + offset));
+      const avgGabungan = Math.round((avgTugas + avgKuis) / 2);
+
+      return {
+        minggu: w.minggu,
+        mingguKe: w.mingguKe,
+        rataRataTugas: avgTugas,
+        rataRataKuis: avgKuis,
+        rataRataGabungan: avgGabungan,
+        kkm: 75,
+        jumlahTugasDikumpul: w.tumpul + (offset > 0 ? offset * 2 : 0),
+        status: avgGabungan >= 85 ? 'Sangat Baik' : avgGabungan >= 75 ? 'Baik' : 'Cukup',
+      };
+    });
+  }
+
   // --- Media Pembelajaran Methods ---
   public getMediaItems(courseId?: string): ClassroomMedia[] {
     this.initClassroom();
@@ -1520,6 +1785,251 @@ class ClassroomService {
       subs.push(sub);
     }
     this.setItem(STORAGE_KEYS.MEDIA_SUBMISSIONS, subs);
+  }
+
+  // --- Virtual Live Class Methods ---
+  public getLiveClasses(kelas?: string): VirtualLiveClassSession[] {
+    this.initClassroom();
+    const items = this.getItem<VirtualLiveClassSession[]>(STORAGE_KEYS.LIVE_CLASSES, DEFAULT_LIVE_CLASSES);
+    if (kelas && kelas !== 'Semua') {
+      return items.filter(s => s.KELAS === kelas || s.KELAS === 'Semua');
+    }
+    return items;
+  }
+
+  public saveLiveClass(session: VirtualLiveClassSession): void {
+    this.initClassroom();
+    const items = this.getLiveClasses();
+    const index = items.findIndex(s => s.ID === session.ID);
+    if (index >= 0) {
+      items[index] = session;
+    } else {
+      items.unshift(session);
+    }
+    this.setItem(STORAGE_KEYS.LIVE_CLASSES, items);
+
+    // Automatically trigger notification for live class
+    this.addNotification({
+      KELAS: session.KELAS,
+      TITLE: `🎥 Sesi Live Daring: ${session.JUDUL}`,
+      MESSAGE: `Sesi tatap muka daring diajukan oleh ${session.GURU_NAMA} pada pukul ${session.JAM_MULAI} WIB.`,
+      TYPE: 'LIVE_CLASS',
+      LINK_PAGE: 'live_class',
+    });
+  }
+
+  public deleteLiveClass(id: string): void {
+    this.initClassroom();
+    const items = this.getLiveClasses().filter(s => s.ID !== id);
+    this.setItem(STORAGE_KEYS.LIVE_CLASSES, items);
+  }
+
+  // --- Notification System Methods ---
+  public getNotifications(kelas?: string, userId?: string): ClassroomNotification[] {
+    this.initClassroom();
+    const notifs = this.getItem<ClassroomNotification[]>(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
+    return notifs.filter(n => {
+      const matchKelas = !kelas || kelas === 'Semua' || !n.KELAS || n.KELAS === kelas;
+      const matchUser = !n.USER_ID || n.USER_ID === userId;
+      return matchKelas && matchUser;
+    });
+  }
+
+  public addNotification(notif: Omit<ClassroomNotification, 'ID' | 'CREATED_AT' | 'IS_READ'>): void {
+    this.initClassroom();
+    const notifs = this.getItem<ClassroomNotification[]>(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
+    const newNotif: ClassroomNotification = {
+      ...notif,
+      ID: 'NOTIF-' + Date.now(),
+      CREATED_AT: nowISO(),
+      IS_READ: false,
+    };
+    notifs.unshift(newNotif);
+    this.setItem(STORAGE_KEYS.NOTIFICATIONS, notifs.slice(0, 50)); // Keep max 50 recent notifs
+  }
+
+  public markNotificationRead(id: string): void {
+    this.initClassroom();
+    const notifs = this.getItem<ClassroomNotification[]>(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
+    const updated = notifs.map(n => n.ID === id ? { ...n, IS_READ: true } : n);
+    this.setItem(STORAGE_KEYS.NOTIFICATIONS, updated);
+  }
+
+  public markAllNotificationsRead(kelas?: string): void {
+    this.initClassroom();
+    const notifs = this.getItem<ClassroomNotification[]>(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
+    const updated = notifs.map(n => {
+      if (!kelas || kelas === 'Semua' || !n.KELAS || n.KELAS === kelas) {
+        return { ...n, IS_READ: true };
+      }
+      return n;
+    });
+    this.setItem(STORAGE_KEYS.NOTIFICATIONS, updated);
+  }
+
+  public generateAutomaticReminders(kelas?: string, siswaId?: string): void {
+    this.initClassroom();
+    const assignments = this.getAssignments();
+    const submissions = this.getSubmissions(siswaId);
+    const todayStr = todayDate();
+
+    // Check assignments due in the next 3 days that are not submitted
+    assignments.forEach(asg => {
+      if (asg.DEADLINE >= todayStr) {
+        const hasSubmitted = submissions.some(s => s.ASSIGNMENT_ID === asg.ID && s.STATUS === 'SUBMITTED');
+        if (!hasSubmitted) {
+          const existingNotifs = this.getNotifications(kelas, siswaId);
+          const alreadyNotified = existingNotifs.some(n => n.MESSAGE.includes(asg.JUDUL));
+          if (!alreadyNotified) {
+            this.addNotification({
+              USER_ID: siswaId,
+              KELAS: kelas,
+              TITLE: `⏰ Pengingat Tenggat Waktu: ${asg.JUDUL}`,
+              MESSAGE: `Tugas "${asg.JUDUL}" jatuh tempo pada ${asg.DEADLINE}. Segera selesaikan dan kumpulkan!`,
+              TYPE: 'DEADLINE',
+              LINK_PAGE: 'assignments',
+            });
+          }
+        }
+      }
+    });
+  }
+
+  // --- Grade Weighting Configuration Methods ---
+  public getGradeWeightConfig(kelas: string, mapel?: string): GradeWeightConfig {
+    this.initClassroom();
+    const configs = this.getItem<GradeWeightConfig[]>(STORAGE_KEYS.GRADE_WEIGHTS, DEFAULT_GRADE_WEIGHTS);
+    const found = configs.find(c => c.KELAS === kelas && (!mapel || c.MAPEL === mapel));
+    if (found) return found;
+
+    return {
+      KELAS: kelas || 'Kelas 1',
+      MAPEL: mapel || 'Umum',
+      BOBOT_TUGAS: 40,
+      BOBOT_KUIS: 40,
+      BOBOT_PRESENSI: 20,
+      BOBOT_PORTOFOLIO: 0,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: 'Sistem Standard',
+    };
+  }
+
+  public saveGradeWeightConfig(config: GradeWeightConfig): void {
+    this.initClassroom();
+    const configs = this.getItem<GradeWeightConfig[]>(STORAGE_KEYS.GRADE_WEIGHTS, DEFAULT_GRADE_WEIGHTS);
+    const idx = configs.findIndex(c => c.KELAS === config.KELAS && c.MAPEL === config.MAPEL);
+    if (idx >= 0) {
+      configs[idx] = config;
+    } else {
+      configs.push(config);
+    }
+    this.setItem(STORAGE_KEYS.GRADE_WEIGHTS, configs);
+  }
+
+  // --- Digital Student Portfolio Methods ---
+  public getPortfolioItems(kelas?: string, siswaId?: string): StudentPortfolioItem[] {
+    this.initClassroom();
+    let items = this.getItem<StudentPortfolioItem[]>(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
+    if (kelas && kelas !== 'Semua') {
+      items = items.filter(p => p.KELAS === kelas);
+    }
+    if (siswaId) {
+      items = items.filter(p => p.SISWA_ID === siswaId);
+    }
+    return items;
+  }
+
+  public savePortfolioItem(item: StudentPortfolioItem): void {
+    this.initClassroom();
+    const items = this.getItem<StudentPortfolioItem[]>(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
+    const index = items.findIndex(p => p.ID === item.ID);
+    if (index >= 0) {
+      items[index] = item;
+    } else {
+      items.unshift(item);
+    }
+    this.setItem(STORAGE_KEYS.PORTFOLIO, items);
+  }
+
+  public togglePortfolioLike(portfolioId: string, userId: string): void {
+    this.initClassroom();
+    const items = this.getItem<StudentPortfolioItem[]>(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
+    const index = items.findIndex(p => p.ID === portfolioId);
+    if (index >= 0) {
+      const likes = items[index].LIKES || [];
+      if (likes.includes(userId)) {
+        items[index].LIKES = likes.filter(id => id !== userId);
+      } else {
+        items[index].LIKES = [...likes, userId];
+      }
+      this.setItem(STORAGE_KEYS.PORTFOLIO, items);
+    }
+  }
+
+  public addPortfolioComment(
+    portfolioId: string,
+    authorId: string,
+    authorNama: string,
+    authorRole: any,
+    content: string
+  ): void {
+    this.initClassroom();
+    const items = this.getItem<StudentPortfolioItem[]>(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
+    const index = items.findIndex(p => p.ID === portfolioId);
+    if (index >= 0) {
+      const newComment: PortfolioComment = {
+        ID: 'PC-' + Date.now(),
+        AUTHOR_ID: authorId,
+        AUTHOR_NAMA: authorNama,
+        AUTHOR_ROLE: authorRole,
+        CONTENT: content,
+        CREATED_AT: nowISO(),
+      };
+      items[index].COMMENTS = [...(items[index].COMMENTS || []), newComment];
+      this.setItem(STORAGE_KEYS.PORTFOLIO, items);
+    }
+  }
+
+  public deletePortfolioItem(id: string): void {
+    this.initClassroom();
+    const items = this.getItem<StudentPortfolioItem[]>(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO).filter(p => p.ID !== id);
+    this.setItem(STORAGE_KEYS.PORTFOLIO, items);
+  }
+
+  // --- Peer Review System ---
+  public getPeerReviews(assignmentId?: string, submissionId?: string): any[] {
+    this.initClassroom();
+    let all = this.getItem<any[]>('BB_CLASSROOM_PEER_REVIEWS_V1', []);
+    if (assignmentId) all = all.filter((r) => r.ASSIGNMENT_ID === assignmentId);
+    if (submissionId) all = all.filter((r) => r.SUBMISSION_ID === submissionId);
+    return all;
+  }
+
+  public savePeerReview(review: {
+    ASSIGNMENT_ID: string;
+    SUBMISSION_ID: string;
+    REVIEWER_ID: string;
+    SCORE_KREATIVITAS: number;
+    FEEDBACK_KREATIVITAS: string;
+    SCORE_STRUKTUR: number;
+    FEEDBACK_STRUKTUR: string;
+    SCORE_MATERI: number;
+    FEEDBACK_MATERI: string;
+    GENERAL_COMMENT: string;
+  }): void {
+    const list = this.getItem<any[]>('BB_CLASSROOM_PEER_REVIEWS_V1', []);
+    const existingIdx = list.findIndex(r => r.SUBMISSION_ID === review.SUBMISSION_ID && r.REVIEWER_ID === review.REVIEWER_ID);
+    const newReview = {
+      ...review,
+      ID: 'PRV-' + Date.now(),
+      SUBMITTED_AT: ts(),
+    };
+    if (existingIdx >= 0) {
+      list[existingIdx] = newReview;
+    } else {
+      list.push(newReview);
+    }
+    this.setItem('BB_CLASSROOM_PEER_REVIEWS_V1', list);
   }
 }
 

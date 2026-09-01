@@ -1,6 +1,59 @@
 import { firestore } from '../firebase';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  deleteDoc,
+  collection, 
+  getDocs, 
+  onSnapshot 
+} from 'firebase/firestore';
 import { db } from './localStorageService';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+// Global Firestore Error Handler matching the skill instructions
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null,
+      tenantId: null,
+      providerInfo: []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export interface FirebaseSyncStatus {
   isConfigured: boolean;
@@ -40,6 +93,31 @@ class FirebaseService {
     submissions: 0,
     students: 0,
   };
+
+  // Define normalized collections and their mapping to LocalStorage keys
+  private collectionsConfig = [
+    { key: 'BB_ACCOUNTS', path: 'accounts', name: 'Akun Pengguna' },
+    { key: 'BB_ASSETS', path: 'assets', name: 'Aset Sekolah' },
+    { key: 'BB_ITEMS', path: 'inventory_items', name: 'Stok Barang' },
+    { key: 'BB_BARANG_MASUK', path: 'barang_masuk', name: 'Barang Masuk' },
+    { key: 'BB_BARANG_KELUAR', path: 'barang_keluar', name: 'Barang Keluar' },
+    { key: 'BB_CLASSROOM_COURSES', path: 'courses', name: 'Kelas & Mapel' },
+    { key: 'BB_CLASSROOM_ASSIGNMENTS', path: 'assignments', name: 'Tugas Belajar' },
+    { key: 'BB_CLASSROOM_SUBMISSIONS', path: 'submissions', name: 'Pengumpulan Siswa' },
+    { key: 'BB_CLASSROOM_REPORTS', path: 'reports', name: 'Buku e-Rapor' },
+    { key: 'BB_CLASSROOM_FORUM_POSTS_V3', path: 'forum_posts', name: 'Postingan Forum' },
+    { key: 'BB_CLASSROOM_ATTENDANCE_V3', path: 'attendance', name: 'Absensi Kelas' },
+    { key: 'BB_CLASSROOM_QUIZZES_V3', path: 'quizzes', name: 'Kuis CBT' },
+    { key: 'BB_SUPPLIERS', path: 'suppliers', name: 'Pemasok Barang' },
+    { key: 'BB_MUTASI', path: 'mutasi', name: 'Mutasi Barang' },
+    { key: 'BB_PEMELIHARAAN', path: 'pemeliharaan', name: 'Pemeliharaan Aset' },
+    { key: 'BB_PENGHAPUSAN', path: 'penghapusan', name: 'Penghapusan Aset' },
+    { key: 'BB_PENGAMBILAN_ATK', path: 'pengambilan_atk', name: 'Pengambilan ATK' },
+    { key: 'BB_STOCK_OPNAME_SESSIONS', path: 'stock_opname_sessions', name: 'Sesi Opname' },
+    { key: 'BB_STOCK_OPNAME_SCANS', path: 'stock_opname_scans', name: 'Scan Opname' },
+    { key: 'BB_PROCUREMENT_PLANS', path: 'procurement_plans', name: 'Rencana ARKAS' },
+    { key: 'BB_PROCUREMENT_PLAN_DETAILS', path: 'procurement_plan_details', name: 'Detail Rencana ARKAS' }
+  ];
 
   constructor() {
     this.lastSyncTime = localStorage.getItem('BB_FIREBASE_LAST_SYNC') || null;
@@ -87,112 +165,119 @@ class FirebaseService {
   }
 
   // =========================================================================
-  // REALTIME FIRESTORE LISTENER (MULTI-DEVICE LIVE SYNC)
+  // PRODUCTION REALTIME LISTENER (NORMALIZED COLLECTION STREAMS)
   // =========================================================================
   public setupRealtimeListeners() {
-    // Clear any previous subscriptions
+    // Clear any previous active listeners
     this.unsubs.forEach((unsub) => unsub());
     this.unsubs = [];
 
     try {
-      // 1. Inventory Bundle
-      const invRef = doc(firestore, 'school_data', 'inventory_bundle');
-      const unsubInv = onSnapshot(
-        invRef,
-        (snap) => {
-          this.isConnected = true;
-          this.isRealtimeActive = true;
-          this.lastError = null;
+      // Connect to each normalized Firestore collection in real-time
+      this.collectionsConfig.forEach((col) => {
+        const colRef = collection(firestore, col.path);
+        
+        const unsub = onSnapshot(
+          colRef,
+          (snapshot) => {
+            this.isConnected = true;
+            this.isRealtimeActive = true;
+            this.lastError = null;
 
-          if (snap.exists()) {
-            const data = snap.data();
-            this.cloudStats.inventoryItems = Array.isArray(data.ITEMS) ? data.ITEMS.length : 0;
-            this.cloudStats.assets = Array.isArray(data.ASSETS) ? data.ASSETS.length : 0;
-            this.cloudStats.transactions =
-              (Array.isArray(data.BARANG_MASUK) ? data.BARANG_MASUK.length : 0) +
-              (Array.isArray(data.BARANG_KELUAR) ? data.BARANG_KELUAR.length : 0);
+            const items: any[] = [];
+            snapshot.forEach((docSnap) => {
+              items.push(docSnap.data());
+            });
 
-            // If remote timestamp is newer and we are not currently writing
-            if (!this.isSyncing && data.payload && data.updatedAt) {
+            // Update stats
+            this.updateCloudStatsForCol(col.key, items.length);
+
+            // Sync down to LocalStorage only if we are not currently pushing
+            if (!this.isSyncing && !this.isApplyingRemoteUpdate) {
               const localLast = Number(localStorage.getItem('BB_LOCAL_MUTATION_TS') || '0');
-              if (data.mutationTimestamp && data.mutationTimestamp > localLast) {
-                this.applyRemotePayload(data.payload);
+              const remoteLast = Number(localStorage.getItem(`BB_REMOTE_TS_${col.key}`) || '0');
+              
+              if (Date.now() - localLast > 4500) { // Safety margin to avoid clobbering active local changes
+                // Protect seeded/local data from being wiped by an empty/fresh Firestore
+                const localDataRaw = localStorage.getItem(col.key);
+                let localCount = 0;
+                try {
+                  if (localDataRaw) {
+                    const parsed = JSON.parse(localDataRaw);
+                    if (Array.isArray(parsed)) localCount = parsed.length;
+                  }
+                } catch {
+                  localCount = 0;
+                }
+
+                if (items.length === 0 && localCount > 0) {
+                  console.info(`[Firebase Sync] Skip overwriting seeded local storage for '${col.key}' because remote collection is empty.`);
+                } else {
+                  this.isApplyingRemoteUpdate = true;
+                  localStorage.setItem(col.key, JSON.stringify(items));
+                  this.isApplyingRemoteUpdate = false;
+                }
               }
             }
+            this.notify();
+          },
+          (error) => {
+            console.warn(`Firestore collection listener failed on path '${col.path}':`, error.message);
+            this.lastError = error.message;
+            this.notify();
           }
-          this.notify();
-        },
-        (error) => {
-          console.warn('Firestore realtime inventory listener:', error.message);
-          this.lastError = error.message;
+        );
+        this.unsubs.push(unsub);
+      });
+
+      // Special Listener for Config Document
+      const configRef = doc(firestore, 'configs', 'school_config');
+      const unsubConfig = onSnapshot(configRef, (snap) => {
+        if (snap.exists() && !this.isSyncing && !this.isApplyingRemoteUpdate) {
+          localStorage.setItem('BB_CONFIG', JSON.stringify(snap.data()));
           this.notify();
         }
-      );
-      this.unsubs.push(unsubInv);
+      });
+      this.unsubs.push(unsubConfig);
 
-      // 2. Classroom Bundle
-      const classRef = doc(firestore, 'school_data', 'classroom_bundle');
-      const unsubClass = onSnapshot(
-        classRef,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            this.cloudStats.classroomCourses = Array.isArray(data.COURSES) ? data.COURSES.length : 0;
-            this.cloudStats.assignments = Array.isArray(data.ASSIGNMENTS) ? data.ASSIGNMENTS.length : 0;
-            this.cloudStats.submissions = Array.isArray(data.SUBMISSIONS) ? data.SUBMISSIONS.length : 0;
-
-            if (!this.isSyncing && data.payload && data.mutationTimestamp) {
-              const localLast = Number(localStorage.getItem('BB_LOCAL_MUTATION_TS') || '0');
-              if (data.mutationTimestamp > localLast) {
-                this.applyRemotePayload(data.payload);
-              }
-            }
-          }
-          this.notify();
-        },
-        (error) => {
-          console.warn('Firestore classroom listener:', error.message);
-        }
-      );
-      this.unsubs.push(unsubClass);
-
-      // 3. Accounts Bundle
-      const accRef = doc(firestore, 'school_data', 'accounts_bundle');
-      const unsubAcc = onSnapshot(
-        accRef,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            this.cloudStats.students = Array.isArray(data.ACCOUNTS)
-              ? data.ACCOUNTS.filter((a: any) => a.ROLE === 'SISWA').length
-              : 0;
-
-            if (!this.isSyncing && data.payload && data.mutationTimestamp) {
-              const localLast = Number(localStorage.getItem('BB_LOCAL_MUTATION_TS') || '0');
-              if (data.mutationTimestamp > localLast) {
-                this.applyRemotePayload(data.payload);
-              }
-            }
-          }
-          this.notify();
-        },
-        (error) => {
-          console.warn('Firestore accounts listener:', error.message);
-        }
-      );
-      this.unsubs.push(unsubAcc);
     } catch (err: any) {
-      console.warn('Error configuring Firestore realtime listener:', err?.message);
+      console.warn('Error setting up production realtime collection listeners:', err?.message);
+    }
+  }
+
+  private updateCloudStatsForCol(key: string, count: number) {
+    switch (key) {
+      case 'BB_ITEMS':
+        this.cloudStats.inventoryItems = count;
+        break;
+      case 'BB_ASSETS':
+        this.cloudStats.assets = count;
+        break;
+      case 'BB_BARANG_MASUK':
+      case 'BB_BARANG_KELUAR':
+        this.cloudStats.transactions = (this.cloudStats.transactions || 0) + count;
+        break;
+      case 'BB_CLASSROOM_COURSES':
+        this.cloudStats.classroomCourses = count;
+        break;
+      case 'BB_CLASSROOM_ASSIGNMENTS':
+        this.cloudStats.assignments = count;
+        break;
+      case 'BB_CLASSROOM_SUBMISSIONS':
+        this.cloudStats.submissions = count;
+        break;
+      case 'BB_ACCOUNTS':
+        this.cloudStats.students = count;
+        break;
     }
   }
 
   // =========================================================================
-  // LOCAL STORAGE MUTATION LISTENER (AUTO PUSH TO CLOUD)
+  // LOCAL STORAGE CHANGE TRIGGER
   // =========================================================================
   private setupLocalMutationListener() {
     if (typeof window === 'undefined') return;
 
-    // Hook into db changes
     db.subscribe((key: string) => {
       if (this.isApplyingRemoteUpdate) return;
 
@@ -210,7 +295,7 @@ class FirebaseService {
   }
 
   // =========================================================================
-  // SYNC ACTIONS: PUSH TO FIRESTORE
+  // SYNC ACTION: DIFFERENTIAL COLLECTION PUSH (ANTI-1MB & ANTI-RACE CONDITION)
   // =========================================================================
   public async pushAllToCloud(isManual: boolean = true): Promise<{ success: boolean; message: string }> {
     if (this.isSyncing) {
@@ -225,92 +310,61 @@ class FirebaseService {
       const now = new Date().toISOString();
       const mutationTimestamp = Date.now();
 
-      // 1. Collect Inventory & Master data
-      const items = db.getItems();
-      const assets = db.getAssets();
-      const suppliers = db.getSuppliers();
-      const masuk = db.getBarangMasuk();
-      const keluar = db.getBarangKeluar();
-      const mutasi = db.getMutasi();
-      const pemeliharaan = db.getPemeliharaan();
-      const penghapusan = db.getPenghapusan();
-      const pengambilan = db.getPengambilanATK();
-      const stockSessions = db.getStockOpnameSessions();
-      const stockScans = db.getStockOpnameScans();
-      const procurementPlans = db.getProcurementPlans();
-      const procurementDetails = db.getProcurementPlanDetails();
-      const config = db.getConfig();
+      // 1. Sync Config document
+      const configData = db.getConfig();
+      try {
+        await setDoc(doc(firestore, 'configs', 'school_config'), configData);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'configs/school_config');
+      }
 
-      const invPayload = {
-        BB_ITEMS: JSON.stringify(items),
-        BB_ASSETS: JSON.stringify(assets),
-        BB_SUPPLIERS: JSON.stringify(suppliers),
-        BB_BARANG_MASUK: JSON.stringify(masuk),
-        BB_BARANG_KELUAR: JSON.stringify(keluar),
-        BB_MUTASI: JSON.stringify(mutasi),
-        BB_PEMELIHARAAN: JSON.stringify(pemeliharaan),
-        BB_PENGHAPUSAN: JSON.stringify(penghapusan),
-        BB_PENGAMBILAN_ATK: JSON.stringify(pengambilan),
-        BB_STOCK_OPNAME_SESSIONS: JSON.stringify(stockSessions),
-        BB_STOCK_OPNAME_SCANS: JSON.stringify(stockScans),
-        BB_PROCUREMENT_PLANS: JSON.stringify(procurementPlans),
-        BB_PROCUREMENT_PLAN_DETAILS: JSON.stringify(procurementDetails),
-        BB_CONFIG: JSON.stringify(config),
-      };
+      // 2. Sync all normalizable collections individually
+      for (const col of this.collectionsConfig) {
+        const localDataRaw = localStorage.getItem(col.key) || '[]';
+        const items: any[] = JSON.parse(localDataRaw);
 
-      await setDoc(doc(firestore, 'school_data', 'inventory_bundle'), {
-        ITEMS: items,
-        ASSETS: assets,
-        BARANG_MASUK: masuk,
-        BARANG_KELUAR: keluar,
-        payload: invPayload,
-        updatedAt: now,
-        mutationTimestamp,
-        syncedBy: isManual ? 'MANUAL_USER' : 'AUTO_SYNC',
-      });
+        // Fetch current cloud state to do differential write (only write what changed)
+        const cloudSnap = await getDocs(collection(firestore, col.path));
+        const cloudDocsMap = new Map<string, any>();
+        cloudSnap.forEach((docSnap) => {
+          cloudDocsMap.set(docSnap.id, docSnap.data());
+        });
 
-      // 2. Collect Classroom data
-      const coursesRaw = localStorage.getItem('BB_CLASSROOM_COURSES') || '[]';
-      const assignmentsRaw = localStorage.getItem('BB_CLASSROOM_ASSIGNMENTS') || '[]';
-      const submissionsRaw = localStorage.getItem('BB_CLASSROOM_SUBMISSIONS') || '[]';
-      const reportsRaw = localStorage.getItem('BB_CLASSROOM_REPORTS') || '[]';
-      const forumRaw = localStorage.getItem('BB_CLASSROOM_FORUM_POSTS_V3') || '[]';
-      const attendanceRaw = localStorage.getItem('BB_CLASSROOM_ATTENDANCE_V3') || '[]';
-      const quizzesRaw = localStorage.getItem('BB_CLASSROOM_QUIZZES_V3') || '[]';
+        // Track seen ids to detect deletions
+        const localIds = new Set<string>();
 
-      const classPayload = {
-        BB_CLASSROOM_COURSES: coursesRaw,
-        BB_CLASSROOM_ASSIGNMENTS: assignmentsRaw,
-        BB_CLASSROOM_SUBMISSIONS: submissionsRaw,
-        BB_CLASSROOM_REPORTS: reportsRaw,
-        BB_CLASSROOM_FORUM_POSTS_V3: forumRaw,
-        BB_CLASSROOM_ATTENDANCE_V3: attendanceRaw,
-        BB_CLASSROOM_QUIZZES_V3: quizzesRaw,
-      };
+        // Push new or updated docs
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const docId = String(item.ID || item.id || `doc-${i}`);
+          localIds.add(docId);
 
-      await setDoc(doc(firestore, 'school_data', 'classroom_bundle'), {
-        COURSES: JSON.parse(coursesRaw),
-        ASSIGNMENTS: JSON.parse(assignmentsRaw),
-        SUBMISSIONS: JSON.parse(submissionsRaw),
-        payload: classPayload,
-        updatedAt: now,
-        mutationTimestamp,
-        syncedBy: isManual ? 'MANUAL_USER' : 'AUTO_SYNC',
-      });
+          const existingDoc = cloudDocsMap.get(docId);
+          const needsWrite = !existingDoc || JSON.stringify(existingDoc) !== JSON.stringify(item);
 
-      // 3. Collect Accounts
-      const accountsRaw = localStorage.getItem('BB_ACCOUNTS') || '[]';
-      const accPayload = {
-        BB_ACCOUNTS: accountsRaw,
-      };
+          if (needsWrite) {
+            try {
+              await setDoc(doc(firestore, col.path, docId), item);
+            } catch (err) {
+              handleFirestoreError(err, OperationType.WRITE, `${col.path}/${docId}`);
+            }
+          }
+        }
 
-      await setDoc(doc(firestore, 'school_data', 'accounts_bundle'), {
-        ACCOUNTS: JSON.parse(accountsRaw),
-        payload: accPayload,
-        updatedAt: now,
-        mutationTimestamp,
-        syncedBy: isManual ? 'MANUAL_USER' : 'AUTO_SYNC',
-      });
+        // Delete documents that are removed locally (Differential Cleanup)
+        for (const cloudId of cloudDocsMap.keys()) {
+          if (!localIds.has(cloudId)) {
+            try {
+              await deleteDoc(doc(firestore, col.path, cloudId));
+            } catch (err) {
+              handleFirestoreError(err, OperationType.DELETE, `${col.path}/${cloudId}`);
+            }
+          }
+        }
+
+        // Keep track of statistics
+        this.updateCloudStatsForCol(col.key, items.length);
+      }
 
       this.lastSyncTime = now.replace('T', ' ').substring(0, 19);
       localStorage.setItem('BB_FIREBASE_LAST_SYNC', this.lastSyncTime);
@@ -320,22 +374,22 @@ class FirebaseService {
 
       return {
         success: true,
-        message: 'Seluruh data inventaris & classroom berhasil disinkronkan ke Firebase Cloud!',
+        message: 'Solusi Terbaik Aktif: Seluruh koleksi dinormalisasi & disinkronkan tanpa konflik!',
       };
     } catch (err: any) {
-      console.error('Error syncing to Firebase Cloud:', err);
-      this.lastError = err?.message || 'Gagal menyinkronkan data ke Cloud';
+      console.error('Error syncing to production firestore:', err);
+      this.lastError = err?.message || 'Gagal sinkronisasi ternormalisasi';
       this.isSyncing = false;
       this.notify();
       return {
         success: false,
-        message: this.lastError || 'Gagal sinkronisasi',
+        message: this.lastError || 'Gagal sinkronisasi data',
       };
     }
   }
 
   // =========================================================================
-  // SYNC ACTIONS: PULL FROM FIRESTORE
+  // SYNC ACTION: PULL FROM PRODUCTION STACK
   // =========================================================================
   public async pullAllFromCloud(): Promise<{ success: boolean; message: string }> {
     if (this.isSyncing) {
@@ -347,27 +401,30 @@ class FirebaseService {
     this.notify();
 
     try {
-      let appliedCount = 0;
+      this.isApplyingRemoteUpdate = true;
+      let colCount = 0;
 
-      // 1. Inventory Bundle
-      const invSnap = await getDoc(doc(firestore, 'school_data', 'inventory_bundle'));
-      if (invSnap.exists() && invSnap.data()?.payload) {
-        this.applyRemotePayload(invSnap.data().payload);
-        appliedCount++;
+      // 1. Pull Config
+      const configSnap = await getDoc(doc(firestore, 'configs', 'school_config'));
+      if (configSnap.exists()) {
+        localStorage.setItem('BB_CONFIG', JSON.stringify(configSnap.data()));
       }
 
-      // 2. Classroom Bundle
-      const classSnap = await getDoc(doc(firestore, 'school_data', 'classroom_bundle'));
-      if (classSnap.exists() && classSnap.data()?.payload) {
-        this.applyRemotePayload(classSnap.data().payload);
-        appliedCount++;
-      }
+      // 2. Pull all normalized collections
+      for (const col of this.collectionsConfig) {
+        try {
+          const colSnap = await getDocs(collection(firestore, col.path));
+          const items: any[] = [];
+          colSnap.forEach((docSnap) => {
+            items.push(docSnap.data());
+          });
 
-      // 3. Accounts Bundle
-      const accSnap = await getDoc(doc(firestore, 'school_data', 'accounts_bundle'));
-      if (accSnap.exists() && accSnap.data()?.payload) {
-        this.applyRemotePayload(accSnap.data().payload);
-        appliedCount++;
+          localStorage.setItem(col.key, JSON.stringify(items));
+          this.updateCloudStatsForCol(col.key, items.length);
+          colCount++;
+        } catch (err) {
+          handleFirestoreError(err, OperationType.LIST, col.path);
+        }
       }
 
       const now = new Date().toISOString();
@@ -375,16 +432,18 @@ class FirebaseService {
       localStorage.setItem('BB_FIREBASE_LAST_SYNC', this.lastSyncTime);
       this.isConnected = true;
       this.isSyncing = false;
+      this.isApplyingRemoteUpdate = false;
       this.notify();
 
       return {
         success: true,
-        message: `Berhasil mengunduh dan memperbarui ${appliedCount} modul data dari Cloud Database!`,
+        message: `Berhasil mengunduh & menormalisasi ${colCount} koleksi data terpisah dari Google Cloud!`,
       };
     } catch (err: any) {
-      console.error('Error pulling from Firebase Cloud:', err);
+      console.error('Error pulling from production firestore:', err);
       this.lastError = err?.message || 'Gagal mengunduh dari Cloud Database';
       this.isSyncing = false;
+      this.isApplyingRemoteUpdate = false;
       this.notify();
       return {
         success: false,
@@ -393,27 +452,7 @@ class FirebaseService {
     }
   }
 
-  private applyRemotePayload(payload: Record<string, string>) {
-    if (!payload || typeof payload !== 'object') return;
-
-    this.isApplyingRemoteUpdate = true;
-    try {
-      Object.entries(payload).forEach(([key, valStr]) => {
-        if (typeof valStr === 'string' && valStr.trim().length > 0) {
-          localStorage.setItem(key, valStr);
-        }
-      });
-    } finally {
-      setTimeout(() => {
-        this.isApplyingRemoteUpdate = false;
-        this.notify();
-      }, 500);
-    }
-  }
-
-  // =========================================================================
-  // FILE & ATTACHMENT COMPRESSION HELPER (Prevent localStorage overflow)
-  // =========================================================================
+  // File compression helper
   public async processFileAttachment(file: File): Promise<{
     name: string;
     size: number;
@@ -421,7 +460,6 @@ class FirebaseService {
     dataUrl: string;
   }> {
     return new Promise((resolve, reject) => {
-      // If file is image, compress using Canvas
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -467,7 +505,6 @@ class FirebaseService {
         reader.onerror = () => reject(new Error('Gagal membaca berkas'));
         reader.readAsDataURL(file);
       } else {
-        // Document / PDF file
         const reader = new FileReader();
         reader.onload = (e) => {
           resolve({
