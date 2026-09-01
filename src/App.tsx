@@ -11,6 +11,7 @@ import { QRStickerModal } from './components/QRStickerModal';
 import { DataReconciliationDialog } from './components/DataReconciliationDialog';
 import { accountService } from './services/accountService';
 import { classroomService } from './services/classroomService';
+import { dailyStockExportService } from './services/dailyStockExportService';
 import { db } from './services/localStorageService';
 import { Asset, ActivePage, User } from './types';
 import { useTheme } from './utils/theme';
@@ -121,6 +122,11 @@ export default function App() {
   useEffect(() => {
     accountService.initAccounts();
     classroomService.initClassroom();
+  }, []);
+
+  // Run daily stock export to Google Sheets if due (24h since last export)
+  useEffect(() => {
+    dailyStockExportService.runExportIfDue();
   }, []);
 
   const handleOpenAssetInApp = (assetCode: string) => {
