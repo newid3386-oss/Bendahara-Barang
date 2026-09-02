@@ -242,7 +242,7 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
                     UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6
                   </h2>
                   <p className="text-[10px] text-slate-600">
-                    Jl. Perintis Kemerdekaan No. 6, Cikokol, Kota Tangerang • NPSN: 20606621 • Email: info@sdntangerang6.sch.id
+                    Jl. Perintis Kemerdekaan No. 6, Cikokol, Kota Tangerang • NPSN: 20606498 • Email: info@sdntangerang6.sch.id
                   </p>
                 </div>
                 <div className="w-16 h-16 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-bold text-xs text-center leading-tight shadow-md shrink-0">

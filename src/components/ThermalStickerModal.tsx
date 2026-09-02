@@ -397,7 +397,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
                     {/* Footer */}
                     <div className="border-t border-black pt-0.5 text-[6px] text-center text-slate-800 flex justify-between">
-                      <span>NPSN: {config.SCHOOL_NPSN || '20606016'}</span>
+                      <span>NPSN: {config.SCHOOL_NPSN || '20606498'}</span>
                       <span>{new Date().toLocaleDateString('id-ID')}</span>
                     </div>
                   </div>

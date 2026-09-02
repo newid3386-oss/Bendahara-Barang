@@ -50,6 +50,7 @@ export interface QRScannerModalProps {
   onSelectAsset?: (asset: Asset) => void;
   onSelectAssignment?: (assignment: ClassroomAssignment) => void;
   onSelectStudent?: (student: Account) => void;
+  onScanSuccess?: (item: RecentScanItem) => void;
   initialMode?: 'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET';
   currentClass?: string;
   facingMode?: 'environment' | 'user';
@@ -70,6 +71,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   onSelectAsset,
   onSelectAssignment,
   onSelectStudent,
+  onScanSuccess,
   initialMode = 'ALL',
   currentClass,
   facingMode = 'environment',
@@ -124,6 +126,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         localStorage.setItem(RECENT_SCANS_STORAGE_KEY, JSON.stringify(updated));
         return updated;
       });
+      try {
+        window.dispatchEvent(new CustomEvent('qr_scan_success', { detail: newItem }));
+      } catch {}
     } catch (e) {
       console.error('Failed to save recent scan:', e);
     }
@@ -270,16 +275,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'ASSIGNMENT',
           code: matchedAssignment.ID,
         };
-        playFeedback('success');
-        setSuccessInfo(info);
-        addRecentScan({
+        const recentItem: RecentScanItem = {
           id: matchedAssignment.ID,
           code: matchedAssignment.ID,
           title: matchedAssignment.JUDUL,
           subtitle: `Tugas • ${matchedAssignment.TYPE}`,
           type: 'ASSIGNMENT',
           rawPayload: rawText,
-        });
+          timestamp: Date.now(),
+        };
+        playFeedback('success');
+        setSuccessInfo(info);
+        addRecentScan(recentItem);
+        if (onScanSuccess) onScanSuccess(recentItem);
 
         setTimeout(() => {
           stopCamera();
@@ -314,16 +322,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'STUDENT',
           code: matchedStudent.NIP || matchedStudent.ID,
         };
-        playFeedback('success');
-        setSuccessInfo(info);
-        addRecentScan({
+        const recentItem: RecentScanItem = {
           id: matchedStudent.ID,
           code: matchedStudent.NIP || matchedStudent.ID,
           title: matchedStudent.NAMA,
           subtitle: `Siswa • ${matchedStudent.KELAS || 'Aktif'}`,
           type: 'STUDENT',
           rawPayload: rawText,
-        });
+          timestamp: Date.now(),
+        };
+        playFeedback('success');
+        setSuccessInfo(info);
+        addRecentScan(recentItem);
+        if (onScanSuccess) onScanSuccess(recentItem);
 
         setTimeout(() => {
           stopCamera();
@@ -353,16 +364,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'ASSET',
           code: matchedAsset.KODE_ASET,
         };
-        playFeedback('success');
-        setSuccessInfo(info);
-        addRecentScan({
+        const recentItem: RecentScanItem = {
           id: matchedAsset.ID,
           code: matchedAsset.KODE_ASET,
           title: matchedAsset.NAMA_BARANG,
           subtitle: `Aset • ${matchedAsset.KODE_ASET}`,
           type: 'ASSET',
           rawPayload: rawText,
-        });
+          timestamp: Date.now(),
+        };
+        playFeedback('success');
+        setSuccessInfo(info);
+        addRecentScan(recentItem);
+        if (onScanSuccess) onScanSuccess(recentItem);
 
         setTimeout(() => {
           stopCamera();

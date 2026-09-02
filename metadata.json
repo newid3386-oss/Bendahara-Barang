@@ -1,6 +1,6 @@
 {
-  "name": "Remix Sistem Bendahara Barang",
-  "description": "Sistem Informasi Manajemen Barang, Inventaris Aset, dan Persediaan SD Negeri Tangerang 6 dengan penelusuran NIP terintegrasi, pencarian barang & pegawai instan, dan sinkronisasi data real-time.",
+  "name": "UPT SD Negeri Tangerang 6 - Sistem Informasi Sekolah & Inventaris (NPSN 20606498)",
+  "description": "Sistem Informasi Manajemen Sekolah, Kelas, Inventaris Aset, dan Pembelajaran UPT SD Negeri Tangerang 6 (NPSN: 20606498).",
   "requestFramePermissions": [
     "camera",
     "microphone"

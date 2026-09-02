@@ -9,11 +9,11 @@ import {
   ARKASAccount,
 } from '../types';
 
-export const DATASET_VERSION = '2026_06_SDN_TANGERANG_6_OFFICIAL_V1';
+export const DATASET_VERSION = '2026_06_SDN_TANGERANG_6_OFFICIAL_V2';
 
 export const OFFICIAL_CONFIG: Config = {
   SCHOOL_NAME: 'UPT Satuan Pendidikan SD Negeri Tangerang 6',
-  SCHOOL_NPSN: '20606016',
+  SCHOOL_NPSN: '20606498',
   ADDRESS: 'Jl. Nyimas Melati No. 2, Kel. Sukasari, Kec. Tangerang, Kota Tangerang, Banten 15118',
   HEADMASTER: 'Liestya Kusuma Sari, S.Pd., M.Pd.',
   HEADMASTER_NIP: '198406192009022007',

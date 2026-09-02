@@ -119,7 +119,7 @@ export class PdfService {
     const subInfo =
       kopOptions?.line4 ||
       [
-        `NPSN: ${config.SCHOOL_NPSN || '20606621'}`,
+        `NPSN: ${config.SCHOOL_NPSN || '20606498'}`,
         config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6',
         config.SCHOOL_EMAIL ? `Email: ${config.SCHOOL_EMAIL}` : '',
         config.SCHOOL_WEBSITE ? `Web: ${config.SCHOOL_WEBSITE}` : '',
@@ -1090,7 +1090,7 @@ export class PdfService {
       line1: 'PEMERINTAH KOTA TANGERANG',
       line2: 'DINAS PENDIDIKAN',
       line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
-      line4: `${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6 Babakan'} • NPSN: ${config.SCHOOL_NPSN || '20606016'}`,
+      line4: `${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6 Babakan'} • NPSN: ${config.SCHOOL_NPSN || '20606498'}`,
     });
 
     let currentY = 48;
@@ -1282,7 +1282,7 @@ export class PdfService {
       line1: 'PEMERINTAH KOTA TANGERANG',
       line2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
       line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
-      line4: `${config.ADDRESS || 'Jl. Nyimas Melati No. 25, Sukasari'} • NPSN: ${config.SCHOOL_NPSN || '20606016'}`,
+      line4: `${config.ADDRESS || 'Jl. Nyimas Melati No. 25, Sukasari'} • NPSN: ${config.SCHOOL_NPSN || '20606498'}`,
     });
 
     let currentY = 48;

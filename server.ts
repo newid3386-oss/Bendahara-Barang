@@ -270,7 +270,7 @@ function calculateLocalProcurementPredictions(itemsList: any[], outList: any[]) 
 
     const runoutDays = currentStock > 0 ? Math.round(currentStock / (Math.max(outAvg, 1) / 30)) : 0;
     const safetyStock = Math.ceil(minLimit * 1.5);
-    const recommendedQty = Math.max(1, (outAvg * 3 + safetyStock) - currentStock);
+    const recommendedQty = Math.max(0, (outAvg * 3 + safetyStock) - currentStock);
     const estPrice = item.HARGA_BELI_TERAKHIR || item.HARGA_SATUAN || item.estimasi_harga || 35000;
     const priority = currentStock <= minLimit ? 'MENDESAK' : runoutDays < 30 ? 'TINGGI' : 'NORMAL';
 

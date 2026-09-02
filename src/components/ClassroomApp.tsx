@@ -7,7 +7,8 @@ import {
   UserCheck, Search, HelpCircle, Check, Sparkles, Video, Bookmark, Printer,
   AlertCircle, CheckSquare, TrendingUp, TrendingDown, BarChart2, Flame, Bell, HeartHandshake,
   ShieldCheck, Edit3, Eye, Download, Filter, Cloud, Mail, Copy, Bot, Mic, Square, Trash2, Radio, Palette, Trophy, RefreshCw, Cpu,
-  QrCode, Scan, FolderArchive, Package, History, VolumeX, Volume2, SwitchCamera, Camera
+  QrCode, Scan, FolderArchive, Package, History, VolumeX, Volume2, SwitchCamera, Camera,
+  Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Zap, Play, Pause
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
@@ -36,6 +37,7 @@ import { ClassroomSummaryModal } from './classroom/ClassroomSummaryModal';
 import { QuickGradeModal } from './classroom/QuickGradeModal';
 import { BulkQrGeneratorModal } from './classroom/BulkQrGeneratorModal';
 import { QRScannerModal, RecentScanItem } from './QRScannerModal';
+import { VoiceNoteRecorder } from './classroom/VoiceNoteRecorder';
 import { AIRemedialModulModal } from './classroom/AIRemedialModulModal';
 import { ParentPortalModal } from './classroom/ParentPortalModal';
 import { ExecutiveSupervisorReportModal } from './ExecutiveSupervisorReportModal';
@@ -378,8 +380,12 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       }
 
       const parseTime = (tStr: string) => {
-        const parts = tStr.split(':').map(Number);
-        return (parts[0] || 0) * 60 + (parts[1] || 0);
+        if (!tStr) return 0;
+        const clean = tStr.replace(/[^0-9::.]/g, '').replace('.', ':');
+        const parts = clean.split(':').map(Number);
+        const hours = !isNaN(parts[0]) ? parts[0] : 0;
+        const mins = !isNaN(parts[1]) ? parts[1] : 0;
+        return hours * 60 + mins;
       };
 
       // 1. Check if a class session is currently active
@@ -510,13 +516,59 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   };
 
   const [isLowBattery, setIsLowBattery] = useState(false);
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [isCharging, setIsCharging] = useState(false);
+  const [isFabSuccessAnimating, setIsFabSuccessAnimating] = useState(false);
+
+  const [showQuickNoteModal, setShowQuickNoteModal] = useState(false);
+  const [quickNoteItem, setQuickNoteItem] = useState<RecentScanItem | null>(null);
+  const [savedVoiceNotes, setSavedVoiceNotes] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem('sdn6_qr_voice_notes_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleSaveQuickVoiceNote = (code: string, audioBase64: string) => {
+    setSavedVoiceNotes((prev) => {
+      const updated = { ...prev, [code]: audioBase64 };
+      try {
+        localStorage.setItem('sdn6_qr_voice_notes_v1', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save voice note:', e);
+      }
+      return updated;
+    });
+  };
+
+  const handleScanSuccessAnimation = useCallback(() => {
+    setIsFabSuccessAnimating(true);
+    loadRecentFabScans();
+    setTimeout(() => {
+      setIsFabSuccessAnimating(false);
+    }, 2200);
+  }, [loadRecentFabScans]);
+
+  useEffect(() => {
+    const handleQrSuccess = () => {
+      handleScanSuccessAnimation();
+    };
+    window.addEventListener('qr_scan_success', handleQrSuccess);
+    return () => {
+      window.removeEventListener('qr_scan_success', handleQrSuccess);
+    };
+  }, [handleScanSuccessAnimation]);
 
   useEffect(() => {
     let batteryPromise: any;
-    if ('getBattery' in navigator) {
+    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
       batteryPromise = (navigator as any).getBattery();
       batteryPromise.then((battery: any) => {
         const updateBattery = () => {
+          setBatteryLevel(battery.level);
+          setIsCharging(battery.charging);
           setIsLowBattery(battery.level <= 0.15 && !battery.charging);
         };
         updateBattery();
@@ -527,10 +579,108 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   }, []);
 
   const [recentScanFilter, setRecentScanFilter] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>('ALL');
+  const [recentScanQuery, setRecentScanQuery] = useState('');
+  const [isExportingScansPdf, setIsExportingScansPdf] = useState(false);
 
   const lastScannedStudent = useMemo(() => {
     return recentFabScans.find(s => s.type === 'STUDENT');
   }, [recentFabScans]);
+
+  const filteredFabScans = useMemo(() => {
+    return recentFabScans.filter((s) => {
+      const matchFilter = recentScanFilter === 'ALL' || s.type === recentScanFilter;
+      if (!matchFilter) return false;
+      if (!recentScanQuery.trim()) return true;
+      const q = recentScanQuery.trim().toLowerCase();
+      const titleMatch = (s.title || '').toLowerCase().includes(q);
+      const codeMatch = (s.code || '').toLowerCase().includes(q);
+      const rawMatch = (s.rawPayload || '').toLowerCase().includes(q);
+      const typeMatch = s.type.toLowerCase().includes(q) ||
+        (s.type === 'STUDENT' && ('presensi'.includes(q) || 'siswa'.includes(q))) ||
+        (s.type === 'ASSIGNMENT' && ('tugas'.includes(q) || 'pekerjaan'.includes(q))) ||
+        (s.type === 'ASSET' && ('aset'.includes(q) || 'barang'.includes(q)));
+      return titleMatch || codeMatch || rawMatch || typeMatch;
+    });
+  }, [recentFabScans, recentScanFilter, recentScanQuery]);
+
+  const handleExportScansPDF = async () => {
+    if (filteredFabScans.length === 0) return;
+    setIsExportingScansPdf(true);
+    try {
+      playFeedback('success');
+      const filterLabel =
+        recentScanFilter === 'ALL'
+          ? 'Semua Pemindaian'
+          : recentScanFilter === 'STUDENT'
+          ? 'Presensi Siswa'
+          : recentScanFilter === 'ASSIGNMENT'
+          ? 'Tugas Siswa'
+          : 'Aset & Sarpras';
+
+      const nowStr = new Date().toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+      await pdfService.generateBeritaAcara({
+        title: 'LAPORAN REKAPITULASI PEMINDAIAN QR CODE',
+        docNo: `QR-FAB/${new Date().getFullYear()}/${new Date().getMonth() + 1}/${Date.now().toString().slice(-4)}`,
+        description: `Rekapitulasi riwayat pemindaian QR Code (Filter: ${filterLabel}). Total item: ${filteredFabScans.length}. Tanggal cetak: ${nowStr}.`,
+        tableHeaders: ['No', 'Waktu Pemindaian', 'Kategori', 'Kode QR', 'Nama / Judul Item', 'Catatan Audio'],
+        tableRows: filteredFabScans.map((scan, idx) => [
+          idx + 1,
+          new Date(scan.timestamp).toLocaleString('id-ID', {
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          scan.type === 'STUDENT'
+            ? 'Presensi Siswa'
+            : scan.type === 'ASSIGNMENT'
+            ? 'Tugas Siswa'
+            : 'Aset Sarpras',
+          scan.code,
+          scan.title || scan.code,
+          savedVoiceNotes[scan.code] ? 'Ada Catatan Suara' : '-',
+        ]),
+        autoSave: true,
+        paperSize: 'a4',
+        orientation: 'portrait',
+        styling: {
+          themeColor: 'emerald',
+          tableDensity: 'compact',
+        },
+        pageNumbering: {
+          enabled: true,
+          format: 'hal_x_per_y',
+        },
+        headerFooter: {
+          enabled: true,
+          documentCode: 'SDN6-QR-FAB-PDF',
+          showTimestamp: true,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to export scans PDF:', err);
+      playFeedback('error');
+    } finally {
+      setIsExportingScansPdf(false);
+    }
+  };
+
+  const handleDirectToAssignment = (studentScan?: RecentScanItem) => {
+    const targetScan = studentScan || lastScannedStudent;
+    if (!targetScan) return;
+    setShowFabContextMenu(false);
+    playFeedback('success');
+    setPage('assignments');
+    const studentObj = accountService.getAccountById(targetScan.id);
+    if (studentObj) {
+      setFabQuickGradeStudent(studentObj);
+    }
+  };
 
   // Computed trend data for the sparkline chart
   const scanTrend = useMemo(() => {
@@ -540,6 +690,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      d.setHours(0, 0, 0, 0);
       const dayStart = d.getTime();
       const dayEnd = dayStart + 24 * 60 * 60 * 1000;
       const count = recentFabScans.filter(s => s.timestamp >= dayStart && s.timestamp < dayEnd).length;
@@ -575,12 +726,15 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       return;
     }
     
-    playFeedback('click');
-    
     if (showFabContextMenu) {
+      playFeedback('click');
       setShowFabContextMenu(false);
       return;
     }
+    
+    // Play subtle scanner beep sound via Web Audio API when initiating scan
+    playFeedback('scan');
+
     // Auto-defaults to 'Scan Student Attendance' if within 10 minutes of a scheduled class
     if (smartAutoTrigger && isWithinTenMinutesOfClass) {
       setQrScannerTargetMode('STUDENT');
@@ -1311,6 +1465,51 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 Pilih target pemindaian cepat atau tekan tombol scanner:
               </div>
 
+              {/* Dynamic Battery Level Status Bar */}
+              <div className="mx-1 my-1.5 px-2.5 py-1.5 bg-slate-900/90 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`p-1.5 rounded-lg shrink-0 ${
+                    isCharging
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : batteryLevel !== null && batteryLevel <= 0.2
+                      ? 'bg-rose-500/20 text-rose-400 animate-pulse'
+                      : batteryLevel !== null && batteryLevel <= 0.5
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'bg-emerald-500/20 text-emerald-400'
+                  }`}>
+                    {isCharging ? (
+                      <BatteryCharging size={15} className="animate-pulse" />
+                    ) : batteryLevel !== null && batteryLevel <= 0.2 ? (
+                      <BatteryLow size={15} />
+                    ) : batteryLevel !== null && batteryLevel <= 0.5 ? (
+                      <BatteryMedium size={15} />
+                    ) : (
+                      <BatteryFull size={15} />
+                    )}
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5 truncate">
+                      <span>Baterai Perangkat</span>
+                      {isCharging && <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-950 text-emerald-400 font-semibold border border-emerald-800/50">Mengisi</span>}
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-mono">
+                      {batteryLevel !== null ? `${Math.round(batteryLevel * 100)}% Tersedia` : 'Status Perangkat Normal'}
+                    </div>
+                  </div>
+                </div>
+                <div className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold font-mono shrink-0 ${
+                  isCharging
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : batteryLevel !== null && batteryLevel <= 0.2
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : batteryLevel !== null && batteryLevel <= 0.5
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                }`}>
+                  {batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '100%'}
+                </div>
+              </div>
+
               {/* Action Items */}
               <div className="space-y-1">
                 {/* 1. Scan Assignment */}
@@ -1414,9 +1613,37 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 </button>
               </div>
 
-              {/* Quick Grade (Last Student) */}
+              {/* Direct-to-Assignment (Bypassing Attendance Dashboard) & Quick Grade (Last Student) */}
               {lastScannedStudent && (
-                <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-1">
+                <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-1 space-y-1">
+                  <button
+                    type="button"
+                    id="btn-direct-to-assignment"
+                    onClick={() => handleDirectToAssignment(lastScannedStudent)}
+                    className="w-full px-2.5 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-blue-950/80 hover:from-indigo-900 hover:to-blue-900 border border-indigo-700/60 text-left transition flex items-center justify-between gap-2.5 group cursor-pointer shadow-lg shadow-indigo-950/40"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                        <BookOpen size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-indigo-100 group-hover:text-indigo-200 flex items-center gap-1.5 truncate">
+                          <span>Direct-to-Assignment</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-600/50 font-semibold">
+                            Bypass Presensi
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-indigo-300/80 truncate">
+                          Buka tugas {lastScannedStudent.title || lastScannedStudent.code} secara langsung
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Zap size={13} className="text-amber-400 animate-pulse" />
+                      <ChevronRight size={14} className="text-indigo-400 group-hover:text-indigo-200" />
+                    </div>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1436,6 +1663,51 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                       </div>
                     </div>
                     <ChevronRight size={14} className="text-emerald-500/50 group-hover:text-emerald-400 shrink-0" />
+                  </button>
+                </div>
+              )}
+
+              {/* Quick Voice Note Option for Last Scanned Item */}
+              {recentFabScans.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowFabContextMenu(false);
+                      setQuickNoteItem(recentFabScans[0]);
+                      setShowQuickNoteModal(true);
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-800/60 transition flex items-center justify-between cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 shrink-0">
+                        <Mic size={14} />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <div className="text-[11px] font-bold text-purple-200 group-hover:text-purple-100 flex items-center gap-1.5 truncate">
+                          <span>Catatan Suara (Quick Note)</span>
+                          {savedVoiceNotes[recentFabScans[0].code] && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Audio note tersimpan" />
+                          )}
+                        </div>
+                        <div className="text-[9px] text-purple-300/70 truncate">
+                          {recentFabScans[0].title || recentFabScans[0].code}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {savedVoiceNotes[recentFabScans[0].code] ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                          Tersimpan
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300 font-semibold border border-purple-700/50">
+                          Rekam
+                        </span>
+                      )}
+                      <ChevronRight size={14} className="text-purple-400/60 group-hover:text-purple-300" />
+                    </div>
                   </button>
                 </div>
               )}
@@ -1534,36 +1806,90 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 </div>
               </div>
 
-              {/* 5. Recent Scans Section (Last 3 Successfully Scanned QR Codes) */}
+              {/* 5. Recent Scans Section (Last Successfully Scanned QR Codes with Search & PDF Export) */}
               <div className="pt-2 border-t border-slate-800/90 mt-1.5">
-                <div className="flex items-center justify-between px-2 py-1 mb-1">
-                  <div className="flex items-center gap-1.5 text-slate-300">
+                <div className="flex items-center justify-between px-2 py-1 mb-1 gap-2">
+                  <div className="flex items-center gap-1.5 text-slate-300 shrink-0">
                     <History size={13} className="text-amber-400" />
-                    <span className="text-[11px] font-bold">Riwayat Scan Terakhir</span>
+                    <span className="text-[11px] font-bold">Riwayat Scan</span>
                   </div>
-                  {recentFabScans.length > 0 && !showClearScansConfirm && (
-                    <button
-                      type="button"
-                      onClick={() => setShowClearScansConfirm(true)}
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-400 font-bold transition-colors cursor-pointer"
-                    >
-                      Hapus
-                    </button>
-                  )}
-                  {recentFabScans.length > 0 && showClearScansConfirm && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-300 font-bold">
-                      Konfirmasi
-                    </span>
-                  )}
-                  {recentFabScans.length === 0 && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
-                      0 item
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Export Scans PDF Button */}
+                    {filteredFabScans.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleExportScansPDF();
+                        }}
+                        disabled={isExportingScansPdf}
+                        className="text-[9px] px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        title="Export Laporan PDF Pemindaian"
+                      >
+                        <Download size={10} className={isExportingScansPdf ? 'animate-bounce' : ''} />
+                        <span>{isExportingScansPdf ? 'Mengekspor...' : 'Export PDF'}</span>
+                      </button>
+                    )}
+
+                    {recentFabScans.length > 0 && !showClearScansConfirm && (
+                      <button
+                        id="btn-clear-all-scan-history"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowClearScansConfirm(true);
+                        }}
+                        className="text-[9px] px-2 py-0.5 rounded-md bg-rose-500/20 hover:bg-rose-600/30 text-rose-300 font-bold border border-rose-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Clear All History / Hapus Semua Riwayat Pemindaian"
+                      >
+                        <Trash2 size={10} />
+                        <span>Clear All History</span>
+                      </button>
+                    )}
+                    {recentFabScans.length > 0 && showClearScansConfirm && (
+                      <span className="text-[9px] px-2 py-0.5 rounded-md bg-rose-900/80 text-rose-200 font-extrabold border border-rose-700/80">
+                        Konfirmasi Hapus
+                      </span>
+                    )}
+                  </div>
                 </div>
 
+                {/* Search Bar for Recent Scans */}
+                {recentFabScans.length > 0 && (
+                  <div className="relative my-1.5 px-2">
+                    <Search size={13} className="absolute left-4 top-2.5 text-slate-400 pointer-events-none" />
+                    <input
+                      id="input-fab-scan-search"
+                      type="text"
+                      value={recentScanQuery}
+                      onChange={(e) => setRecentScanQuery(e.target.value)}
+                      placeholder="Cari siswa, tugas, aset, kode..."
+                      className="w-full pl-8 pr-16 py-1.5 bg-slate-900 border border-slate-700/80 rounded-xl text-[10px] text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition"
+                    />
+                    {recentScanQuery ? (
+                      <div className="absolute right-3 top-1.5 flex items-center gap-1">
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                          {filteredFabScans.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRecentScanQuery('')}
+                          className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                          title="Reset pencarian"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="absolute right-4 top-2 text-[9px] text-slate-400 font-mono pointer-events-none">
+                        {recentFabScans.length} item
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {recentFabScans.length > 0 && !showClearScansConfirm && (
-                  <div className="flex items-center gap-1 mt-1.5 mb-2 overflow-x-auto pb-1 no-scrollbar px-2">
+                  <div className="flex items-center gap-1 mt-1 mb-2 overflow-x-auto pb-1 no-scrollbar px-2">
                     <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('ALL'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'ALL' ? 'bg-slate-200 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Semua</button>
                     <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('STUDENT'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'STUDENT' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Presensi</button>
                     <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('ASSIGNMENT'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'ASSIGNMENT' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Tugas</button>
@@ -1572,28 +1898,41 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 )}
 
                 {showClearScansConfirm ? (
-                  <div className="px-3 py-2 text-center bg-rose-950/40 rounded-xl border border-rose-900/50 my-0.5">
-                    <p className="text-[10px] text-rose-200 mb-2 font-medium">Hapus semua riwayat scan?</p>
-                    <div className="flex justify-center gap-2">
+                  <div className="mx-2 my-2 p-3 text-center bg-rose-950/80 rounded-2xl border border-rose-700/80 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-center justify-center gap-1.5 text-rose-200 font-extrabold text-xs mb-1">
+                      <AlertTriangle size={15} className="text-rose-400 animate-bounce shrink-0" />
+                      <span>Hapus Semua Riwayat Scan?</span>
+                    </div>
+                    <p className="text-[10px] text-rose-200/90 mb-3 leading-relaxed font-medium">
+                      Apakah Anda yakin ingin menghapus semua riwayat pemindaian? Total <strong>{recentFabScans.length} entri</strong> log scan terakhir akan dihapus permanen dari perangkat ini.
+                    </p>
+                    <div className="flex justify-center items-center gap-2">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowClearScansConfirm(false); }}
-                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowClearScansConfirm(false);
+                        }}
+                        className="px-3 py-1 text-[10px] font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
                       >
                         Batal
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); clearRecentFabScans(); }}
-                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-rose-700 text-white hover:bg-rose-600 transition-colors shadow-lg shadow-rose-900/50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearRecentFabScans();
+                        }}
+                        className="px-3 py-1 text-[10px] font-extrabold rounded-xl bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/60 transition cursor-pointer flex items-center gap-1"
                       >
-                        Ya, Hapus
+                        <Trash2 size={11} />
+                        <span>Ya, Hapus Semua</span>
                       </button>
                     </div>
                   </div>
-                ) : recentFabScans.filter(s => recentScanFilter === 'ALL' || s.type === recentScanFilter).length > 0 ? (
+                ) : filteredFabScans.length > 0 ? (
                   <div className="space-y-1">
-                    {recentFabScans.filter(s => recentScanFilter === 'ALL' || s.type === recentScanFilter).slice(0, 3).map((scan) => {
+                    {filteredFabScans.slice(0, 5).map((scan) => {
                       const timeStr = (() => {
                         const diffSec = Math.floor((Date.now() - scan.timestamp) / 1000);
                         if (diffSec < 60) return 'Baru saja';
@@ -1602,33 +1941,71 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                         return new Date(scan.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
                       })();
 
+                      // Infer or assign type configuration for color-coded visual tags
+                      const typeConfig = (() => {
+                        let t = scan.type;
+                        if (!t || t === 'OTHER') {
+                          const combined = ((scan.code || '') + ' ' + (scan.title || '') + ' ' + (scan.rawPayload || '')).toLowerCase();
+                          if (combined.includes('student') || combined.includes('siswa') || combined.includes('nis')) t = 'STUDENT';
+                          else if (combined.includes('tugas') || combined.includes('assignment') || combined.includes('soal')) t = 'ASSIGNMENT';
+                          else if (combined.includes('ast-') || combined.includes('brg-') || combined.includes('aset') || combined.includes('barang')) t = 'ASSET';
+                        }
+
+                        if (t === 'STUDENT') {
+                          return {
+                            label: 'Siswa',
+                            badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-xs shadow-emerald-500/10',
+                            iconClass: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400',
+                            Icon: UserCheck
+                          };
+                        }
+                        if (t === 'ASSIGNMENT') {
+                          return {
+                            label: 'Tugas',
+                            badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-xs shadow-blue-500/10',
+                            iconClass: 'bg-blue-500/20 border-blue-500/30 text-blue-400',
+                            Icon: BookOpen
+                          };
+                        }
+                        if (t === 'ASSET') {
+                          return {
+                            label: 'Aset',
+                            badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-xs shadow-amber-500/10',
+                            iconClass: 'bg-amber-500/20 border-amber-500/30 text-amber-400',
+                            Icon: Package
+                          };
+                        }
+                        return {
+                          label: 'QR Umum',
+                          badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-xs shadow-indigo-500/10',
+                          iconClass: 'bg-indigo-500/20 border-indigo-500/30 text-indigo-400',
+                          Icon: QrCode
+                        };
+                      })();
+
+                      const TypeIcon = typeConfig.Icon;
+
                       return (
                         <button
                           key={scan.id}
                           type="button"
                           onClick={() => handleSelectRecentScan(scan)}
-                          className="w-full p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 text-left transition flex items-center justify-between gap-2 group cursor-pointer"
+                          className="w-full p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 text-left transition flex items-center justify-between gap-2 group cursor-pointer"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-xs border ${
-                              scan.type === 'STUDENT'
-                                ? 'bg-purple-500/20 border-purple-500/30 text-purple-400'
-                                : scan.type === 'ASSIGNMENT'
-                                ? 'bg-blue-500/20 border-blue-500/30 text-blue-400'
-                                : scan.type === 'ASSET'
-                                ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
-                                : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                            }`}>
-                              {scan.type === 'STUDENT' && <UserCheck size={13} />}
-                              {scan.type === 'ASSIGNMENT' && <BookOpen size={13} />}
-                              {scan.type === 'ASSET' && <Package size={13} />}
-                              {scan.type !== 'STUDENT' && scan.type !== 'ASSIGNMENT' && scan.type !== 'ASSET' && <QrCode size={13} />}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs border ${typeConfig.iconClass}`}>
+                              <TypeIcon size={14} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-[11px] font-bold text-slate-200 group-hover:text-amber-300 truncate">
-                                {scan.title || scan.code}
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span className="text-[11px] font-bold text-slate-200 group-hover:text-amber-300 truncate">
+                                  {scan.title || scan.code}
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-extrabold border shrink-0 ${typeConfig.badgeClass}`}>
+                                  {typeConfig.label}
+                                </span>
                               </div>
-                              <div className="text-[9px] text-slate-400 truncate flex items-center gap-1.5">
+                              <div className="text-[9px] text-slate-400 truncate flex items-center gap-1.5 mt-0.5">
                                 <span className="font-mono">{scan.code}</span>
                                 <span>•</span>
                                 <span>{timeStr}</span>
@@ -1639,10 +2016,32 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                         </button>
                       );
                     })}
+                    {!showClearScansConfirm && recentFabScans.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowClearScansConfirm(true);
+                        }}
+                        className="w-full mt-2 py-1.5 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 text-[10px] font-bold border border-rose-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 size={12} />
+                        <span>Clear All History ({recentFabScans.length})</span>
+                      </button>
+                    )}
                   </div>
                 ) : recentFabScans.length > 0 ? (
-                  <div className="px-3 py-2 text-center text-[10px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/60 my-0.5">
-                    Tidak ada riwayat pada kategori ini
+                  <div className="mx-2 my-1.5 p-3 text-center text-[10px] text-slate-400 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                    <Search size={16} className="mx-auto mb-1 text-slate-500 opacity-60" />
+                    <p className="font-semibold text-slate-300">Tidak ada hasil cocok</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Tidak ditemukan pemindaian dengan kata kunci "{recentScanQuery}"</p>
+                    <button
+                      type="button"
+                      onClick={() => setRecentScanQuery('')}
+                      className="mt-2 text-[9px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold transition cursor-pointer"
+                    >
+                      Reset Pencarian
+                    </button>
                   </div>
                 ) : (
                   <div className="px-3 py-2 text-center text-[10px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/60 my-0.5">
@@ -1711,80 +2110,148 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           </kbd>
         </div>
 
-        {/* Floating Action Button */}
-        <motion.button
-          id="btn-classroom-qr-fab"
-          onClick={handleFabClick}
-          onContextMenu={handleContextMenu}
-          onMouseDown={handleTouchStart}
-          onMouseUp={handleTouchEnd}
-          onMouseLeave={handleTouchEnd}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-          whileHover={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
-          whileFocus={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
-          whileTap={{ scale: 0.93 }}
-          animate={(!isLowBattery && isWithinFiveMinutesOfClass) ? { scale: [1, 1.04, 1] } : { scale: 1 }}
-          transition={(!isLowBattery && isWithinFiveMinutesOfClass) ? { repeat: Infinity, duration: 1.5, ease: "easeInOut" } : { type: 'spring', stiffness: 400, damping: 25 }}
-          style={{ '--pulse-duration': pulseDuration } as React.CSSProperties}
-          className={`relative flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 ${
-            highContrast
-              ? 'bg-amber-400 text-black border-2 border-black font-black'
-              : scheduleNudge.status === 'ACTIVE'
-              ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white shadow-amber-500/40 border border-amber-300/40 ring-2 ring-amber-400/80 ring-offset-2 ring-offset-slate-900'
-              : scheduleNudge.status === 'IMMINENT'
-              ? 'bg-gradient-to-r from-rose-600 via-pink-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white shadow-rose-500/40 border border-rose-300/40 ring-2 ring-rose-400/80 ring-offset-2 ring-offset-slate-900'
-              : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/30 border border-white/20'
-          }`}
-          title={`Pindai QR Tugas / Siswa / Aset (Target: ${targetClassCode}) • Tekan lama atau Klik Kanan untuk Menu Pilihan Mode`}
-          aria-label="Pindai QR Scanner Cepat"
-        >
-          {/* Dynamic Glowing Beacon Background with Proximity-Aware Intensity */}
-          <span
-            style={{ animationDuration: 'var(--pulse-duration)' }}
-            className={`absolute -inset-0.5 rounded-2xl transition-opacity duration-300 -z-10 ${
-              scheduleNudge.status === 'ACTIVE'
-                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 opacity-90 blur-md animate-pulse'
-                : scheduleNudge.status === 'IMMINENT'
-                ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 opacity-85 blur-md animate-pulse'
-                : scheduleNudge.status === 'SOON'
-                ? 'bg-gradient-to-r from-cyan-500 to-indigo-500 opacity-60 blur-sm'
-                : 'bg-gradient-to-r from-emerald-500 to-indigo-500 opacity-40 blur-sm group-hover:opacity-80'
-            }`}
-          />
+        {/* Floating Action Button Container */}
+        <div className="relative group flex items-center">
+          {/* Visual Success Indicator Popover Banner on Scan Success */}
+          <AnimatePresence>
+            {isFabSuccessAnimating && (
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.75 }}
+                animate={{ opacity: 1, y: -14, scale: 1 }}
+                exit={{ opacity: 0, y: -22, scale: 0.8 }}
+                transition={{ duration: 0.3, ease: 'backOut' }}
+                className="absolute -top-11 right-0 z-50 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-green-500 text-white font-extrabold text-xs shadow-2xl shadow-emerald-500/60 border border-emerald-200 whitespace-nowrap pointer-events-none"
+              >
+                <CheckCircle2 size={16} className="text-white animate-bounce shrink-0" />
+                <span>QR Berhasil Terpindai!</span>
+                <span className="w-2 h-2 rounded-full bg-white animate-ping ml-0.5" />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Schedule Proximity Active Status Pulse Ping */}
-          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+          {/* Radiating Success Pulse Ping Rings */}
+          {isFabSuccessAnimating && (
+            <>
+              <span className="absolute -inset-3 rounded-3xl bg-emerald-400/60 animate-ping pointer-events-none z-0" />
+              <span className="absolute -inset-6 rounded-3xl bg-teal-400/30 animate-pulse pointer-events-none z-0" />
+            </>
+          )}
+
+          {/* Floating Action Button */}
+          <motion.button
+            id="btn-classroom-qr-fab"
+            onClick={handleFabClick}
+            onContextMenu={handleContextMenu}
+            onMouseDown={handleTouchStart}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            whileHover={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
+            whileFocus={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
+            whileTap={{ scale: 0.93 }}
+            animate={
+              isFabSuccessAnimating
+                ? {
+                    scale: [1, 1.3, 1.08, 1.18, 1],
+                    backgroundColor: ['#059669', '#10b981', '#059669'],
+                    boxShadow: [
+                      '0px 0px 0px rgba(16, 185, 129, 0)',
+                      '0px 0px 50px rgba(16, 185, 129, 1)',
+                      '0px 0px 25px rgba(16, 185, 129, 0.7)',
+                      '0px 0px 0px rgba(16, 185, 129, 0)'
+                    ]
+                  }
+                : (!isLowBattery && isWithinFiveMinutesOfClass)
+                ? { scale: [1, 1.04, 1] }
+                : { scale: 1 }
+            }
+            transition={
+              isFabSuccessAnimating
+                ? { duration: 1.2, ease: 'easeOut' }
+                : (!isLowBattery && isWithinFiveMinutesOfClass)
+                ? { repeat: Infinity, duration: 1.5, ease: 'easeInOut' }
+                : { type: 'spring', stiffness: 400, damping: 25 }
+            }
+            style={{ '--pulse-duration': pulseDuration } as React.CSSProperties}
+            className={`relative flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 z-10 ${
+              isFabSuccessAnimating
+                ? 'bg-emerald-500 text-white ring-4 ring-emerald-300 ring-offset-2 ring-offset-slate-900 font-extrabold shadow-emerald-500/70'
+                : highContrast
+                ? 'bg-amber-400 text-black border-2 border-black font-black'
+                : scheduleNudge.status === 'ACTIVE'
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white shadow-amber-500/40 border border-amber-300/40 ring-2 ring-amber-400/80 ring-offset-2 ring-offset-slate-900'
+                : scheduleNudge.status === 'IMMINENT'
+                ? 'bg-gradient-to-r from-rose-600 via-pink-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white shadow-rose-500/40 border border-rose-300/40 ring-2 ring-rose-400/80 ring-offset-2 ring-offset-slate-900'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/30 border border-white/20'
+            }`}
+            title={`Pindai QR Tugas / Siswa / Aset (Target: ${targetClassCode}) • Tekan lama atau Klik Kanan untuk Menu Pilihan Mode`}
+            aria-label="Pindai QR Scanner Cepat"
+          >
+            {/* Dynamic Glowing Beacon Background with Proximity-Aware Intensity */}
             <span
               style={{ animationDuration: 'var(--pulse-duration)' }}
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
-                scheduleNudge.status === 'ACTIVE'
-                  ? 'bg-amber-400 opacity-95 scale-125'
+              className={`absolute -inset-0.5 rounded-2xl transition-opacity duration-300 -z-10 ${
+                isFabSuccessAnimating
+                  ? 'bg-emerald-400 opacity-100 blur-md animate-pulse'
+                  : scheduleNudge.status === 'ACTIVE'
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 opacity-90 blur-md animate-pulse'
                   : scheduleNudge.status === 'IMMINENT'
-                  ? 'bg-rose-400 opacity-90 scale-110'
+                  ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 opacity-85 blur-md animate-pulse'
                   : scheduleNudge.status === 'SOON'
-                  ? 'bg-cyan-400 opacity-80'
-                  : 'bg-emerald-400 opacity-75'
+                  ? 'bg-gradient-to-r from-cyan-500 to-indigo-500 opacity-60 blur-sm'
+                  : 'bg-gradient-to-r from-emerald-500 to-indigo-500 opacity-40 blur-sm group-hover:opacity-80'
               }`}
             />
-            <span
-              className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white shadow-xs ${
-                scheduleNudge.status === 'ACTIVE'
-                  ? 'bg-amber-500 ring-2 ring-amber-200'
-                  : scheduleNudge.status === 'IMMINENT'
-                  ? 'bg-rose-500 ring-2 ring-rose-200'
-                  : scheduleNudge.status === 'SOON'
-                  ? 'bg-cyan-500'
-                  : 'bg-emerald-500'
-              }`}
-            />
-          </span>
 
-          <Scan className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.2]" />
-          <span className="hidden sm:inline font-bold text-xs tracking-wide">
-            Scan QR
-          </span>
-        </motion.button>
+            {/* Schedule Proximity Active Status Pulse Ping */}
+            <span className="absolute -top-1 -right-1 flex h-4 w-4">
+              <span
+                style={{ animationDuration: 'var(--pulse-duration)' }}
+                className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                  isFabSuccessAnimating
+                    ? 'bg-emerald-200 opacity-100 scale-150'
+                    : scheduleNudge.status === 'ACTIVE'
+                    ? 'bg-amber-400 opacity-95 scale-125'
+                    : scheduleNudge.status === 'IMMINENT'
+                    ? 'bg-rose-400 opacity-90 scale-110'
+                    : scheduleNudge.status === 'SOON'
+                    ? 'bg-cyan-400 opacity-80'
+                    : 'bg-emerald-400 opacity-75'
+                }`}
+              />
+              <span
+                className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white shadow-xs ${
+                  isFabSuccessAnimating
+                    ? 'bg-emerald-300 ring-2 ring-emerald-100'
+                    : scheduleNudge.status === 'ACTIVE'
+                    ? 'bg-amber-500 ring-2 ring-amber-200'
+                    : scheduleNudge.status === 'IMMINENT'
+                    ? 'bg-rose-500 ring-2 ring-rose-200'
+                    : scheduleNudge.status === 'SOON'
+                    ? 'bg-cyan-500'
+                    : 'bg-emerald-500'
+                }`}
+              />
+            </span>
+
+            {isFabSuccessAnimating ? (
+              <>
+                <CheckCircle2 className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.8] text-white animate-bounce" />
+                <span className="hidden sm:inline font-black text-xs tracking-wide text-white">
+                  Berhasil!
+                </span>
+              </>
+            ) : (
+              <>
+                <Scan className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.2]" />
+                <span className="hidden sm:inline font-bold text-xs tracking-wide">
+                  Scan QR
+                </span>
+              </>
+            )}
+          </motion.button>
+        </div>
       </div>
 
       {/* STUDENT FEEDBACK NOTIFICATIONS MODAL */}
@@ -1820,6 +2287,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         initialMode={qrScannerTargetMode}
         facingMode={cameraFacingMode}
         currentClass={targetClassCode}
+        onScanSuccess={handleScanSuccessAnimation}
         onSelectAsset={() => {
           setShowGlobalQrScanner(false);
         }}
@@ -1832,6 +2300,59 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           setPage('attendance');
         }}
       />
+
+      {/* QUICK VOICE NOTE MODAL FOR FAB SCANNED ITEM */}
+      {showQuickNoteModal && quickNoteItem && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                  <Mic size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Catatan Suara Guru</h3>
+                  <p className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                    {quickNoteItem.title || quickNoteItem.code}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickNoteModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
+              <div className="font-semibold text-purple-300 mb-0.5">Item Terpindai:</div>
+              <div className="font-bold text-slate-100">{quickNoteItem.title || quickNoteItem.code}</div>
+              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                Kode: {quickNoteItem.code} • Kategori: {quickNoteItem.type}
+              </div>
+            </div>
+
+            <VoiceNoteRecorder
+              existingVoiceNote={savedVoiceNotes[quickNoteItem.code]}
+              onSaveVoiceNote={(base64) => {
+                handleSaveQuickVoiceNote(quickNoteItem.code, base64);
+              }}
+            />
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowQuickNoteModal(false)}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer"
+              >
+                Selesai & Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI REMEDIAL & MODUL AJAR KURIKULUM MERDEKA MODAL */}
       <AIRemedialModulModal

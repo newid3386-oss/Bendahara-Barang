@@ -142,7 +142,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
             <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px] tracking-wide">
               RESMI
             </span>
-            <span>UPT Satuan Pendidikan SD Negeri Tangerang 6 • NPSN: {config.SCHOOL_NPSN || '20606016'}</span>
+            <span>UPT Satuan Pendidikan SD Negeri Tangerang 6 • NPSN: {config.SCHOOL_NPSN || '20606498'}</span>
             <span className="hidden md:inline text-slate-500">•</span>
             <span className="hidden md:inline text-blue-400 font-semibold">Akreditasi A</span>
           </div>
@@ -418,7 +418,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
 
                     <div className="py-4 text-xs sm:text-sm text-white/90 leading-relaxed space-y-3 font-normal">
                       <p>
-                        "Pendidikan adalah lentera masa depan. Di SDN Tangerang 6, kami mendidik setiap child dengan hati, membina karakter berlandaskan Profil Pelajar Pancasila, serta menjamin seluruh fasilitas pembelajaran terpelihara dengan baik demi kenyamanan anak-anak kita."
+                        "Pendidikan adalah lentera masa depan. Di SDN Tangerang 6, kami mendidik setiap peserta didik dengan hati, membina karakter berlandaskan Profil Pelajar Pancasila, serta menjamin seluruh fasilitas pembelajaran terpelihara dengan baik demi kenyamanan anak-anak kita."
                       </p>
                       <p className="text-white/65 text-xs">
                         "Melalui integrasi SIPERSEDA, kami mewujudkan tata kelola aset dan persediaan BOS yang transparan, akuntabel, dan siap diaudit."
@@ -426,7 +426,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                     </div>
 
                     <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs">
-                      <span className="text-white/60 font-mono text-[11px]">NPSN: {config.SCHOOL_NPSN || '20606016'}</span>
+                      <span className="text-white/60 font-mono text-[11px]">NPSN: {config.SCHOOL_NPSN || '20606498'}</span>
                       <button
                         onClick={() => setActiveNav('profil')}
                         className="text-white hover:underline font-bold flex items-center gap-1 cursor-pointer"
@@ -539,7 +539,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
                   </div>
                   <div>
                     <dt className="text-slate-400 font-semibold">NPSN</dt>
-                    <dd className="font-mono font-bold text-blue-800 mt-0.5">{config.SCHOOL_NPSN || '20606016'}</dd>
+                    <dd className="font-mono font-bold text-blue-800 mt-0.5">{config.SCHOOL_NPSN || '20606498'}</dd>
                   </div>
                   <div>
                     <dt className="text-slate-400 font-semibold">Bentuk Pendidikan</dt>
@@ -1289,7 +1289,7 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
               {config.PUBLIC_WEB_FOOTER_DESC || `UPT Satuan Pendidikan ${config.SCHOOL_NAME || 'SD Negeri Tangerang 6'} di bawah naungan Dinas Pendidikan Pemerintah Kota Tangerang. Berkomitmen membentuk insan beriman, berprestasi, dan berakhlak mulia.`}
             </p>
             <div className="text-[11px] text-slate-500">
-              NPSN: {config.SCHOOL_NPSN || '20606016'} • Akreditasi A
+              NPSN: {config.SCHOOL_NPSN || '20606498'} • Akreditasi A
             </div>
           </div>
 

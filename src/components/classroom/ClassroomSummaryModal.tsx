@@ -238,7 +238,7 @@ export const ClassroomSummaryModal: React.FC<ClassroomSummaryModalProps> = ({
                   SD NEGERI TANGERANG 6
                 </h1>
                 <p className="text-[11px] text-slate-600">
-                  Jl. Nyi Mas Melati No. 12, Sukasari, Kec. Tangerang, Kota Tangerang, Banten 15118 • NPSN: 20606789
+                  Jl. Nyi Mas Melati No. 12, Sukasari, Kec. Tangerang, Kota Tangerang, Banten 15118 • NPSN: 20606498
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium">
                   Website: sdn6tangerang.sch.id • Email: info@sdntangerang6.sch.id • Akreditasi: A (Unggul)

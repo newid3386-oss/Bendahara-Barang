@@ -1710,10 +1710,24 @@ class ClassroomService {
 
     // 3. Attendance Percentage
     const attStats = this.getStudentAttendanceStats(siswaId, kelas);
-    const presensiPct = attStats.percentage || 95;
+    const presensiPct = attStats.percentage !== undefined ? attStats.percentage : 95;
 
-    // 4. Nilai Akhir (Weights: 40% Tugas, 40% Kuis/Ulangan, 20% Presensi & Keaktifan)
-    const nilaiAkhir = Math.round(avgTugas * 0.4 + avgKuis * 0.4 + presensiPct * 0.2);
+    // 4. Portfolio items average (if portfolio weight configured)
+    const portfolioItems = this.getPortfolioItems(kelas, siswaId);
+    const avgPortofolio = portfolioItems.length > 0
+      ? Math.round(portfolioItems.reduce((acc, p) => acc + ((p as any).SCORE || 85), 0) / portfolioItems.length)
+      : 85;
+
+    // 5. Dynamic Nilai Akhir Calculation using GradeWeightConfig
+    const weightConfig = this.getGradeWeightConfig(kelas);
+    const wTugas = (weightConfig?.BOBOT_TUGAS ?? 40) / 100;
+    const wKuis = (weightConfig?.BOBOT_KUIS ?? 40) / 100;
+    const wPresensi = (weightConfig?.BOBOT_PRESENSI ?? 20) / 100;
+    const wPortofolio = (weightConfig?.BOBOT_PORTOFOLIO ?? 0) / 100;
+
+    const totalWeight = (wTugas + wKuis + wPresensi + wPortofolio) || 1;
+    const weightedSum = (avgTugas * wTugas) + (avgKuis * wKuis) + (presensiPct * wPresensi) + (avgPortofolio * wPortofolio);
+    const nilaiAkhir = Math.round(weightedSum / totalWeight);
 
     let predikat: 'A' | 'B' | 'C' | 'D' = 'B';
     let keterangan = 'Menunjukkan penguasaan materi yang baik dan aktif dalam kegiatan kelas.';

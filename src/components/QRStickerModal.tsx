@@ -79,7 +79,7 @@ export const QRStickerModal: React.FC<QRStickerModalProps> = ({ asset, isOpen, o
   const [showSchoolName, setShowSchoolName] = useState(true);
   const [schoolName, setSchoolName] = useState(config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6');
   const [showNpsn, setShowNpsn] = useState(true);
-  const [npsnText, setNpsnText] = useState(config.SCHOOL_NPSN || '20606016');
+  const [npsnText, setNpsnText] = useState(config.SCHOOL_NPSN || '20606498');
 
   const [showAssetCode, setShowAssetCode] = useState(true);
   const [showAssetName, setShowAssetName] = useState(true);
@@ -132,7 +132,7 @@ export const QRStickerModal: React.FC<QRStickerModalProps> = ({ asset, isOpen, o
   useEffect(() => {
     if (asset && isOpen) {
       setSchoolName(config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6');
-      setNpsnText(config.SCHOOL_NPSN || '20606016');
+      setNpsnText(config.SCHOOL_NPSN || '20606498');
       setDriveUrl(asset.DRIVE_FILE_URL || '');
       const initialPj = asset.PENANGGUNG_JAWAB || 'Pengurus Barang';
       setCustomPj(initialPj);

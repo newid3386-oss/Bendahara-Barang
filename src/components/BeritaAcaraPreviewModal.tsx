@@ -77,7 +77,7 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
     options.kopSurat?.line3 || `UPT SATUAN PENDIDIKAN ${config.SCHOOL_NAME ? config.SCHOOL_NAME.toUpperCase() : 'SD NEGERI TANGERANG 6'}`
   );
   const [line4, setLine4] = useState(
-    options.kopSurat?.line4 || `NPSN: ${config.SCHOOL_NPSN || '20606621'}  |  ${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6'}`
+    options.kopSurat?.line4 || `NPSN: ${config.SCHOOL_NPSN || '20606498'}  |  ${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6'}`
   );
 
   // Styling state

@@ -250,7 +250,7 @@ export class QrService {
     // 2. School Name & NPSN
     if (options?.showSchoolName !== false) {
       const school = options?.schoolName || config.SCHOOL_NAME;
-      const npsn = options?.showNpsn !== false ? ` • NPSN: ${options?.npsnText || config.SCHOOL_NPSN || '20606016'}` : '';
+      const npsn = options?.showNpsn !== false ? ` • NPSN: ${options?.npsnText || config.SCHOOL_NPSN || '20606498'}` : '';
       ctx.fillStyle = c.primary;
       ctx.font = `900 ${Math.round(h * 0.095)}px Inter, system-ui, Arial`;
       this.fitText(ctx, `${school}${npsn}`, textStartX, curY, maxTextWidth);

@@ -258,7 +258,12 @@ class LocalStorageService {
 
   // --- Config ---
   public getConfig(): Config {
-    return this.getItem<Config>(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
+    const cfg = this.getItem<Config>(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
+    if (!cfg.SCHOOL_NPSN || cfg.SCHOOL_NPSN === '20606016' || cfg.SCHOOL_NPSN === '20606621') {
+      cfg.SCHOOL_NPSN = '20606498';
+      this.setItem(STORAGE_KEYS.CONFIG, cfg);
+    }
+    return cfg;
   }
 
   public saveConfig(config: Partial<Config>): Config {
@@ -1658,7 +1663,7 @@ class LocalStorageService {
     const defaults: SchoolUnitConsolidation[] = [
       {
         ID: 'SCH-001',
-        NPSN: '20606016',
+        NPSN: '20606498',
         NAMA_SEKOLAH: 'SD Negeri Tangerang 6 (Unit Ini)',
         JENJANG: 'SD',
         KECAMATAN: 'Tangerang',
@@ -2009,7 +2014,7 @@ class LocalStorageService {
     const cfg = this.getConfig();
     const city = cfg.BA_DEFAULT_CITY || cfg.REPORT_SIGNATURE_CITY || 'Tangerang';
     const schoolName = cfg.SCHOOL_NAME || 'SD NEGERI TANGERANG 6';
-    const npsn = cfg.SCHOOL_NPSN || '20606621';
+    const npsn = cfg.SCHOOL_NPSN || '20606498';
     const addr = cfg.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6';
 
     return [

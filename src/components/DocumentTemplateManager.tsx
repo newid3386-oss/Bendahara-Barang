@@ -106,7 +106,7 @@ export const DocumentTemplateManager: React.FC<DocumentTemplateManagerProps> = (
       category: 'PENGADAAN',
       description: '',
       institutionName: config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6',
-      institutionAddress: `NPSN: ${config.SCHOOL_NPSN || '20606621'}  |  ${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6'}`,
+      institutionAddress: `NPSN: ${config.SCHOOL_NPSN || '20606498'}  |  ${config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6'}`,
       institutionCity: config.BA_DEFAULT_CITY || 'Tangerang',
       governingBody: `PEMERINTAH KOTA ${(config.BA_DEFAULT_CITY || 'TANGERANG').toUpperCase()}`,
       institutionAgency: 'DINAS PENDIDIKAN',
