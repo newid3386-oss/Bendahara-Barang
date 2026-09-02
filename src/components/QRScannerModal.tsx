@@ -30,6 +30,7 @@ import { classroomService } from '../services/classroomService';
 import { accountService } from '../services/accountService';
 import { Asset } from '../types';
 import { ClassroomAssignment, Account } from '../types/classroom';
+import { playFeedback } from '../utils/feedback';
 
 export interface RecentScanItem {
   id: string;
@@ -49,6 +50,9 @@ export interface QRScannerModalProps {
   onSelectAsset?: (asset: Asset) => void;
   onSelectAssignment?: (assignment: ClassroomAssignment) => void;
   onSelectStudent?: (student: Account) => void;
+  initialMode?: 'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET';
+  currentClass?: string;
+  facingMode?: 'environment' | 'user';
 }
 
 type ErrorType = 'CAMERA_DENIED' | 'CAMERA_NOT_FOUND' | 'NO_QR_IN_IMAGE' | 'NOT_FOUND_IN_DB' | 'GENERAL_ERROR' | null;
@@ -66,7 +70,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   onSelectAsset,
   onSelectAssignment,
   onSelectStudent,
+  initialMode = 'ALL',
+  currentClass,
+  facingMode = 'environment',
 }) => {
+  const [activeMode, setActiveMode] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>(initialMode);
   const [manualCode, setManualCode] = useState('');
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [errorType, setErrorType] = useState<ErrorType>(null);
@@ -81,6 +89,13 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Sync mode on open
+  useEffect(() => {
+    if (isOpen) {
+      setActiveMode(initialMode || 'ALL');
+    }
+  }, [isOpen, initialMode]);
+
   // Load Recent Scans from LocalStorage
   const loadRecentScans = useCallback(() => {
     try {
@@ -88,7 +103,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setRecentScans(parsed.slice(0, 5));
+          setRecentScans(parsed.slice(0, 100));
         }
       }
     } catch (e) {
@@ -105,7 +120,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       };
       setRecentScans((prev) => {
         const filtered = prev.filter((s) => s.code.toLowerCase() !== item.code.toLowerCase());
-        const updated = [newItem, ...filtered].slice(0, 5);
+        const updated = [newItem, ...filtered].slice(0, 100);
         localStorage.setItem(RECENT_SCANS_STORAGE_KEY, JSON.stringify(updated));
         return updated;
       });
@@ -142,8 +157,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         return;
       }
 
+      const isMobile = window.innerWidth < 768;
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: { 
+          facingMode: { ideal: facingMode },
+          ...(isMobile ? { width: { ideal: 1080 }, height: { ideal: 1920 } } : {})
+        },
         audio: false,
       });
       setStream(mediaStream);
@@ -165,7 +184,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         setErrorMsg('Gagal menyalakan kamera: ' + (err?.message || 'Terjadi kesalahan sistem.'));
       }
     }
-  }, []);
+  }, [facingMode]);
 
   useEffect(() => {
     if (isOpen) {
@@ -184,6 +203,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       stopCamera();
     };
   }, [isOpen, stopCamera, loadRecentScans]);
+
+  const previousFacingModeRef = useRef(facingMode);
+  useEffect(() => {
+    if (isCameraActive && previousFacingModeRef.current !== facingMode) {
+      stopCamera();
+      setTimeout(() => startCamera(), 100);
+    }
+    previousFacingModeRef.current = facingMode;
+  }, [facingMode, isCameraActive, stopCamera, startCamera]);
 
   // Main QR resolution function for Assets, Assignments, and Students
   const resolveScannedText = useCallback(
@@ -242,6 +270,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'ASSIGNMENT',
           code: matchedAssignment.ID,
         };
+        playFeedback('success');
         setSuccessInfo(info);
         addRecentScan({
           id: matchedAssignment.ID,
@@ -285,6 +314,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'STUDENT',
           code: matchedStudent.NIP || matchedStudent.ID,
         };
+        playFeedback('success');
         setSuccessInfo(info);
         addRecentScan({
           id: matchedStudent.ID,
@@ -323,6 +353,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           type: 'ASSET',
           code: matchedAsset.KODE_ASET,
         };
+        playFeedback('success');
         setSuccessInfo(info);
         addRecentScan({
           id: matchedAsset.ID,
@@ -345,6 +376,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }
 
       // 4. Not found
+      playFeedback('error');
       setIsProcessing(false);
       setErrorType('NOT_FOUND_IN_DB');
       setErrorMsg(`Data dengan kode "${code}" tidak ditemukan dalam database aset, tugas, maupun siswa.`);
@@ -474,11 +506,17 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               <QrCode size={20} />
             </div>
             <div>
-              <h3 className="font-black text-sm text-white flex items-center gap-1.5">
+              <h3 className="font-black text-sm text-white flex items-center gap-1.5 flex-wrap">
                 Scanner QR SDN Tangerang 6
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-mono font-bold">
                   v2.4
                 </span>
+                {currentClass && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-800/80 text-teal-200 border border-teal-500/40 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                    Target: {currentClass}
+                  </span>
+                )}
               </h3>
               <p className="text-[11px] text-emerald-200/80">
                 Pindai QR Tugas Siswa, Kartu Pelajar, & Label Aset
@@ -495,6 +533,61 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             title="Tutup Scanner"
           >
             <X size={18} />
+          </button>
+        </div>
+
+        {/* Quick Category Target Mode Selector */}
+        <div className="px-4 py-2.5 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs shrink-0">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap mr-1">
+            Fokus Scan:
+          </span>
+          <button
+            type="button"
+            onClick={() => setActiveMode('ALL')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 text-[11px] ${
+              activeMode === 'ALL'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <Sparkles size={12} />
+            <span>Otomatis (Semua)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMode('ASSIGNMENT')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 text-[11px] ${
+              activeMode === 'ASSIGNMENT'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <BookOpen size={12} />
+            <span>Tugas Siswa</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMode('STUDENT')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 text-[11px] ${
+              activeMode === 'STUDENT'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <User size={12} />
+            <span>Presensi Siswa</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMode('ASSET')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 text-[11px] ${
+              activeMode === 'ASSET'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <Package size={12} />
+            <span>Aset Sekolah</span>
           </button>
         </div>
 

@@ -19,6 +19,8 @@ import {
   GradeWeightConfig,
   StudentPortfolioItem,
   PortfolioComment,
+  P5Project,
+  P5ProjectStage,
 } from '../types/classroom';
 import { offlineSyncManager } from './offlineSyncManager';
 
@@ -39,10 +41,116 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'BB_CLASSROOM_NOTIFICATIONS_V1',
   GRADE_WEIGHTS: 'BB_CLASSROOM_GRADE_WEIGHTS_V1',
   PORTFOLIO: 'BB_CLASSROOM_PORTFOLIO_V1',
+  P5_PROJECTS: 'BB_CLASSROOM_P5_PROJECTS_V1',
   SEEDED: 'BB_CLASSROOM_SEEDED_V4',
 };
 
 const nowISO = () => new Date().toISOString();
+
+const DEFAULT_P5_PROJECTS: P5Project[] = [
+  {
+    ID: 'P5-PRJ-KLS1',
+    KELAS: 'Kelas 1',
+    JUDUL: 'Kearifan Lokal: Makanan Tradisional Sehat Nusantara',
+    TEMA: 'Kearifan Lokal',
+    DESKRIPSI: 'Mengenal dan membuat jajanan pasar tradisional sehat khas daerah Tangerang.',
+    DIMENSI: ['Kebinekaan Global', 'Gotong Royong', 'Kreatif'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Pengenalan Kue Tradisional', DESCRIPTION: 'Mengenal klepon, getuk, dan kue talam', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-15' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Wawancara Pembuat Jajanan', DESCRIPTION: 'Bertanya kepada pembuat kue tradisional setempat', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-25' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Praktik Membuat Kue Bersama', DESCRIPTION: 'Praktik membuat jajanan pasar sehat di sekolah', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Festival Kuliner & Gelar Karya', DESCRIPTION: 'Bazar jajanan pasar dan evaluasi hasil belajar', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 62,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  },
+  {
+    ID: 'P5-PRJ-KLS2',
+    KELAS: 'Kelas 2',
+    JUDUL: 'Bhinneka Tunggal Ika: Indahnya Keragaman Budaya Sekolahku',
+    TEMA: 'Bhinneka Tunggal Ika',
+    DESKRIPSI: 'Menghargai perbedaan suku, pakaian adat, dan tarian tradisional teman-teman di kelas.',
+    DIMENSI: ['Kebinekaan Global', 'Beriman & Bertakwa', 'Gotong Royong'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Pemetaan Suku & Asal-Usul', DESCRIPTION: 'Mengenal keberagaman budaya teman sekelas', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-10' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Pembuatan Mading Pakaian Adat', DESCRIPTION: 'Kreativitas gambar & kliping busana nusantara', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Pentas Seni & Lagu Daerah', DESCRIPTION: 'Penampilan lagu & tarian tradisional kelas', STATUS: 'BELUM_MULAI' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Refleksi Kebinekaan', DESCRIPTION: 'Jurnal pengalaman bertoleransi & kebersamaan', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 38,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  },
+  {
+    ID: 'P5-PRJ-KLS3',
+    KELAS: 'Kelas 3',
+    JUDUL: 'Kewirausahaan: Apotek Hidup & Olahan Herbal Sekolah',
+    TEMA: 'Kewirausahaan',
+    DESKRIPSI: 'Menanam tanaman obat keluarga (TOGA) dan mengolahnya menjadi minuman sehat bernilai jual.',
+    DIMENSI: ['Mandiri', 'Kreatif', 'Bernalar Kritis'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Pengenalan Tanaman Obat (TOGA)', DESCRIPTION: 'Mengenal jahe, kunyit, temulawak, dan serai', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-05' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Menanam TOGA di Pot Daur Ulang', DESCRIPTION: 'Praktik penanaman bibit di kebun sekolah', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-18' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Pengolahan Minuman Kunyit Asam', DESCRIPTION: 'Pembuatan jamu & minuman herbal segar', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Pasar Produk Herbal Cilik', DESCRIPTION: 'Penjualan minuman herbal saat hari bebas kendaraan', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 62,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  },
+  {
+    ID: 'P5-PRJ-KLS4',
+    KELAS: 'Kelas 4',
+    JUDUL: 'Gaya Hidup Berkelanjutan: Pengolahan Sampah Organik & Bank Sampah',
+    TEMA: 'Gaya Hidup Berkelanjutan',
+    DESKRIPSI: 'Mengajarkan siswa pemilahan sampah, komposting pupuk organik, dan pengelolaan bank sampah sekolah.',
+    DIMENSI: ['Gotong Royong', 'Bernalar Kritis', 'Kreatif'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Sosialisasi & Audit Sampah Sekolah', DESCRIPTION: 'Mengenal jenis sampah organik & anorganik di sekitar sekolah', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-10' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Merancang Komposter Takakura', DESCRIPTION: 'Pembuatan wadah kompos dan pemilahan sampah harian', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-20' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Monitoring Fermentasi Kompos', DESCRIPTION: 'Pengukuran suhu dan pembalikan kompos berkala', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Panen Karya Pupuk & Pameran P5', DESCRIPTION: 'Pemasaran pupuk organik untuk kebun sekolah dan refleksi', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 62,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  },
+  {
+    ID: 'P5-PRJ-KLS5',
+    KELAS: 'Kelas 5',
+    JUDUL: 'Rekayasa dan Teknologi: Sistem Penyiraman Otomatis Tanaman',
+    TEMA: 'Rekayasa dan Teknologi',
+    DESKRIPSI: 'Merancang alat penyiram tanaman berbasis sensor kelembaban tanah sederhana.',
+    DIMENSI: ['Bernalar Kritis', 'Kreatif', 'Mandiri'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Pengenalan Komponen & Rangkaian', DESCRIPTION: 'Pemahaman prinsip kapilaritas & sakelar listrik', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-12' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Desain Maket & Perakitan Alat', DESCRIPTION: 'Merangkai pompa mini dan selang penyiram', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Uji Coba Penyiraman Otomatis', DESCRIPTION: 'Pengujian efisiensi air di taman kelas', STATUS: 'BELUM_MULAI' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Laporan Inovasi & Presentasi Karya', DESCRIPTION: 'Presentasi hasil karya rekayasa di depan wali murid', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 38,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  },
+  {
+    ID: 'P5-PRJ-KLS6',
+    KELAS: 'Kelas 6',
+    JUDUL: 'Suara Demokrasi: Pemilihan Ketua OSIS / Dokter Cilik Sekolah',
+    TEMA: 'Suara Demokrasi',
+    DESKRIPSI: 'Simulasi pemilu sekolah dengan asas Luber Jurdil, perumusan visi mosi, dan pemungutan suara digital.',
+    DIMENSI: ['Bernalar Kritis', 'Gotong Royong', 'Kebinekaan Global'],
+    STAGES: [
+      { ID: 'STG-1', NAME: 'Tahap 1: Pendaftaran & Penyampaian Visi-Misi', DESCRIPTION: 'Pendaftaran calon ketua & kampanye dialogis', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-08' },
+      { ID: 'STG-2', NAME: 'Tahap 2: Debat Terbuka Kandidat', DESCRIPTION: 'Adu gagasan program kerja pengembangan sekolah', STATUS: 'SELESAI', COMPLETED_AT: '2026-08-19' },
+      { ID: 'STG-3', NAME: 'Tahap 3: Pemungutan Suara E-Voting', DESCRIPTION: 'Pelaksanaan pencoblosan/e-voting di TPS kelas', STATUS: 'SEDANG_BERJALAN' },
+      { ID: 'STG-4', NAME: 'Tahap 4: Penghitungan Suara & Pelantikan', DESCRIPTION: 'Pengumuman pemenang & pidato penutupan', STATUS: 'BELUM_MULAI' }
+    ],
+    PERCENTAGE: 62,
+    UPDATED_AT: nowISO(),
+    UPDATED_BY: 'GURU_SYS'
+  }
+];
 const ts = () => nowISO().replace('T', ' ').substring(0, 19);
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
@@ -2015,6 +2123,8 @@ class ClassroomService {
     FEEDBACK_STRUKTUR: string;
     SCORE_MATERI: number;
     FEEDBACK_MATERI: string;
+    SCORE_SIKAP?: number;
+    FEEDBACK_SIKAP?: string;
     GENERAL_COMMENT: string;
   }): void {
     const list = this.getItem<any[]>('BB_CLASSROOM_PEER_REVIEWS_V1', []);
@@ -2031,6 +2141,95 @@ class ClassroomService {
     }
     this.setItem('BB_CLASSROOM_PEER_REVIEWS_V1', list);
   }
+
+  // --- P5 Project Tracker System ---
+  public getP5Projects(kelas?: string): P5Project[] {
+    this.initClassroom();
+    let projects = this.getItem<P5Project[]>(STORAGE_KEYS.P5_PROJECTS, DEFAULT_P5_PROJECTS);
+    if (!projects || projects.length === 0) {
+      projects = DEFAULT_P5_PROJECTS;
+      this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
+    }
+    if (kelas) {
+      const filtered = projects.filter(p => p.KELAS.toLowerCase() === kelas.toLowerCase());
+      if (filtered.length > 0) return filtered;
+    }
+    return projects;
+  }
+
+  public getP5ProjectForClass(kelas: string): P5Project {
+    const list = this.getP5Projects(kelas);
+    if (list.length > 0) return list[0];
+    
+    return {
+      ID: 'P5-PRJ-' + Date.now(),
+      KELAS: kelas || 'Kelas 4',
+      JUDUL: 'Proyek Profil Pelajar Pancasila ' + (kelas || 'Kelas 4'),
+      TEMA: 'Gaya Hidup Berkelanjutan',
+      DESKRIPSI: 'Proyek penguatan karakter dan kompetensi abad 21 siswa.',
+      DIMENSI: ['Gotong Royong', 'Bernalar Kritis', 'Kreatif'],
+      STAGES: [
+        { ID: 'STG-1', NAME: 'Tahap 1: Pengenalan & Orientasi', DESCRIPTION: 'Memahami isu dan tema proyek', STATUS: 'SELESAI', COMPLETED_AT: todayDate() },
+        { ID: 'STG-2', NAME: 'Tahap 2: Kontekstualisasi & Riset', DESCRIPTION: 'Merencanakan langkah aksi bersama', STATUS: 'SEDANG_BERJALAN' },
+        { ID: 'STG-3', NAME: 'Tahap 3: Aksi & Pembuatan Karya', DESCRIPTION: 'Praktik dan pembuatan produk karya', STATUS: 'BELUM_MULAI' },
+        { ID: 'STG-4', NAME: 'Tahap 4: Refleksi & Tindak Lanjut', DESCRIPTION: 'Evaluasi dan pameran hasil belajar', STATUS: 'BELUM_MULAI' },
+      ],
+      PERCENTAGE: 38,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: 'GURU_SYS',
+    };
+  }
+
+  public updateP5StageStatus(
+    projectId: string,
+    stageId: string,
+    newStatus: 'BELUM_MULAI' | 'SEDANG_BERJALAN' | 'SELESAI',
+    updatedBy: string
+  ): P5Project {
+    const projects = this.getP5Projects();
+    const projIdx = projects.findIndex(p => p.ID === projectId);
+    let targetProject: P5Project;
+
+    if (projIdx >= 0) {
+      targetProject = projects[projIdx];
+    } else {
+      targetProject = DEFAULT_P5_PROJECTS[0];
+    }
+
+    const updatedStages = targetProject.STAGES.map(s => {
+      if (s.ID === stageId) {
+        return {
+          ...s,
+          STATUS: newStatus,
+          COMPLETED_AT: newStatus === 'SELESAI' ? todayDate() : s.COMPLETED_AT,
+        };
+      }
+      return s;
+    });
+
+    const total = updatedStages.length || 1;
+    const completedCount = updatedStages.filter(s => s.STATUS === 'SELESAI').length;
+    const inProgressCount = updatedStages.filter(s => s.STATUS === 'SEDANG_BERJALAN').length;
+    const percentage = Math.round(((completedCount + (inProgressCount * 0.5)) / total) * 100);
+
+    const updatedProject: P5Project = {
+      ...targetProject,
+      STAGES: updatedStages,
+      PERCENTAGE: percentage,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: updatedBy,
+    };
+
+    if (projIdx >= 0) {
+      projects[projIdx] = updatedProject;
+    } else {
+      projects.push(updatedProject);
+    }
+
+    this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
+    return updatedProject;
+  }
 }
+
 
 export const classroomService = new ClassroomService();

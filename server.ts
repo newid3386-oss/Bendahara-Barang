@@ -952,6 +952,194 @@ function getHeuristicTrendAnalysis(studentName: string, scores: any, classAvg: n
   };
 }
 
+// Endpoint: AI Peer Review Constructive Feedback Generator
+app.post('/api/ai/peer-review-suggestions', async (req, res) => {
+  const {
+    assignmentTitle,
+    assignmentDescription = '',
+    peerSubmissionText,
+    targetCategory = 'ALL',
+    tone = 'CONSTRUCTIVE',
+    rubricCriteria = [],
+  } = req.body;
+
+  if (!peerSubmissionText && !assignmentTitle) {
+    return res.status(400).json({
+      success: false,
+      error: 'Judul tugas atau teks hasil pekerjaan teman diperlukan.',
+    });
+  }
+
+  // Local heuristic fallback generator
+  const getHeuristicSuggestions = () => {
+    const toneMap = {
+      APPRECIATIVE: {
+        kreativitas: 'Ide dan visualisasi hasil tugasmu sangat orisinal dan menarik! Terasa sekali kamu mengerjakannya dengan sungguh-sungguh.',
+        struktur: 'Alur penulisan dari awal hingga akhir tertata sangat rapi dan mudah sekali diikuti pembaca.',
+        materi: 'Pemahamanmu terhadap materi tugas ini sangat bagus dan sesuai dengan penjelasan guru di kelas.',
+        sikap: 'Dedikasi dan ketelitianmu dalam menyelesaikan tugas tepat waktu patut diacungi jempol!',
+        general: 'Pekerjaan yang luar biasa! Pertahankan semangat belajar yang tinggi ini untuk tugas-tugas berikutnya.'
+      },
+      GROWTH_MINDSET: {
+        kreativitas: 'Konsep awal karyamu sudah menjanjikan. Cobalah tambahkan elemen visual atau variasi sudut pandang agar semakin unik.',
+        struktur: 'Kerangka jawaban sudah terarah. Bila diberi penomoran sub-poin, hasilnya pasti akan lebih sistematis.',
+        materi: 'Dasar konsep sudah kamu kuasai. Coba periksa kembali contoh pada bagian akhir untuk memperkuat argumenmu.',
+        sikap: 'Usaha yang kamu curahkan sangat baik. Terus tantang dirimu untuk mendalami materi ini lebih jauh lagi.',
+        general: 'Kamu sudah berada di jalur belajar yang tepat! Dengan sedikit penyempurnaan pada detail akhir, karyamu akan semakin hebat.'
+      },
+      CONCISE: {
+        kreativitas: 'Penyajian kreatif dan orisinal. Ide pokok tersampaikan dengan baik.',
+        struktur: 'Format penulisan rapi, pembagian paragraf sudah proporsional.',
+        materi: 'Jawaban akurat dan sesuai dengan instruksi tugas.',
+        sikap: 'Pengerjaan lengkap dan dikumpulkan dengan cermat.',
+        general: 'Secara keseluruhan hasil tugas sudah sangat baik dan sesuai target kompetensi.'
+      },
+      CONSTRUCTIVE: {
+        kreativitas: 'Kreativitas penyajian sudah baik! Untuk membuatnya makin menonjol, cobalah menambahkan ilustrasi atau studi kasus sederhana.',
+        struktur: 'Susunan kalimat cukup teratur. Menambahkan kesimpulan ringkas di bagian akhir akan membuat alurnya lebih utuh.',
+        materi: 'Konsep materi utama telah terjawab dengan tepat. Pastikan mengecek ulang ketelitian istilah penting yang digunakan.',
+        sikap: 'Tanggung jawab penyelesaian tugas sangat tinggi. Sikap disiplin seperti ini sangat membantu proses belajarmu.',
+        general: 'Hasil pekerjaanmu sudah rapi dan jelas. Teruskan kebiasaan baik ini dan telaah kembali beberapa catatan kecil agar makin sempurna!'
+      }
+    };
+
+    const selectedTone = toneMap[tone as keyof typeof toneMap] || toneMap.CONSTRUCTIVE;
+
+    const list = [
+      {
+        rubricId: 'KREATIVITAS',
+        rubricTitle: 'Kreativitas & Orisinalitas',
+        feedback: selectedTone.kreativitas,
+        positives: 'Gaya penyajian tugas memiliki karakter orisinal yang menyenangkan untuk disimak.',
+        growthTip: 'Eksplorasi tata letak visual atau analogi unik untuk memperkaya karya.'
+      },
+      {
+        rubricId: 'STRUKTUR',
+        rubricTitle: 'Struktur & Kerapian',
+        feedback: selectedTone.struktur,
+        positives: 'Tata letak dan kerapian penulisan sudah sangat nyaman dibaca.',
+        growthTip: 'Gunakan penomoran poin atau sub-judul agar pesan lebih cepat dipahami.'
+      },
+      {
+        rubricId: 'MATERI',
+        rubricTitle: 'Kesesuaian Materi & Kebenaran Jawaban',
+        feedback: selectedTone.materi,
+        positives: 'Poin-poin utama materi sesuai dengan indikator pembelajaran.',
+        growthTip: 'Periksa kembali rumus atau definisi kunci agar bebas dari kekeliruan minor.'
+      },
+      {
+        rubricId: 'SIKAP',
+        rubricTitle: 'Sikap Belajar & Ketuntasan',
+        feedback: selectedTone.sikap,
+        positives: 'Menunjukkan komitmen tinggi dalam menuntaskan instruksi tugas.',
+        growthTip: 'Pertahankan ketelitian dan konsistensi pengumpulan tugas berkualitas.'
+      }
+    ];
+
+    return {
+      suggestions: targetCategory === 'ALL' ? list : list.filter((i) => i.rubricId === targetCategory),
+      generalFeedback: selectedTone.general,
+      toneUsed: tone,
+    };
+  };
+
+  try {
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.json({
+        success: true,
+        isFallback: true,
+        data: getHeuristicSuggestions(),
+      });
+    }
+
+    const toneInstructions = {
+      APPRECIATIVE: 'Fokus pada apresiasi tulus, kalimat yang ramah, hangat, dan membesarkan hati teman sebaya.',
+      CONSTRUCTIVE: 'Fokus pada kritik membangun: puji dulu 1 kelebihan, lalu berikan 1-2 saran spesifik yang dapat langsung diperbaiki.',
+      GROWTH_MINDSET: 'Fokus pada pola pikir berkembang (growth mindset): tekankan proses belajar, daya juang, dan strategi peningkatan level.',
+      CONCISE: 'Fokus pada kalimat yang singkat, padat, lugas, namun tetap sopan dan ramah.'
+    }[tone as 'APPRECIATIVE' | 'CONSTRUCTIVE' | 'GROWTH_MINDSET' | 'CONCISE'] || 'Sopan, empatik, konstruktif, dan membangun semangat.';
+
+    const systemInstruction = `
+Anda adalah "AI Pembimbing Ulasan Sejawat (Peer Review AI Coach) SD Negeri Tangerang 6".
+Tugas Anda adalah membantu siswa sekolah dasar & menengah menyusun umpan balik (feedback) sejawat yang SANGAT KONSTRUKTIF, SOPAN, RAMAH ANAK, dan BERORIENTASI PADA PENGEMBANGAN DIRI.
+
+Prinsip Etika Penilaian Sejawat:
+1. Budaya Ramah & Anti-Perundungan: Dilarang keras menggunakan kata-kata yang merendahkan, menyindir, atau menghakimi secara negatif.
+2. Teknik Umpan Balik "Glow and Grow" (Apresiasi Kekuatan + Saran Pertumbuhan Konkret).
+3. Berikan saran yang spesifik berkaitan dengan isi pekerjaan yang dikumpulkan, bukan komentar abstrak.
+4. Gaya Bahasa yang Diinginkan: ${toneInstructions}
+`;
+
+    const promptText = `
+Data Penugasan:
+- Judul Tugas: "${assignmentTitle}"
+- Deskripsi / Panduan Guru: "${assignmentDescription || 'Tidak ada deskripsi tambahan'}"
+
+Hasil Pekerjaan Teman yang Dinilai:
+"${(peerSubmissionText || 'Tidak ada teks isi tugas').slice(0, 3000)}"
+
+Kategori Rubrik Target: ${targetCategory}
+Kriteria Rubrik Tambahan: ${JSON.stringify(rubricCriteria || [])}
+
+Tolong hasilkan saran umpan balik peer review yang terstruktur dalam format JSON:
+- suggestions: array objek untuk setiap aspek rubrik (KREATIVITAS, STRUKTUR, MATERI, SIKAP), dengan properti:
+    - rubricId: string ("KREATIVITAS" | "STRUKTUR" | "MATERI" | "SIKAP")
+    - rubricTitle: string nama rubrik
+    - feedback: 1-2 kalimat saran/ulasan siap pakai yang sopan & spesifik
+    - positives: 1 kalimat poin apresiasi kelebihan karya
+    - growthTip: 1 kalimat tips langkah perbaikan yang jelas
+- generalFeedback: 1-2 kalimat komentar menyeluruh yang menyemangati
+- toneUsed: "${tone}"
+`;
+
+    const { text } = await callGeminiWithRetryAndFallback(ai, {
+      contents: promptText,
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            suggestions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  rubricId: { type: Type.STRING },
+                  rubricTitle: { type: Type.STRING },
+                  feedback: { type: Type.STRING },
+                  positives: { type: Type.STRING },
+                  growthTip: { type: Type.STRING },
+                },
+                required: ['rubricId', 'rubricTitle', 'feedback'],
+              },
+            },
+            generalFeedback: { type: Type.STRING },
+            toneUsed: { type: Type.STRING },
+          },
+          required: ['suggestions', 'generalFeedback'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(text || '{}');
+    return res.json({
+      success: true,
+      data: parsed,
+    });
+  } catch (error: any) {
+    console.error('Error generating AI peer review suggestions (falling back):', error);
+    return res.json({
+      success: true,
+      isFallback: true,
+      warning: 'Model AI mengalami antrian trafik, sistem mengaktifkan generator umpan balik lokal.',
+      data: getHeuristicSuggestions(),
+    });
+  }
+});
+
 // Vite middleware for development & static serving for production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

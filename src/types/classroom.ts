@@ -313,3 +313,26 @@ export interface PortfolioComment {
   CREATED_AT: string;
 }
 
+// 11. P5 Project Progress Tracker
+export interface P5ProjectStage {
+  ID: string;
+  NAME: string;
+  DESCRIPTION: string;
+  STATUS: 'BELUM_MULAI' | 'SEDANG_BERJALAN' | 'SELESAI';
+  COMPLETED_AT?: string;
+  TARGET_DATE?: string;
+}
+
+export interface P5Project {
+  ID: string;
+  KELAS: string;
+  JUDUL: string;
+  TEMA: string;
+  DESKRIPSI: string;
+  DIMENSI: string[];
+  STAGES: P5ProjectStage[];
+  PERCENTAGE: number;
+  UPDATED_AT: string;
+  UPDATED_BY: string;
+}
+

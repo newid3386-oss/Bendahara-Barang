@@ -1652,7 +1652,302 @@ export class PdfService {
 
     doc.save(`Rekapitulasi_Nilai_${targetClass.replace(/\s+/g, '_')}_SDN_Tangerang_6.pdf`);
   }
+
+  /**
+   * Generates a PDF Rekapitulasi Daftar Tugas Siswa secara Massal
+   * Allows teachers to download a summary of all assignments that need to be graded in a single document
+   */
+  public async generateBulkAssignmentsReportPdf(
+    assignments: any[],
+    courses: any[],
+    submissions: any[],
+    targetClass: string = 'Kelas 4',
+    guruName: string = 'Guru Pengampu, S.Pd.',
+    guruNip: string = '19850412 201101 2 003'
+  ): Promise<void> {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const config = db.getConfig();
+
+    this.addKopSurat(doc, pageWidth, {
+      show: true,
+      line1: 'PEMERINTAH KOTA TANGERANG',
+      line2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+      line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
+      line4: `${config.ADDRESS || 'Jl. Nyimas Melati No. 25'} • Rekapitulasi Daftar Tugas Siswa Massal (${targetClass})`,
+    });
+
+    let currentY = 46;
+
+    // Title Block
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`REKAPITULASI PENUGASAN & DAFTAR TUGAS SISWA MASSAL - ${targetClass.toUpperCase()}`, pageWidth / 2, currentY, {
+      align: 'center',
+    });
+
+    currentY += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    doc.text(
+      `Tanggal Cetak: ${dateStr} • Guru Kelas/Pengampu: ${guruName} (${guruNip ? 'NIP. ' + guruNip : 'NIP. -'}) • Total ${assignments.length} Tugas`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+
+    currentY += 7;
+
+    // Calculate Global Statistics
+    const allValidSubs = submissions.filter((s: any) => s.STATUS !== 'DRAFT');
+    const totalPendingGrading = allValidSubs.filter((s: any) => s.STATUS === 'SUBMITTED').length;
+    const totalGraded = allValidSubs.filter((s: any) => s.STATUS === 'GRADED').length;
+
+    // Render Stats Bar Box
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, currentY, pageWidth - 28, 12, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`RINGKASAN MASSAL:`, 18, currentY + 7.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Total Penugasan: ${assignments.length} item`, 60, currentY + 7.5);
+    doc.text(`Total Pengumpulan Siswa: ${allValidSubs.length} berkas`, 115, currentY + 7.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(180, 83, 9); // amber
+    doc.text(`Perlu Dinilai: ${totalPendingGrading} tugas`, 180, currentY + 7.5);
+
+    doc.setTextColor(22, 101, 52); // emerald
+    doc.text(`Sudah Dinilai: ${totalGraded} tugas`, 235, currentY + 7.5);
+
+    currentY += 16;
+
+    // Table 1: Summary of All Assignments
+    const table1Rows = assignments.map((a: any, idx: number) => {
+      const course = courses.find((c: any) => c.ID === a.COURSE_ID);
+      const asgSubs = submissions.filter((s: any) => s.ASSIGNMENT_ID === a.ID && s.STATUS !== 'DRAFT');
+      const pendingCount = asgSubs.filter((s: any) => s.STATUS === 'SUBMITTED').length;
+      const gradedCount = asgSubs.filter((s: any) => s.STATUS === 'GRADED').length;
+
+      let deadlineFormatted = '-';
+      try {
+        if (a.DEADLINE) {
+          const d = new Date(a.DEADLINE);
+          deadlineFormatted = `${d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+      } catch {
+        deadlineFormatted = a.DEADLINE || '-';
+      }
+
+      const statusStr = pendingCount > 0 ? `PERLU DINILAI (${pendingCount})` : asgSubs.length > 0 ? 'SELESAI DINILAI' : 'BELUM ADA PENGUMPULAN';
+
+      return [
+        idx + 1,
+        course ? `${course.KODE_KELAS} - ${course.NAMA}` : 'Mata Pelajaran Umum',
+        a.JUDUL,
+        a.TYPE || 'TUGAS',
+        deadlineFormatted,
+        a.BOBOT ? `${a.BOBOT}%` : '100%',
+        asgSubs.length,
+        gradedCount,
+        pendingCount,
+        statusStr,
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [
+        [
+          'No',
+          'Mata Pelajaran',
+          'Judul Penugasan / Evaluasi',
+          'Tipe',
+          'Tenggat Waktu',
+          'Bobot',
+          'Terkumpul',
+          'Dinilai',
+          'Perlu Dinilai',
+          'Status Evaluasi',
+        ],
+      ],
+      body: table1Rows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        1: { cellWidth: 40, fontStyle: 'bold' },
+        2: { cellWidth: 70 },
+        3: { halign: 'center', cellWidth: 20 },
+        4: { halign: 'center', cellWidth: 32 },
+        5: { halign: 'center', cellWidth: 16 },
+        6: { halign: 'center', cellWidth: 22 },
+        7: { halign: 'center', cellWidth: 18 },
+        8: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
+        9: { halign: 'center', cellWidth: 'auto', fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // Obtain Y position after Table 1
+    const lastAutoTableY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : currentY + 40;
+    currentY = lastAutoTableY + 8;
+
+    // Table 2: Pending Submissions Breakdown (Detail Tugas yang Perlu Dinilai)
+    const pendingSubs = submissions.filter((s: any) => s.STATUS === 'SUBMITTED');
+    if (pendingSubs.length > 0) {
+      if (currentY + 40 > doc.internal.pageSize.getHeight()) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(180, 83, 9);
+      doc.text(`RINCIAN PENGUMPULAN TUGAS SISWA YANG PERLU DINILAI (${pendingSubs.length} TUGAS)`, 14, currentY);
+
+      currentY += 4;
+
+      const table2Rows = pendingSubs.map((s: any, idx: number) => {
+        const asg = assignments.find((a: any) => a.ID === s.ASSIGNMENT_ID);
+        const course = courses.find((c: any) => c.ID === s.COURSE_ID);
+
+        let subTime = '-';
+        try {
+          if (s.SUBMITTED_AT) {
+            const d = new Date(s.SUBMITTED_AT);
+            subTime = `${d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+          }
+        } catch {
+          subTime = s.SUBMITTED_AT || '-';
+        }
+
+        const previewContent = s.ISI ? (s.ISI.length > 90 ? s.ISI.substring(0, 90) + '...' : s.ISI) : '(Berkas/Lampiran)';
+
+        return [
+          idx + 1,
+          s.SISWA_NAMA || 'Siswa',
+          course ? course.NAMA : 'Mapel',
+          asg ? asg.JUDUL : 'Tugas',
+          subTime,
+          previewContent,
+          'MENUNGGU NILAI',
+        ];
+      });
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [
+          [
+            'No',
+            'Nama Siswa',
+            'Mata Pelajaran',
+            'Judul Tugas',
+            'Waktu Pengumpulan',
+            'Ringkasan Jawaban / Lampiran',
+            'Status',
+          ],
+        ],
+        body: table2Rows,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [180, 83, 9],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'center',
+        },
+        bodyStyles: {
+          fontSize: 7.5,
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { cellWidth: 45, fontStyle: 'bold' },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 55, fontStyle: 'bold' },
+          4: { halign: 'center', cellWidth: 32 },
+          5: { cellWidth: 'auto' },
+          6: { halign: 'center', cellWidth: 28, fontStyle: 'bold' },
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      const lastAutoTableY2 = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : currentY + 30;
+      currentY = lastAutoTableY2 + 10;
+    }
+
+    // Check if space for Signatures Block
+    const pageHeight = doc.internal.pageSize.getHeight();
+    if (currentY + 35 > pageHeight) {
+      doc.addPage();
+      currentY = 25;
+    }
+
+    // Signatures Block
+    const sigColWidth = (pageWidth - 28) / 2;
+    const kepsekName = config.HEADMASTER || 'Hj. Endang Sri M, S.Pd., M.M.';
+    const kepsekNip = config.HEADMASTER_NIP || '19680315 199003 2 005';
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+
+    // Left Signer: Kepala Sekolah
+    const leftSigX = 14 + sigColWidth / 2;
+    doc.text('Mengesahkan,', leftSigX, currentY, { align: 'center' });
+    doc.text('Kepala UPT SDN Tangerang 6', leftSigX, currentY + 4, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(kepsekName, leftSigX, currentY + 20, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`NIP. ${kepsekNip}`, leftSigX, currentY + 24, { align: 'center' });
+
+    // Right Signer: Guru Kelas / Pengampu
+    const rightSigX = 14 + sigColWidth + sigColWidth / 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Tangerang, ${dateStr}`, rightSigX, currentY, { align: 'center' });
+    doc.text('Guru Kelas / Pengampu Penugasan', rightSigX, currentY + 4, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(guruName, rightSigX, currentY + 20, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`NIP. ${guruNip || '-'}`, rightSigX, currentY + 24, { align: 'center' });
+
+    // Verification QR Payload
+    try {
+      const qrPayload = `SDNTNG6-BULK-ASG-${targetClass}-${assignments.length}-${totalPendingGrading}`;
+      const qrDataUrl = await qrService.generateQRCode(qrPayload, 120);
+      doc.addImage(qrDataUrl, 'PNG', 14, currentY - 2, 16, 16);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Kode Verifikasi Sah: ${qrPayload}`, 32, currentY + 5);
+      doc.text(`Diterbitkan oleh Platform Digital Classroom UPT SDN Tangerang 6`, 32, currentY + 9);
+    } catch {
+      // fallback
+    }
+
+    doc.save(`Rekap_Massal_Tugas_Siswa_${targetClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
 }
 
 export const pdfService = new PdfService();
+
 

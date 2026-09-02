@@ -364,7 +364,29 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
           </div>
 
           {!isSiswa && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  const targetClass = isSiswa || isGuru ? account.KELAS || 'Kelas 4' : selectedKelas;
+                  const allAssignments = classroomService.getAssignments();
+                  const allCourses = classroomService.getCourses();
+                  const allSubmissions = classroomService.getSubmissions();
+                  pdfService.generateBulkAssignmentsReportPdf(
+                    allAssignments,
+                    allCourses,
+                    allSubmissions,
+                    targetClass,
+                    account.NAMA,
+                    account.NIP
+                  );
+                }}
+                title="Cetak dan unduh ringkasan daftar tugas siswa secara massal yang perlu dinilai dalam 1 dokumen PDF"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                <Printer size={14} className="text-emerald-200" />
+                <span>Cetak Rekap Tugas Massal (PDF)</span>
+              </button>
+
               <button
                 onClick={() =>
                   pdfService.generateClassGradebookSummaryPdf(

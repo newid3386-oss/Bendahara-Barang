@@ -7,7 +7,7 @@ import {
   UserCheck, Search, HelpCircle, Check, Sparkles, Video, Bookmark, Printer,
   AlertCircle, CheckSquare, TrendingUp, TrendingDown, BarChart2, Flame, Bell, HeartHandshake,
   ShieldCheck, Edit3, Eye, Download, Filter, Cloud, Mail, Copy, Bot, Mic, Square, Trash2, Radio, Palette, Trophy, RefreshCw, Cpu,
-  QrCode, Scan, FolderArchive
+  QrCode, Scan, FolderArchive, Package, History, VolumeX, Volume2, SwitchCamera, Camera
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
@@ -35,10 +35,11 @@ import { UserProfileSettingsModal } from './classroom/UserProfileSettingsModal';
 import { ClassroomSummaryModal } from './classroom/ClassroomSummaryModal';
 import { QuickGradeModal } from './classroom/QuickGradeModal';
 import { BulkQrGeneratorModal } from './classroom/BulkQrGeneratorModal';
-import { QRScannerModal } from './QRScannerModal';
+import { QRScannerModal, RecentScanItem } from './QRScannerModal';
 import { AIRemedialModulModal } from './classroom/AIRemedialModulModal';
 import { ParentPortalModal } from './classroom/ParentPortalModal';
 import { ExecutiveSupervisorReportModal } from './ExecutiveSupervisorReportModal';
+import { playFeedback } from '../utils/feedback';
 import { NFCGateAttendanceModal } from './classroom/NFCGateAttendanceModal';
 import { BelajarIdSSOModal } from './BelajarIdSSOModal';
 import { RBACAuditLogModal } from './RBACAuditLogModal';
@@ -46,11 +47,14 @@ import { IoTSmartClassroomModal } from './IoTSmartClassroomModal';
 import { useTheme } from '../utils/theme';
 import { LibraryKioskModal } from './LibraryKioskModal';
 import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
+import { P5ProjectTrackerWidget } from './classroom/P5ProjectTrackerWidget';
 import { ExportStudentReportModal } from './classroom/ExportStudentReportModal';
 import { ParticleCelebration } from './classroom/ParticleCelebration';
+import { ClassroomPeerReviewModal } from './classroom/ClassroomPeerReviewModal';
 import {
   ResponsiveContainer,
   ComposedChart,
+  LineChart,
   Area,
   Line,
   BarChart,
@@ -271,17 +275,346 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     });
   }, []);
 
+  const [defaultScannerMode, setDefaultScannerMode] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>(() => {
+    try { return (localStorage.getItem('sdn6_qr_default_mode') as any) || 'ALL'; } catch { return 'ALL'; }
+  });
+
+  const changeDefaultScannerMode = (mode: 'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET') => {
+    setDefaultScannerMode(mode);
+    try { localStorage.setItem('sdn6_qr_default_mode', mode); } catch {}
+  };
+
   // Global keyboard shortcut for QR Scanner (Ctrl+Shift+S / Cmd+Shift+S)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
+        setQrScannerTargetMode(defaultScannerMode);
         setShowGlobalQrScanner((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [defaultScannerMode]);
+
+  // Quick QR Scanner FAB State & Schedule Proximity
+  const [qrScannerTargetMode, setQrScannerTargetMode] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>('ALL');
+  const [showFabContextMenu, setShowFabContextMenu] = useState(false);
+  const [recentFabScans, setRecentFabScans] = useState<RecentScanItem[]>([]);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressActiveRef = useRef(false);
+  const fabContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load Recent Scans for FAB Context Menu
+  const loadRecentFabScans = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('sdn6_qr_recent_scans_v1');
+      if (raw) {
+        const parsed: RecentScanItem[] = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setRecentFabScans(parsed);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Error loading recent scans for FAB menu:', err);
+    }
+    setRecentFabScans([]);
   }, []);
+
+  const clearRecentFabScans = useCallback(() => {
+    try {
+      localStorage.removeItem('sdn6_qr_recent_scans_v1');
+      setRecentFabScans([]);
+      setShowClearScansConfirm(false);
+    } catch (err) {
+      console.error('Error clearing recent scans:', err);
+    }
+  }, []);
+
+  // Close FAB context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fabContainerRef.current && !fabContainerRef.current.contains(e.target as Node)) {
+        setShowFabContextMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Refresh recent scans when context menu opens
+  useEffect(() => {
+    if (showFabContextMenu) {
+      loadRecentFabScans();
+    }
+  }, [showFabContextMenu, loadRecentFabScans]);
+
+  // Target Class Code determination
+  const targetClassCode = useMemo(() => {
+    if (isGuru) return account?.KELAS || 'Kelas 1';
+    if (isSiswa) return account?.KELAS || 'Kelas Siswa';
+    return 'Semua Kelas';
+  }, [isGuru, isSiswa, account?.KELAS]);
+
+  // Schedule Proximity calculation for visual nudge & pulse color intensity
+  const scheduleNudge = useMemo(() => {
+    try {
+      const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const now = new Date();
+      const dayName = DAY_NAMES[now.getDay()];
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+
+      const targetClass = isGuru || isSiswa ? (account?.KELAS || undefined) : undefined;
+      const schedules = classroomService.getSchedules(targetClass, dayName);
+
+      if (!schedules || schedules.length === 0) {
+        return {
+          status: 'NORMAL' as const,
+          session: null,
+          minutesUntil: null,
+          badgeText: null,
+        };
+      }
+
+      const parseTime = (tStr: string) => {
+        const parts = tStr.split(':').map(Number);
+        return (parts[0] || 0) * 60 + (parts[1] || 0);
+      };
+
+      // 1. Check if a class session is currently active
+      const active = schedules.find((s) => {
+        const start = parseTime(s.JAM_MULAI);
+        const end = parseTime(s.JAM_SELESAI);
+        return currentMins >= start && currentMins <= end;
+      });
+
+      if (active) {
+        return {
+          status: 'ACTIVE' as const,
+          session: active,
+          minutesUntil: 0,
+          badgeText: `🔴 Sesi Aktif: ${active.MAPEL}`,
+        };
+      }
+
+      // 2. Check next upcoming class session today
+      const upcomingList = schedules
+        .map((s) => ({
+          session: s,
+          start: parseTime(s.JAM_MULAI),
+          diff: parseTime(s.JAM_MULAI) - currentMins,
+        }))
+        .filter((item) => item.diff > 0)
+        .sort((a, b) => a.diff - b.diff);
+
+      const nextUpcoming = upcomingList[0];
+      if (nextUpcoming) {
+        if (nextUpcoming.diff <= 15) {
+          return {
+            status: 'IMMINENT' as const,
+            session: nextUpcoming.session,
+            minutesUntil: nextUpcoming.diff,
+            badgeText: `⏳ ${nextUpcoming.diff}m lagi: ${nextUpcoming.session.MAPEL}`,
+          };
+        }
+        if (nextUpcoming.diff <= 35) {
+          return {
+            status: 'SOON' as const,
+            session: nextUpcoming.session,
+            minutesUntil: nextUpcoming.diff,
+            badgeText: `🕒 ${nextUpcoming.diff}m: ${nextUpcoming.session.MAPEL}`,
+          };
+        }
+      }
+
+      return {
+        status: 'NORMAL' as const,
+        session: null,
+        minutesUntil: null,
+        badgeText: null,
+      };
+    } catch {
+      return {
+        status: 'NORMAL' as const,
+        session: null,
+        minutesUntil: null,
+        badgeText: null,
+      };
+    }
+  }, [isGuru, isSiswa, account?.KELAS, refreshKey]);
+
+  // Pulse animation duration that accelerates as time gets closer to class start time
+  const pulseDuration = useMemo(() => {
+    if (scheduleNudge.status === 'ACTIVE') {
+      return '0.55s';
+    }
+    if (scheduleNudge.status === 'IMMINENT') {
+      const mins = Math.max(1, scheduleNudge.minutesUntil ?? 15);
+      // Accelerates smoothly from 1.35s down to 0.55s as minutesUntil decreases
+      const dur = 0.55 + (mins / 15) * 0.8;
+      return `${dur.toFixed(2)}s`;
+    }
+    if (scheduleNudge.status === 'SOON') {
+      const mins = Math.max(15, scheduleNudge.minutesUntil ?? 35);
+      const dur = 1.35 + ((mins - 15) / 20) * 0.85;
+      return `${dur.toFixed(2)}s`;
+    }
+    return '2.4s';
+  }, [scheduleNudge]);
+
+  // Determine if within 10 minutes of scheduled class start or during active session
+  const isWithinTenMinutesOfClass = useMemo(() => {
+    if (scheduleNudge.status === 'ACTIVE') return true;
+    if (scheduleNudge.minutesUntil !== null && scheduleNudge.minutesUntil <= 10) return true;
+    return false;
+  }, [scheduleNudge]);
+
+  // Determine if within 5 minutes of scheduled class start or during active session (for breathing animation)
+  const isWithinFiveMinutesOfClass = useMemo(() => {
+    if (scheduleNudge.status === 'ACTIVE') return true;
+    if (scheduleNudge.minutesUntil !== null && scheduleNudge.minutesUntil <= 5) return true;
+    return false;
+  }, [scheduleNudge]);
+
+  const [showClearScansConfirm, setShowClearScansConfirm] = useState(false);
+  const [smartAutoTrigger, setSmartAutoTrigger] = useState(() => {
+    try { return localStorage.getItem('sdn6_qr_auto_trigger') === 'true'; } catch { return false; }
+  });
+  const [fabQuickGradeStudent, setFabQuickGradeStudent] = useState<Account | null>(null);
+
+  const toggleSmartAutoTrigger = () => {
+    const newState = !smartAutoTrigger;
+    setSmartAutoTrigger(newState);
+    try { localStorage.setItem('sdn6_qr_auto_trigger', String(newState)); } catch {}
+  };
+
+  const [muteFeedback, setMuteFeedback] = useState(() => {
+    try { return localStorage.getItem('sdn6_qr_mute_feedback') === 'true'; } catch { return false; }
+  });
+
+  const toggleMuteFeedback = () => {
+    const newState = !muteFeedback;
+    setMuteFeedback(newState);
+    try { localStorage.setItem('sdn6_qr_mute_feedback', String(newState)); } catch {}
+  };
+
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>(() => {
+    try { return (localStorage.getItem('sdn6_qr_camera_facing') as 'environment' | 'user') || 'environment'; } catch { return 'environment'; }
+  });
+
+  const toggleCameraFacingMode = () => {
+    const newMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    setCameraFacingMode(newMode);
+    try { localStorage.setItem('sdn6_qr_camera_facing', newMode); } catch {}
+  };
+
+  const [isLowBattery, setIsLowBattery] = useState(false);
+
+  useEffect(() => {
+    let batteryPromise: any;
+    if ('getBattery' in navigator) {
+      batteryPromise = (navigator as any).getBattery();
+      batteryPromise.then((battery: any) => {
+        const updateBattery = () => {
+          setIsLowBattery(battery.level <= 0.15 && !battery.charging);
+        };
+        updateBattery();
+        battery.addEventListener('levelchange', updateBattery);
+        battery.addEventListener('chargingchange', updateBattery);
+      });
+    }
+  }, []);
+
+  const [recentScanFilter, setRecentScanFilter] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>('ALL');
+
+  const lastScannedStudent = useMemo(() => {
+    return recentFabScans.find(s => s.type === 'STUDENT');
+  }, [recentFabScans]);
+
+  // Computed trend data for the sparkline chart
+  const scanTrend = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const trend = [];
+    const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const dayStart = d.getTime();
+      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const count = recentFabScans.filter(s => s.timestamp >= dayStart && s.timestamp < dayEnd).length;
+      trend.push({ day: days[d.getDay()], scans: count });
+    }
+    return trend;
+  }, [recentFabScans]);
+
+  // Long-press and touch handlers for FAB
+  const handleTouchStart = () => {
+    isLongPressActiveRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressActiveRef.current = true;
+      setShowFabContextMenu(true);
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try { navigator.vibrate(50); } catch {}
+      }
+    }, 450);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleFabClick = (e: React.MouseEvent) => {
+    if (isLongPressActiveRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      isLongPressActiveRef.current = false;
+      return;
+    }
+    
+    playFeedback('click');
+    
+    if (showFabContextMenu) {
+      setShowFabContextMenu(false);
+      return;
+    }
+    // Auto-defaults to 'Scan Student Attendance' if within 10 minutes of a scheduled class
+    if (smartAutoTrigger && isWithinTenMinutesOfClass) {
+      setQrScannerTargetMode('STUDENT');
+    } else {
+      setQrScannerTargetMode(defaultScannerMode);
+    }
+    setShowGlobalQrScanner(true);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setShowFabContextMenu((prev) => !prev);
+  };
+
+  const handleSelectScanMode = (mode: 'ASSIGNMENT' | 'STUDENT' | 'ASSET' | 'ALL') => {
+    setQrScannerTargetMode(mode);
+    setShowFabContextMenu(false);
+    setShowGlobalQrScanner(true);
+  };
+
+  const handleSelectRecentScan = (item: RecentScanItem) => {
+    setShowFabContextMenu(false);
+    if (item.type === 'ASSIGNMENT') {
+      setPage('assignments');
+    } else if (item.type === 'STUDENT') {
+      setPage('attendance');
+    } else if (item.type === 'ASSET') {
+      setQrScannerTargetMode('ASSET');
+      setShowGlobalQrScanner(true);
+    } else {
+      setQrScannerTargetMode('ALL');
+      setShowGlobalQrScanner(true);
+    }
+  };
 
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
@@ -882,7 +1215,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               }
             }}
             exit={{ opacity: 0, y: 20, scale: 0.95, transition: { duration: 0.15 } }}
-            className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-indigo-500/40"
+            className="fixed bottom-24 right-5 md:bottom-24 md:right-6 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-indigo-500/40"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -947,6 +1280,513 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         )}
       </AnimatePresence>
 
+      {/* FLOATING ACTION BUTTON (FAB): PERMANENT QR SCANNER TRIGGER WITH SUB-MENU & SCHEDULE PROXIMITY */}
+      <div ref={fabContainerRef} className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-[60] flex items-center group">
+        {/* Long-Press / Right-Click Secondary Context Menu */}
+        <AnimatePresence>
+          {showFabContextMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 25, mass: 0.8 }}
+              className="absolute bottom-full right-0 mb-3 w-72 sm:w-80 bg-slate-950/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl p-2.5 z-50 text-white"
+            >
+              {/* Menu Header */}
+              <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-800/90 mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-emerald-400" />
+                  <span className="text-xs font-black text-white">Menu Cepat Scan QR</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFabContextMenu(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+
+              <div className="text-[10px] text-slate-400 px-2.5 pb-1">
+                Pilih target pemindaian cepat atau tekan tombol scanner:
+              </div>
+
+              {/* Action Items */}
+              <div className="space-y-1">
+                {/* 1. Scan Assignment */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectScanMode('ASSIGNMENT')}
+                  className="w-full p-2 rounded-xl bg-slate-900/80 hover:bg-blue-950/80 hover:border-blue-500/50 border border-slate-800 text-left transition flex items-center justify-between gap-2.5 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                      <BookOpen size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-100 group-hover:text-blue-300 flex items-center gap-1.5">
+                        <span>Scan Assignment (Tugas)</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-900/60 text-blue-300 border border-blue-700/50">
+                          Tugas
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Pindai lembar soal, tugas, & portofolio siswa
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-blue-400 shrink-0" />
+                </button>
+
+                {/* 2. Scan Student Attendance */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectScanMode('STUDENT')}
+                  className="w-full p-2 rounded-xl bg-slate-900/80 hover:bg-emerald-950/80 hover:border-emerald-500/50 border border-slate-800 text-left transition flex items-center justify-between gap-2.5 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                      <UserCheck size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-100 group-hover:text-emerald-300 flex items-center gap-1.5">
+                        <span>Scan Student Attendance</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
+                          Presensi
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Pindai kartu NIS / ID Badge siswa untuk absensi
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-emerald-400 shrink-0" />
+                </button>
+
+                {/* 3. Scan Facility Asset */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectScanMode('ASSET')}
+                  className="w-full p-2 rounded-xl bg-slate-900/80 hover:bg-amber-950/80 hover:border-amber-500/50 border border-slate-800 text-left transition flex items-center justify-between gap-2.5 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                      <Package size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-100 group-hover:text-amber-300 flex items-center gap-1.5">
+                        <span>Scan Facility Asset</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-300 border border-amber-700/50">
+                          Sarpras
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Pindai kode stiker inventaris sarana lab & kelas
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-amber-400 shrink-0" />
+                </button>
+
+                {/* 4. Global Auto-Detect */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectScanMode('ALL')}
+                  className="w-full p-2 rounded-xl bg-slate-900/80 hover:bg-purple-950/80 hover:border-purple-500/50 border border-slate-800 text-left transition flex items-center justify-between gap-2.5 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                      <Scan size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-100 group-hover:text-purple-300 flex items-center gap-1.5">
+                        <span>Deteksi Otomatis Semua QR</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                          Auto
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Deteksi instan semua jenis barcode & QR
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 group-hover:text-purple-400 shrink-0" />
+                </button>
+              </div>
+
+              {/* Quick Grade (Last Student) */}
+              {lastScannedStudent && (
+                <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFabContextMenu(false);
+                      const studentObj = accountService.getAccountById(lastScannedStudent.id);
+                      if (studentObj) setFabQuickGradeStudent(studentObj);
+                    }}
+                    className="w-full px-2 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition flex items-center justify-between cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1.5 rounded-md bg-emerald-500/20 text-emerald-400 shrink-0">
+                        <Edit3 size={14} />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <div className="text-[11px] font-bold text-emerald-400 truncate">Beri Nilai Cepat</div>
+                        <div className="text-[9px] text-emerald-500/70 truncate">{lastScannedStudent.title || lastScannedStudent.code}</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={14} className="text-emerald-500/50 group-hover:text-emerald-400 shrink-0" />
+                  </button>
+                </div>
+              )}
+
+              {/* Smart Auto-Trigger Option & Mute */}
+              <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-1 space-y-1">
+                <button
+                  type="button"
+                  onClick={toggleSmartAutoTrigger}
+                  className="w-full px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-md ${smartAutoTrigger ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                      <Video size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-[11px] font-bold text-slate-200">Smart Auto-Trigger</div>
+                      <div className="text-[9px] text-slate-400">Otomatis deteksi QR tanpa klik</div>
+                    </div>
+                  </div>
+                  <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${smartAutoTrigger ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                    <div className={`w-3 h-3 rounded-full bg-white transition-transform ${smartAutoTrigger ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleMuteFeedback}
+                  className="w-full px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-md ${muteFeedback ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
+                      {muteFeedback ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                    </div>
+                    <div className="text-left">
+                      <div className="text-[11px] font-bold text-slate-200">Mute Suara & Getaran</div>
+                      <div className="text-[9px] text-slate-400">Heningkan notifikasi scan</div>
+                    </div>
+                  </div>
+                  <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${muteFeedback ? 'bg-rose-500' : 'bg-slate-700'}`}>
+                    <div className={`w-3 h-3 rounded-full bg-white transition-transform ${muteFeedback ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleCameraFacingMode}
+                  className="w-full px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-md bg-slate-800 text-slate-400">
+                      <SwitchCamera size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-[11px] font-bold text-slate-200">Kamera: {cameraFacingMode === 'environment' ? 'Belakang' : 'Depan'}</div>
+                      <div className="text-[9px] text-slate-400">Ganti kamera scanner</div>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-500 shrink-0" />
+                </button>
+              </div>
+
+              {/* Default Scanner Mode */}
+              <div className="pt-2 border-t border-slate-800/90 mt-1.5 px-2">
+                <div className="text-[11px] font-bold text-slate-300 mb-1">Mode Default Scanner</div>
+                <div className="flex bg-slate-800/50 p-1 rounded-lg gap-1">
+                  {(['ALL', 'STUDENT', 'ASSIGNMENT', 'ASSET'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        changeDefaultScannerMode(mode);
+                      }}
+                      className={`flex-1 text-[10px] py-1 rounded-md font-medium transition-colors ${
+                        defaultScannerMode === mode
+                          ? 'bg-emerald-500 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      {mode === 'ALL' ? 'Semua' : mode === 'STUDENT' ? 'Presensi' : mode === 'ASSIGNMENT' ? 'Tugas' : 'Aset'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sparkline Chart */}
+              <div className="pt-2 border-t border-slate-800/90 mt-1 px-2">
+                <div className="flex items-center gap-1.5 text-slate-300 mb-1">
+                  <BarChart2 size={13} className="text-blue-400" />
+                  <span className="text-[11px] font-bold">Tren Scan (7 Hari)</span>
+                </div>
+                <div className="h-[40px] w-full mt-1.5 -ml-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={scanTrend}>
+                      <Line type="monotone" dataKey="scans" stroke="#3b82f6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* 5. Recent Scans Section (Last 3 Successfully Scanned QR Codes) */}
+              <div className="pt-2 border-t border-slate-800/90 mt-1.5">
+                <div className="flex items-center justify-between px-2 py-1 mb-1">
+                  <div className="flex items-center gap-1.5 text-slate-300">
+                    <History size={13} className="text-amber-400" />
+                    <span className="text-[11px] font-bold">Riwayat Scan Terakhir</span>
+                  </div>
+                  {recentFabScans.length > 0 && !showClearScansConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => setShowClearScansConfirm(true)}
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-400 font-bold transition-colors cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                  {recentFabScans.length > 0 && showClearScansConfirm && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-300 font-bold">
+                      Konfirmasi
+                    </span>
+                  )}
+                  {recentFabScans.length === 0 && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                      0 item
+                    </span>
+                  )}
+                </div>
+
+                {recentFabScans.length > 0 && !showClearScansConfirm && (
+                  <div className="flex items-center gap-1 mt-1.5 mb-2 overflow-x-auto pb-1 no-scrollbar px-2">
+                    <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('ALL'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'ALL' ? 'bg-slate-200 text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Semua</button>
+                    <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('STUDENT'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'STUDENT' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Presensi</button>
+                    <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('ASSIGNMENT'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'ASSIGNMENT' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Tugas</button>
+                    <button onClick={(e) => { e.stopPropagation(); setRecentScanFilter('ASSET'); }} className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap transition-colors cursor-pointer ${recentScanFilter === 'ASSET' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>Aset</button>
+                  </div>
+                )}
+
+                {showClearScansConfirm ? (
+                  <div className="px-3 py-2 text-center bg-rose-950/40 rounded-xl border border-rose-900/50 my-0.5">
+                    <p className="text-[10px] text-rose-200 mb-2 font-medium">Hapus semua riwayat scan?</p>
+                    <div className="flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setShowClearScansConfirm(false); }}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); clearRecentFabScans(); }}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-rose-700 text-white hover:bg-rose-600 transition-colors shadow-lg shadow-rose-900/50"
+                      >
+                        Ya, Hapus
+                      </button>
+                    </div>
+                  </div>
+                ) : recentFabScans.filter(s => recentScanFilter === 'ALL' || s.type === recentScanFilter).length > 0 ? (
+                  <div className="space-y-1">
+                    {recentFabScans.filter(s => recentScanFilter === 'ALL' || s.type === recentScanFilter).slice(0, 3).map((scan) => {
+                      const timeStr = (() => {
+                        const diffSec = Math.floor((Date.now() - scan.timestamp) / 1000);
+                        if (diffSec < 60) return 'Baru saja';
+                        if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m lalu`;
+                        if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}j lalu`;
+                        return new Date(scan.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+                      })();
+
+                      return (
+                        <button
+                          key={scan.id}
+                          type="button"
+                          onClick={() => handleSelectRecentScan(scan)}
+                          className="w-full p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 text-left transition flex items-center justify-between gap-2 group cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-xs border ${
+                              scan.type === 'STUDENT'
+                                ? 'bg-purple-500/20 border-purple-500/30 text-purple-400'
+                                : scan.type === 'ASSIGNMENT'
+                                ? 'bg-blue-500/20 border-blue-500/30 text-blue-400'
+                                : scan.type === 'ASSET'
+                                ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                                : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                            }`}>
+                              {scan.type === 'STUDENT' && <UserCheck size={13} />}
+                              {scan.type === 'ASSIGNMENT' && <BookOpen size={13} />}
+                              {scan.type === 'ASSET' && <Package size={13} />}
+                              {scan.type !== 'STUDENT' && scan.type !== 'ASSIGNMENT' && scan.type !== 'ASSET' && <QrCode size={13} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] font-bold text-slate-200 group-hover:text-amber-300 truncate">
+                                {scan.title || scan.code}
+                              </div>
+                              <div className="text-[9px] text-slate-400 truncate flex items-center gap-1.5">
+                                <span className="font-mono">{scan.code}</span>
+                                <span>•</span>
+                                <span>{timeStr}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <ChevronRight size={13} className="text-slate-600 group-hover:text-slate-300 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : recentFabScans.length > 0 ? (
+                  <div className="px-3 py-2 text-center text-[10px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/60 my-0.5">
+                    Tidak ada riwayat pada kategori ini
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 text-center text-[10px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/60 my-0.5">
+                    Belum ada riwayat scan tersimpan
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Small semi-transparent label tag showing Current Class code & session nudge */}
+        <div className="flex items-center mr-2 sm:mr-3">
+          <div
+            className={`px-2.5 py-1.5 rounded-xl backdrop-blur-md shadow-xl border flex items-center gap-2 transition-all duration-300 select-none ${
+              scheduleNudge.status === 'ACTIVE'
+                ? 'bg-slate-950/85 border-amber-500/50 text-amber-200 shadow-amber-500/20'
+                : scheduleNudge.status === 'IMMINENT'
+                ? 'bg-slate-950/85 border-rose-500/50 text-rose-200 shadow-rose-500/20'
+                : 'bg-slate-950/75 border-slate-700/80 text-slate-200 shadow-slate-950/30'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span
+                style={{ animationDuration: 'var(--pulse-duration)' }}
+                className={`w-2 h-2 rounded-full ${
+                  scheduleNudge.status === 'ACTIVE'
+                    ? 'bg-amber-400 animate-ping'
+                    : scheduleNudge.status === 'IMMINENT'
+                    ? 'bg-rose-400 animate-ping'
+                    : scheduleNudge.status === 'SOON'
+                    ? 'bg-cyan-400 animate-pulse'
+                    : 'bg-emerald-400'
+                }`}
+              />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline">
+                Target:
+              </span>
+              <span className="text-xs font-black font-mono text-emerald-300">
+                {targetClassCode}
+              </span>
+            </div>
+
+            {scheduleNudge.badgeText && (
+              <span className="hidden md:inline-flex items-center text-[10px] font-bold border-l border-slate-700/80 pl-2 text-amber-300">
+                {scheduleNudge.badgeText}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Keyboard shortcut display (hint) that renders on hover or focus for accessibility */}
+        <div
+          id="fab-qr-shortcut-hint"
+          role="tooltip"
+          className="hidden sm:flex items-center mr-2 px-3 py-1.5 rounded-xl bg-slate-900/40 backdrop-blur-xl text-white text-xs font-semibold shadow-2xl border border-white/10 opacity-0 scale-95 translate-x-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 group-focus-within:opacity-100 group-focus-within:scale-100 group-focus-within:translate-x-0 focus-within:opacity-100 focus-within:scale-100 focus-within:translate-x-0 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap"
+        >
+          <span>
+            {qrScannerTargetMode === 'STUDENT' ? 'Scan Presensi' :
+             qrScannerTargetMode === 'ASSIGNMENT' ? 'Scan Tugas' :
+             qrScannerTargetMode === 'ASSET' ? 'Scan Aset' :
+             isWithinTenMinutesOfClass ? 'Presensi Siswa Otomatis' : 'Pindai QR Scanner'}
+          </span>
+          <kbd className="ml-2 px-1.5 py-0.5 rounded bg-slate-800/60 text-[10px] font-mono text-emerald-400 border border-white/10 shadow-xs">
+            Ctrl+Shift+S
+          </kbd>
+        </div>
+
+        {/* Floating Action Button */}
+        <motion.button
+          id="btn-classroom-qr-fab"
+          onClick={handleFabClick}
+          onContextMenu={handleContextMenu}
+          onMouseDown={handleTouchStart}
+          onMouseUp={handleTouchEnd}
+          onMouseLeave={handleTouchEnd}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          whileHover={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
+          whileFocus={{ scale: 1.07, boxShadow: '0px 0px 20px rgba(52, 211, 153, 0.6)' }}
+          whileTap={{ scale: 0.93 }}
+          animate={(!isLowBattery && isWithinFiveMinutesOfClass) ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+          transition={(!isLowBattery && isWithinFiveMinutesOfClass) ? { repeat: Infinity, duration: 1.5, ease: "easeInOut" } : { type: 'spring', stiffness: 400, damping: 25 }}
+          style={{ '--pulse-duration': pulseDuration } as React.CSSProperties}
+          className={`relative flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+            highContrast
+              ? 'bg-amber-400 text-black border-2 border-black font-black'
+              : scheduleNudge.status === 'ACTIVE'
+              ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white shadow-amber-500/40 border border-amber-300/40 ring-2 ring-amber-400/80 ring-offset-2 ring-offset-slate-900'
+              : scheduleNudge.status === 'IMMINENT'
+              ? 'bg-gradient-to-r from-rose-600 via-pink-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white shadow-rose-500/40 border border-rose-300/40 ring-2 ring-rose-400/80 ring-offset-2 ring-offset-slate-900'
+              : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/30 border border-white/20'
+          }`}
+          title={`Pindai QR Tugas / Siswa / Aset (Target: ${targetClassCode}) • Tekan lama atau Klik Kanan untuk Menu Pilihan Mode`}
+          aria-label="Pindai QR Scanner Cepat"
+        >
+          {/* Dynamic Glowing Beacon Background with Proximity-Aware Intensity */}
+          <span
+            style={{ animationDuration: 'var(--pulse-duration)' }}
+            className={`absolute -inset-0.5 rounded-2xl transition-opacity duration-300 -z-10 ${
+              scheduleNudge.status === 'ACTIVE'
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 opacity-90 blur-md animate-pulse'
+                : scheduleNudge.status === 'IMMINENT'
+                ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 opacity-85 blur-md animate-pulse'
+                : scheduleNudge.status === 'SOON'
+                ? 'bg-gradient-to-r from-cyan-500 to-indigo-500 opacity-60 blur-sm'
+                : 'bg-gradient-to-r from-emerald-500 to-indigo-500 opacity-40 blur-sm group-hover:opacity-80'
+            }`}
+          />
+
+          {/* Schedule Proximity Active Status Pulse Ping */}
+          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+            <span
+              style={{ animationDuration: 'var(--pulse-duration)' }}
+              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                scheduleNudge.status === 'ACTIVE'
+                  ? 'bg-amber-400 opacity-95 scale-125'
+                  : scheduleNudge.status === 'IMMINENT'
+                  ? 'bg-rose-400 opacity-90 scale-110'
+                  : scheduleNudge.status === 'SOON'
+                  ? 'bg-cyan-400 opacity-80'
+                  : 'bg-emerald-400 opacity-75'
+              }`}
+            />
+            <span
+              className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white shadow-xs ${
+                scheduleNudge.status === 'ACTIVE'
+                  ? 'bg-amber-500 ring-2 ring-amber-200'
+                  : scheduleNudge.status === 'IMMINENT'
+                  ? 'bg-rose-500 ring-2 ring-rose-200'
+                  : scheduleNudge.status === 'SOON'
+                  ? 'bg-cyan-500'
+                  : 'bg-emerald-500'
+              }`}
+            />
+          </span>
+
+          <Scan className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.2]" />
+          <span className="hidden sm:inline font-bold text-xs tracking-wide">
+            Scan QR
+          </span>
+        </motion.button>
+      </div>
+
       {/* STUDENT FEEDBACK NOTIFICATIONS MODAL */}
       {showFeedbackModal && (
         <StudentFeedbackNotificationsModal
@@ -977,8 +1817,19 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       <QRScannerModal
         isOpen={showGlobalQrScanner}
         onClose={() => setShowGlobalQrScanner(false)}
+        initialMode={qrScannerTargetMode}
+        facingMode={cameraFacingMode}
+        currentClass={targetClassCode}
         onSelectAsset={() => {
           setShowGlobalQrScanner(false);
+        }}
+        onSelectAssignment={(asg) => {
+          setShowGlobalQrScanner(false);
+          setPage('assignments');
+        }}
+        onSelectStudent={(stu) => {
+          setShowGlobalQrScanner(false);
+          setPage('attendance');
         }}
       />
 
@@ -1051,6 +1902,18 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           milestoneTitle={celebratingMilestone.milestoneTitle}
           milestoneCategory={celebratingMilestone.milestoneCategory}
           rewardPoints={celebratingMilestone.rewardPoints}
+        />
+      )}
+
+      {fabQuickGradeStudent && (
+        <QuickGradeModal
+          student={fabQuickGradeStudent}
+          account={account}
+          onClose={() => setFabQuickGradeStudent(null)}
+          onSaved={() => {
+            setFabQuickGradeStudent(null);
+            refresh();
+          }}
         />
       )}
     </div>
@@ -2115,6 +2978,9 @@ const DashboardView: React.FC<{
           );
         })}
       </div>
+
+      {/* P5 PROJECT PROGRESS TRACKER WIDGET FOR SISWA, GURU & KEPSEK */}
+      <P5ProjectTrackerWidget account={account} />
 
       {/* STUDENT BADGES & ACHIEVEMENTS VIRTUAL MEDALS WIDGET */}
       {isSiswa && (
@@ -4583,6 +5449,36 @@ const AssignmentsView: React.FC<{
     }, 4000);
   };
 
+  // Perform bulk PDF printing of assignments
+  const handlePrintBulkAssignmentsPdf = async (selectedOnly: boolean = false) => {
+    const targetAssignments = selectedOnly && selectedAssignmentIds.length > 0
+      ? assignments.filter((a) => selectedAssignmentIds.includes(a.ID))
+      : filteredAssignments.length > 0
+      ? filteredAssignments
+      : assignments;
+
+    if (targetAssignments.length === 0) {
+      setToastMessage('Tidak ada tugas yang dipilih untuk dicetak.');
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
+
+    const allSubmissions = classroomService.getSubmissions();
+    await pdfService.generateBulkAssignmentsReportPdf(
+      targetAssignments,
+      courses,
+      allSubmissions,
+      account.KELAS || 'Kelas 4',
+      account.NAMA || 'Guru Kelas',
+      account.NIP || '19850412 201101 2 003'
+    );
+
+    setToastMessage(`Berhasil mengunduh dokumen PDF Rekapitulasi ${targetAssignments.length} Tugas.`);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
   return (
     <div className="space-y-4 sm:space-y-5">
       {/* Toast Notification */}
@@ -4606,6 +5502,18 @@ const AssignmentsView: React.FC<{
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {canManageAssignments && (
+            <button
+              onClick={() => handlePrintBulkAssignmentsPdf(false)}
+              className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition min-h-[38px] sm:min-h-[34px]"
+              title="Cetak & unduh ringkasan daftar tugas siswa secara massal dalam format PDF"
+            >
+              <Printer size={14} className="text-emerald-200" />
+              <span className="hidden sm:inline">Cetak Daftar Tugas Massal (PDF)</span>
+              <span className="sm:hidden">PDF Tugas Massal</span>
+            </button>
+          )}
+
           <button
             onClick={() => exportAssignmentsToICS(assignments, `tugas_${account.KELAS || 'sd'}.ics`)}
             className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition min-h-[38px] sm:min-h-[34px]"
@@ -4790,6 +5698,15 @@ const AssignmentsView: React.FC<{
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handlePrintBulkAssignmentsPdf(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition cursor-pointer"
+                title="Cetak rekap PDF khusus tugas yang dipilih"
+              >
+                <Printer size={13} />
+                <span>Cetak PDF ({selectedAssignmentIds.length})</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedAssignmentIds([])}
@@ -5127,7 +6044,7 @@ const AssignmentsView: React.FC<{
         />
       )}
       {peerReviewFor && (
-        <StudentPeerReviewModal
+        <ClassroomPeerReviewModal
           assignment={peerReviewFor}
           siswa={account}
           onClose={() => setPeerReviewFor(null)}
@@ -5828,14 +6745,14 @@ const ReviewAssignmentSubmissionsModal: React.FC<{
 };
 
 // ============ MODAL: ANONYMOUS STUDENT PEER REVIEW ============
-interface StudentPeerReviewModalProps {
+interface _DeprecatedStudentPeerReviewModalProps {
   assignment: ClassroomAssignment;
   siswa: Account;
   onClose: () => void;
   onRefresh: () => void;
 }
 
-const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
+const _DeprecatedStudentPeerReviewModal: React.FC<_DeprecatedStudentPeerReviewModalProps> = ({
   assignment,
   siswa,
   onClose,
@@ -5855,6 +6772,107 @@ const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
   const [generalComment, setGeneralComment] = useState('');
   
   const [activeTab, setActiveTab] = useState<'SUMMARY' | 'REVIEW' | 'MY_REVIEWS'>('SUMMARY');
+
+  // AI Constructive Feedback Suggestion States
+  const [isGeneratingAiSuggestion, setIsGeneratingAiSuggestion] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [aiTargetCategory, setAiTargetCategory] = useState<'GENERAL' | 'KREATIVITAS' | 'STRUKTUR' | 'MATERI' | null>(null);
+
+  const handleGenerateAiSuggestion = async (category: 'GENERAL' | 'KREATIVITAS' | 'STRUKTUR' | 'MATERI') => {
+    if (!selectedSub) return;
+    setIsGeneratingAiSuggestion(true);
+    setAiTargetCategory(category);
+    setAiSuggestion(null);
+
+    const draftMap = {
+      GENERAL: generalComment,
+      KREATIVITAS: feedbackKreativitas,
+      STRUKTUR: feedbackStruktur,
+      MATERI: feedbackMateri,
+    };
+    const currentDraft = draftMap[category];
+
+    const categoryLabelMap = {
+      GENERAL: 'Komentar & Saran Umum',
+      KREATIVITAS: 'Kreativitas & Orisinalitas',
+      STRUKTUR: 'Struktur & Kerapian',
+      MATERI: 'Kesesuaian Materi & Kebenaran Jawaban',
+    };
+
+    try {
+      const response = await fetch('/api/ai/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Kamu adalah Asisten AI Pembimbing Ulasan Sejawat (Peer Review) di sekolah.
+Berikan 1-2 kalimat saran umpan balik (feedback) yang SANGAT KONSTRUKTIF, SOPAN, EMPATIK, dan MEMBANGUN SEMANGAT untuk siswa lain.
+Data Tugas: "${assignment.JUDUL}" (${assignment.DESKRIPSI || ''})
+Hasil Pekerjaan Teman: "${selectedSub.ISI}"
+Aspek Rubrik: ${categoryLabelMap[category]}
+Draft Komentar Siswa saat ini: "${currentDraft || 'Belum ada draft'}"
+
+ATURAN:
+1. Mulai dengan apresiasi positif yang tulus atas usahanya.
+2. Berikan 1 saran perbaikan yang spesifik dan disampaikan dengan kata-kata yang santun & suportif.
+3. JANGAN pernah menggunakan kata-kata kasar, menghakimi, atau menjatuhkan.
+4. Berikan HANYA teks masukan langsung tanpa tanda kutip berlebih atau kata pengantar.`
+        }),
+      });
+
+      if (!response.ok) throw new Error('AI Server offline');
+      const data = await response.json();
+      if (data && data.text) {
+        setAiSuggestion(data.text.trim());
+      } else {
+        throw new Error('No AI response text');
+      }
+    } catch (err) {
+      console.warn('AI suggestion fallback:', err);
+      const fallbacks = {
+        GENERAL: [
+          'Pekerjaanmu sudah sangat rapi dan sesuai instruksi tugas! Agar makin sempurna, cobalah untuk merangkum bagian kesimpulan di bagian akhir dengan poin-poin singkat.',
+          'Saya sangat menikmati membaca hasil pekerjaanmu karena alurnya berurutan. Ditambahkan sedikit contoh nyata tentu akan membuat jawabanmu semakin kuat.',
+          'Usaha kerasmu terlihat jelas dari detail jawaban yang disampaikan. Pertahankan semangat belajar ini dan periksa kembali penulisan tanda baca ya!'
+        ],
+        KREATIVITAS: [
+          'Ide dan sudut pandang pengerjaan tugas ini sangat segar dan inspiratif! Penampilannya juga rapi.',
+          'Penyajian tugasmu cukup kreatif. Bila ditambahkan diagram atau ilustrasi sederhana, tentu akan semakin menarik!'
+        ],
+        STRUKTUR: [
+          'Format penulisan sudah tertata sistematis. Penomoran dan pembagian paragraf sudah sangat nyaman dibaca.',
+          'Alur tugas sudah bagus, mungkin bagian awal bisa diberikan judul singkat agar pembaca lebih cepat paham.'
+        ],
+        MATERI: [
+          'Pemahaman konsep materimu sudah sangat baik dan sesuai dengan penjelasan guru di kelas.',
+          'Sebagian besar jawaban sudah tepat. Pastikan untuk memverifikasi ulang perhitungan pada nomor bagian akhir ya!'
+        ]
+      };
+      const list = fallbacks[category] || fallbacks.GENERAL;
+      setAiSuggestion(list[Math.floor(Math.random() * list.length)]);
+    } finally {
+      setIsGeneratingAiSuggestion(false);
+    }
+  };
+
+  const applyAiSuggestion = (suggestionText: string) => {
+    if (!aiTargetCategory) return;
+    if (aiTargetCategory === 'GENERAL') setGeneralComment(suggestionText);
+    else if (aiTargetCategory === 'KREATIVITAS') setFeedbackKreativitas(suggestionText);
+    else if (aiTargetCategory === 'STRUKTUR') setFeedbackStruktur(suggestionText);
+    else if (aiTargetCategory === 'MATERI') setFeedbackMateri(suggestionText);
+    setAiSuggestion(null);
+    setAiTargetCategory(null);
+  };
+
+  const appendAiSuggestion = (suggestionText: string) => {
+    if (!aiTargetCategory) return;
+    if (aiTargetCategory === 'GENERAL') setGeneralComment((prev) => (prev ? `${prev} ${suggestionText}` : suggestionText));
+    else if (aiTargetCategory === 'KREATIVITAS') setFeedbackKreativitas((prev) => (prev ? `${prev} ${suggestionText}` : suggestionText));
+    else if (aiTargetCategory === 'STRUKTUR') setFeedbackStruktur((prev) => (prev ? `${prev} ${suggestionText}` : suggestionText));
+    else if (aiTargetCategory === 'MATERI') setFeedbackMateri((prev) => (prev ? `${prev} ${suggestionText}` : suggestionText));
+    setAiSuggestion(null);
+    setAiTargetCategory(null);
+  };
 
   // Student's own submission and reviews received from peers
   const mySubmission = useMemo(
@@ -6330,13 +7348,25 @@ const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
                         onChange={(e) => setScoreKreativitas(Number(e.target.value))}
                         className="w-full accent-indigo-600 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <textarea
-                        value={feedbackKreativitas}
-                        onChange={(e) => setFeedbackKreativitas(e.target.value)}
-                        placeholder="Berikan masukan atau apresiasi Anda..."
-                        className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
-                        rows={1}
-                      />
+                      <div className="flex items-center justify-between gap-1">
+                        <textarea
+                          value={feedbackKreativitas}
+                          onChange={(e) => setFeedbackKreativitas(e.target.value)}
+                          placeholder="Berikan masukan atau apresiasi Anda..."
+                          className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
+                          rows={1}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAiSuggestion('KREATIVITAS')}
+                          disabled={isGeneratingAiSuggestion}
+                          className="px-2.5 py-1.5 text-[10px] font-bold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center gap-1 shrink-0 border border-indigo-200 cursor-pointer disabled:opacity-50"
+                          title="Minta Saran AI untuk Kreativitas"
+                        >
+                          <Sparkles size={11} className={isGeneratingAiSuggestion && aiTargetCategory === 'KREATIVITAS' ? 'animate-spin text-indigo-600' : 'text-purple-600'} />
+                          <span>AI</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Criteria 2 */}
@@ -6366,13 +7396,25 @@ const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
                         onChange={(e) => setScoreStruktur(Number(e.target.value))}
                         className="w-full accent-indigo-600 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <textarea
-                        value={feedbackStruktur}
-                        onChange={(e) => setFeedbackStruktur(e.target.value)}
-                        placeholder="Berikan masukan atau apresiasi Anda..."
-                        className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
-                        rows={1}
-                      />
+                      <div className="flex items-center justify-between gap-1">
+                        <textarea
+                          value={feedbackStruktur}
+                          onChange={(e) => setFeedbackStruktur(e.target.value)}
+                          placeholder="Berikan masukan atau apresiasi Anda..."
+                          className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
+                          rows={1}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAiSuggestion('STRUKTUR')}
+                          disabled={isGeneratingAiSuggestion}
+                          className="px-2.5 py-1.5 text-[10px] font-bold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center gap-1 shrink-0 border border-indigo-200 cursor-pointer disabled:opacity-50"
+                          title="Minta Saran AI untuk Struktur"
+                        >
+                          <Sparkles size={11} className={isGeneratingAiSuggestion && aiTargetCategory === 'STRUKTUR' ? 'animate-spin text-indigo-600' : 'text-purple-600'} />
+                          <span>AI</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Criteria 3 */}
@@ -6402,18 +7444,90 @@ const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
                         onChange={(e) => setScoreMateri(Number(e.target.value))}
                         className="w-full accent-indigo-600 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <textarea
-                        value={feedbackMateri}
-                        onChange={(e) => setFeedbackMateri(e.target.value)}
-                        placeholder="Berikan masukan atau apresiasi Anda..."
-                        className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
-                        rows={1}
-                      />
+                      <div className="flex items-center justify-between gap-1">
+                        <textarea
+                          value={feedbackMateri}
+                          onChange={(e) => setFeedbackMateri(e.target.value)}
+                          placeholder="Berikan masukan atau apresiasi Anda..."
+                          className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-indigo-600 bg-white"
+                          rows={1}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAiSuggestion('MATERI')}
+                          disabled={isGeneratingAiSuggestion}
+                          className="px-2.5 py-1.5 text-[10px] font-bold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center gap-1 shrink-0 border border-indigo-200 cursor-pointer disabled:opacity-50"
+                          title="Minta Saran AI untuk Materi"
+                        >
+                          <Sparkles size={11} className={isGeneratingAiSuggestion && aiTargetCategory === 'MATERI' ? 'animate-spin text-indigo-600' : 'text-purple-600'} />
+                          <span>AI</span>
+                        </button>
+                      </div>
                     </div>
+
+                    {/* AI Suggestion Interactive Display Box */}
+                    {aiSuggestion && (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/90 to-blue-50/90 border-2 border-indigo-200 shadow-sm space-y-2.5 my-2 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-indigo-900 font-extrabold text-xs">
+                            <Sparkles size={14} className="text-purple-600 animate-pulse" />
+                            <span>Saran Feedback Konstruktif AI ({aiTargetCategory || 'Umum'}):</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setAiSuggestion(null); setAiTargetCategory(null); }}
+                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-700 leading-relaxed font-medium bg-white/90 p-3 rounded-xl border border-indigo-100 italic">
+                          "{aiSuggestion}"
+                        </p>
+                        <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => applyAiSuggestion(aiSuggestion)}
+                              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              <Check size={12} /> Gunakan Teks Ini
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => appendAiSuggestion(aiSuggestion)}
+                              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition flex items-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              <Plus size={12} /> Gabungkan ke Draft Saya
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => aiTargetCategory && handleGenerateAiSuggestion(aiTargetCategory)}
+                            disabled={isGeneratingAiSuggestion}
+                            className="px-2.5 py-1.5 text-xs font-bold rounded-xl text-purple-700 hover:bg-purple-100 transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw size={12} className={isGeneratingAiSuggestion ? 'animate-spin' : ''} />
+                            Regenerasi Saran
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* General Comment */}
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Komentar / Saran Umum (General Comment)</label>
+                      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                        <label className="text-xs font-bold text-slate-700 block">Komentar / Saran Umum (General Comment)</label>
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAiSuggestion('GENERAL')}
+                          disabled={isGeneratingAiSuggestion}
+                          className="px-3 py-1 text-[11px] font-bold rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white hover:opacity-95 transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                        >
+                          <Sparkles size={12} className={isGeneratingAiSuggestion && aiTargetCategory === 'GENERAL' ? 'animate-spin' : ''} />
+                          <span>{isGeneratingAiSuggestion && aiTargetCategory === 'GENERAL' ? 'Menyusun AI...' : 'AI Suggestion (Konstruktif & Sopan)'}</span>
+                        </button>
+                      </div>
                       <textarea
                         value={generalComment}
                         onChange={(e) => setGeneralComment(e.target.value)}
@@ -6422,6 +7536,28 @@ const StudentPeerReviewModal: React.FC<StudentPeerReviewModalProps> = ({
                         rows={3}
                         required
                       />
+
+                      {/* Quick Feedback Chips */}
+                      <div className="flex items-center gap-1.5 flex-wrap pt-2">
+                        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                          <Bot size={11} className="text-indigo-500" /> Templat Sopan:
+                        </span>
+                        {[
+                          '✨ Penyajian sangat rapi dan berurutan',
+                          '💡 Ide solusi sangat orisinal & inovatif',
+                          '🎯 Jawaban sudah tepat sesuai instruksi guru',
+                          '👏 Kerja bagus! Pertahankan semangat belajar ini'
+                        ].map((chip, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setGeneralComment((prev) => prev ? `${prev} ${chip.replace(/^[^\s]+\s/, '')}.` : `${chip.replace(/^[^\s]+\s/, '')}.`)}
+                            className="px-2.5 py-1 text-[10px] font-semibold bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-lg transition cursor-pointer"
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
