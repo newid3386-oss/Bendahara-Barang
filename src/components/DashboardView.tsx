@@ -36,7 +36,7 @@ import { classroomService } from '../services/classroomService';
 import { ActivePage, Asset } from '../types';
 import { Sparkline, AreaChart, DonutChart, BarChart, ProgressRing } from './charts';
 import { AIInsightsPanel } from './AIInsightsPanel';
-import { ClassroomOverviewWidget } from './classroom/ClassroomOverviewWidget';
+
 import { useTheme } from '../utils/theme';
 
 interface DashboardViewProps {
@@ -109,39 +109,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [stockSummary]);
 
-  // ─── Early Warning System (EWS) Cross-Referencing ────────────
-  const earlyWarningStudents = useMemo(() => {
-    const students = accountService.getStudents();
-    const submissions = classroomService.getSubmissions();
 
-    return students
-      .map((student) => {
-        const kelas = student.KELAS || 'Kelas 4B';
-        const attendance = classroomService.getStudentAttendanceStats(student.ID, kelas);
-        const studentSubs = submissions.filter((sub) => sub.SISWA_ID === student.ID);
-        const graded = studentSubs.filter((s) => s.STATUS === 'GRADED');
-        const avgScore = graded.length > 0 ? Math.round(graded.reduce((acc, s) => acc + (s.NILAI || 0), 0) / graded.length) : 72;
-        const missingSubs = Math.max(0, 8 - studentSubs.length);
-        const presensiPct = attendance.percentage;
-
-        const isAtRisk = presensiPct < 85 || avgScore < 75 || missingSubs >= 2;
-        let riskLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
-        if (presensiPct < 75 || avgScore < 70 || missingSubs >= 4) riskLevel = 'HIGH';
-        else if (isAtRisk) riskLevel = 'MEDIUM';
-
-        return {
-          student,
-          attendance,
-          presensiPct,
-          avgScore,
-          missingSubs,
-          isAtRisk,
-          riskLevel,
-        };
-      })
-      .filter((item) => item.isAtRisk)
-      .slice(0, 4);
-  }, []);
 
   const totalCombinedValuation = totalAssetValue + totalStockValue;
   const totalCombinedUnits = totalAssetUnits + totalStockUnits;
@@ -446,89 +414,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* ─── EARLY WARNING SYSTEM (EWS) DASHBOARD WIDGET ───────── */}
-      <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-amber-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl border border-rose-900/40 space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-rose-600/30 text-rose-300 ring-1 ring-rose-500/40">
-              <AlertTriangle size={22} className="animate-pulse" />
-            </div>
-            <div>
-              <h3 className="font-black text-white text-base flex items-center gap-2">
-                Early Warning System (EWS) • Peringatan Dini Progres Siswa
-              </h3>
-              <p className="text-xs text-rose-200/80">
-                Silang Data Log Kehadiran & Tren Penyerahan Tugas Siswa Teridentifikasi Perlu Intervensi
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-black border border-rose-500/30">
-              {earlyWarningStudents.length} Siswa Terdeteksi Risk
-            </span>
-          </div>
-        </div>
-
-        {/* At-Risk Students Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {earlyWarningStudents.map((item) => (
-            <div
-              key={item.student.ID}
-              className="p-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all space-y-3 backdrop-blur-xs flex flex-col justify-between"
-            >
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h4 className="font-black text-sm text-white truncate">{item.student.NAMA}</h4>
-                    <span className="text-[10px] font-bold text-rose-300">{item.student.KELAS || 'Kelas 4B'}</span>
-                  </div>
-                  
-                  {/* Needs Intervention Badge */}
-                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0 ring-2 ring-rose-400/40 animate-pulse">
-                    <AlertCircle size={10} /> Needs Intervention
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] bg-slate-950/40 p-2 rounded-xl">
-                  <div>
-                    <span className="text-slate-400 block">Presensi</span>
-                    <strong className={item.presensiPct < 80 ? 'text-rose-400 font-black' : 'text-amber-300 font-black'}>
-                      {item.presensiPct}%
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Rata Nilai</span>
-                    <strong className={item.avgScore < 75 ? 'text-rose-400 font-black' : 'text-slate-200 font-black'}>
-                      {item.avgScore}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Tkt Tugas</span>
-                    <strong className={item.missingSubs > 0 ? 'text-amber-400 font-black' : 'text-emerald-400 font-black'}>
-                      -{item.missingSubs}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px]">
-                <span className="text-rose-200 font-medium italic">Rekomendasi: Bimbingan Konseling / WA Ortu</span>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('classroom' as ActivePage)}
-                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition cursor-pointer"
-                >
-                  Intervensi
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ─── D3.JS CLASSROOM OVERVIEW WIDGET ───────────────────── */}
-      <ClassroomOverviewWidget />
 
       {/* ─── OPTIMIZED 'QUICK STATS' COMMAND MONITORING PANEL ─────── */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-4">

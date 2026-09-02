@@ -8,7 +8,8 @@ import {
   AlertCircle, CheckSquare, TrendingUp, TrendingDown, BarChart2, Flame, Bell, HeartHandshake,
   ShieldCheck, Edit3, Eye, Download, Filter, Cloud, Mail, Copy, Bot, Mic, Square, Trash2, Radio, Palette, Trophy, RefreshCw, Cpu,
   QrCode, Scan, FolderArchive, Package, History, VolumeX, Volume2, SwitchCamera, Camera,
-  Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Zap, Play, Pause
+  Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Zap, Play, Pause,
+  Grid, ChevronDown
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
@@ -51,6 +52,7 @@ import { LibraryKioskModal } from './LibraryKioskModal';
 import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
 import { P5ProjectTrackerWidget } from './classroom/P5ProjectTrackerWidget';
 import { ExportStudentReportModal } from './classroom/ExportStudentReportModal';
+import { ClassroomOverviewWidget } from './classroom/ClassroomOverviewWidget';
 import { ParticleCelebration } from './classroom/ParticleCelebration';
 import { ClassroomPeerReviewModal } from './classroom/ClassroomPeerReviewModal';
 import {
@@ -209,6 +211,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     }
   });
   const [showProfileSettings, setShowProfileSettings] = useState<boolean>(false);
+  const [showPortalApps, setShowPortalApps] = useState<boolean>(false);
 
   const handleToggleHighContrast = (enabled: boolean) => {
     setHighContrast(enabled);
@@ -928,14 +931,14 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <div
               onClick={() => setShowProfileSettings(true)}
-              className="text-right hidden sm:block cursor-pointer hover:opacity-90 transition"
+              className="text-right hidden sm:block cursor-pointer hover:opacity-90 transition shrink-0"
               title="Buka Pengaturan Profil & Aksesibilitas"
             >
-              <div className="text-xs font-bold leading-none">{account.NAMA}</div>
-              <div className="text-[10px] text-blue-300 mt-0.5 flex items-center justify-end gap-1.5">
+              <div className="text-xs font-bold leading-none truncate max-w-[150px]">{account.NAMA}</div>
+              <div className="text-[10px] text-blue-300 mt-0.5 flex items-center justify-end gap-1 shrink-0">
                 <span>{account.ROLE}</span>
                 {account.KELAS && <span>• {account.KELAS}</span>}
                 {isGuru && account.KELAS_LOCKED && (
@@ -956,29 +959,27 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             {/* Profile Settings & Badges Button */}
             <button
               onClick={() => setShowProfileSettings(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/30 font-bold text-xs transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/30 font-bold text-xs transition cursor-pointer shrink-0"
               title="Profil, Aksesibilitas Kontras & Lencana Prestasi"
             >
-              <Eye size={15} className="text-amber-300" />
-              <span className="hidden md:inline">Profil & Kontras</span>
+              <Eye size={14} className="text-amber-300" />
+              <span className="hidden lg:inline">Profil & Kontras</span>
             </button>
 
             {/* Quick QR Scanner Button */}
             <button
               onClick={() => setShowGlobalQrScanner(true)}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 font-bold text-xs transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 font-bold text-xs transition cursor-pointer shrink-0"
               title="Scan QR Code Siswa & Aset (Shortcut: Ctrl+Shift+S)"
             >
               <QrCode size={14} className="text-emerald-300" />
               <span className="hidden sm:inline">Scan QR</span>
-              <span className="hidden xl:inline text-[9px] px-1 py-0.2 rounded bg-emerald-400/20 text-emerald-300 font-mono">
-                Ctrl+Shift+S
-              </span>
             </button>
 
+            {/* AI Assistant Button */}
             <button
               onClick={() => setShowAIAssistant(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition border shadow-xs ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-bold text-xs transition border shadow-xs shrink-0 ${
                 isSiswa
                   ? 'bg-indigo-500/30 hover:bg-indigo-500/40 text-amber-300 border-indigo-400/40'
                   : isGuru
@@ -998,111 +999,194 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 {isSiswa ? 'AI Belajar' : isGuru ? 'AI Guru' : 'AI Supervisi'}
               </span>
             </button>
-            <button
-              onClick={() => setShowAIRemedialModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 font-bold text-xs transition cursor-pointer"
-              title="AI Remedial & Generator Modul Ajar Kurikulum Merdeka"
-            >
-              <Sparkles size={14} className="text-amber-300" />
-              <span className="hidden xl:inline">AI Remedial & Modul</span>
-            </button>
 
-            <button
-              onClick={() => setShowNFCModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/30 font-bold text-xs transition cursor-pointer"
-              title="Presensi Tap NFC / Smart Card Kios Gerbang"
-            >
-              <Radio size={14} className="text-cyan-300" />
-              <span className="hidden xl:inline font-mono">Presensi NFC</span>
-            </button>
-
-            <button
-              onClick={() => setShowSSOModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-400/30 font-bold text-xs transition cursor-pointer"
-              title="Single Sign-On SSO Belajar.id Kemendikbud"
-            >
-              <ShieldCheck size={14} className="text-blue-300" />
-              <span className="hidden xl:inline">SSO Belajar.id</span>
-            </button>
-
-            <button
-              onClick={() => setShowEarlyWarningP5Modal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-400/30 font-bold text-xs transition cursor-pointer"
-              title="Early Warning System & Radar P5 Kurikulum Merdeka"
-            >
-              <AlertTriangle size={14} className="text-rose-300" />
-              <span className="hidden xl:inline">EWS & P5 Radar</span>
-            </button>
-
-             <button
-              onClick={() => setShowIoTModal(true)}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 font-bold text-xs transition cursor-pointer min-h-[44px]"
-              title="IoT Smart Classroom & Telemetri Fasilitas"
-            >
-              <Cpu size={14} className="text-emerald-300" />
-              <span className="hidden xl:inline">IoT Smart Classroom</span>
-            </button>
-
-            <button
-              onClick={() => setShowParentPortalModal(true)}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-200 border border-teal-400/30 font-bold text-xs transition cursor-pointer min-h-[44px]"
-              title="Portal WA Orang Tua Siswa"
-            >
-              <MessageSquare size={14} className="text-teal-300" />
-              <span className="hidden xl:inline">Portal WA Orang Tua</span>
-            </button>
-
-            {isKepsek && (
+            {/* Elegant Dropdown for Integrations / Auxiliary Apps */}
+            <div className="relative shrink-0">
               <button
-                onClick={() => setShowExecutiveReportModal(true)}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/30 font-bold text-xs transition cursor-pointer min-h-[44px]"
-                title="Laporan Eksekutif Pengawas Sekolah"
+                onClick={() => setShowPortalApps(!showPortalApps)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-bold text-xs transition cursor-pointer shrink-0 ${
+                  showPortalApps
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm'
+                    : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/20'
+                }`}
+                title="Fitur Portal & Integrasi Tambahan Kurikulum Merdeka"
               >
-                <Award size={14} className="text-amber-300" />
-                <span className="hidden xl:inline">Laporan Pengawas</span>
+                <Grid size={14} className={showPortalApps ? 'text-slate-950' : 'text-slate-300'} />
+                <span className="hidden md:inline">Fitur Portal</span>
+                <ChevronDown size={11} className={`transition-transform duration-200 ${showPortalApps ? 'rotate-180 text-slate-950' : 'text-slate-300'}`} />
               </button>
-            )}
 
-            {(isGuru || isKepsek) && (
-              <button
-                onClick={() =>
-                  exportStudentsToCSV(
-                    accountService.getStudents(isGuru ? account.KELAS : undefined),
-                    isGuru ? account.KELAS : undefined
-                  )
-                }
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 font-bold text-xs transition cursor-pointer min-h-[44px]"
-                title="Ekspor Data Siswa ke CSV"
-              >
-                <Download size={15} />
-                <span className="hidden md:inline">Ekspor CSV</span>
-              </button>
-            )}
+              <AnimatePresence>
+                {showPortalApps && (
+                  <>
+                    {/* Backdrop to close click-outside */}
+                    <div className="fixed inset-0 z-40" onClick={() => setShowPortalApps(false)} />
+                    
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-3 space-y-1.5 z-50 backdrop-blur-md text-slate-100"
+                    >
+                      <div className="text-[10px] font-black tracking-wider text-slate-400 px-2 py-1 uppercase border-b border-white/5 flex items-center justify-between">
+                        <span>Aplikasi & Integrasi Pintar</span>
+                        <span className="px-1.5 py-0.5 rounded-sm bg-white/10 text-[8px] font-mono">SDN6</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-1 max-h-[380px] overflow-y-auto pr-1">
+                        {/* 1. AI Remedial & Modul */}
+                        <button
+                          onClick={() => { setShowAIRemedialModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0 border border-purple-500/30">
+                            <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">AI Remedial & Modul</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Generator modul ajar Kurikulum Merdeka</div>
+                          </div>
+                        </button>
+
+                        {/* 2. Presensi NFC */}
+                        <button
+                          onClick={() => { setShowNFCModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-500/30">
+                            <Radio size={14} className="text-cyan-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">Presensi Tap NFC</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Smart Card kiosk gerbang digital</div>
+                          </div>
+                        </button>
+
+                        {/* 3. SSO Belajar.id */}
+                        <button
+                          onClick={() => { setShowSSOModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center shrink-0 border border-blue-500/30">
+                            <ShieldCheck size={14} className="text-blue-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold font-sans">SSO Belajar.id</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Login Kemendikbudristek RI</div>
+                          </div>
+                        </button>
+
+                        {/* 4. EWS & P5 Radar */}
+                        <button
+                          onClick={() => { setShowEarlyWarningP5Modal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-rose-500/20 text-rose-300 flex items-center justify-center shrink-0 border border-rose-500/30">
+                            <AlertTriangle size={14} className="text-rose-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">EWS & P5 Radar</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Sistem deteksi dini & radar profil P5</div>
+                          </div>
+                        </button>
+
+                        {/* 5. IoT Smart Classroom */}
+                        <button
+                          onClick={() => { setShowIoTModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                            <Cpu size={14} className="text-emerald-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">IoT Smart Classroom</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Telemetri & sensor fasilitas kelas</div>
+                          </div>
+                        </button>
+
+                        {/* 6. Portal WA Orang Tua */}
+                        <button
+                          onClick={() => { setShowParentPortalModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0 border border-teal-500/30">
+                            <MessageSquare size={14} className="text-teal-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">Portal WA Orang Tua</div>
+                            <div className="text-[9px] text-slate-400 font-normal">WA Gateway & notifikasi wali murid</div>
+                          </div>
+                        </button>
+
+                        {/* 7. Laporan Pengawas (Kepsek) */}
+                        {isKepsek && (
+                          <button
+                            onClick={() => { setShowExecutiveReportModal(true); setShowPortalApps(false); }}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/30">
+                              <Award size={14} className="text-amber-300" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold">Laporan Pengawas</div>
+                              <div className="text-[9px] text-slate-400 font-normal">Ringkasan eksekutif kepemimpinan</div>
+                            </div>
+                          </button>
+                        )}
+
+                        {/* 8. Ekspor CSV */}
+                        {(isGuru || isKepsek) && (
+                          <button
+                            onClick={() => {
+                              exportStudentsToCSV(
+                                accountService.getStudents(isGuru ? account.KELAS : undefined),
+                                isGuru ? account.KELAS : undefined
+                              );
+                              setShowPortalApps(false);
+                            }}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                              <Download size={14} className="text-emerald-300" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold">Ekspor Data CSV</div>
+                              <div className="text-[9px] text-slate-400 font-normal">Unduh data siswa format spreadsheet</div>
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             <ClassroomNotificationCenter account={account} onNavigateTab={(tabKey) => setPage(tabKey as ClassPage)} />
 
             <button
               onClick={() => setShowCloudModal(true)}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-400/30 font-bold text-xs transition min-h-[44px]"
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-400/30 font-bold text-xs transition shrink-0"
               title="Sinkronisasi Cloud Realtime"
             >
-              <Cloud size={15} />
-              <span className="hidden sm:inline">Cloud Sync</span>
+              <Cloud size={14} />
+              <span className="hidden xl:inline">Cloud Sync</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             </button>
             <div
               onClick={() => setShowProfileSettings(true)}
-              className="w-11 h-11 rounded-xl bg-blue-500/30 border border-blue-400/40 flex items-center justify-center font-bold text-sm shadow-xs cursor-pointer hover:bg-blue-500/50 transition shrink-0"
+              className="w-9 h-9 rounded-xl bg-blue-500/30 border border-blue-400/40 flex items-center justify-center font-bold text-sm shadow-xs cursor-pointer hover:bg-blue-500/50 transition shrink-0"
               title="Buka Profil & Pengaturan"
             >
               {account.NAMA.charAt(0)}
             </div>
             <button 
               onClick={onLogout} 
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-rose-500/30 text-slate-200 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer shrink-0" 
+              className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/30 text-slate-200 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer shrink-0" 
               title="Keluar"
             >
-              <LogOut size={18} />
+              <LogOut size={16} />
             </button>
           </div>
         </div>
@@ -3336,6 +3420,40 @@ const DashboardView: React.FC<{
   const [activeGradeSubmission, setActiveGradeSubmission] = useState<ClassroomSubmission | null>(null);
   const [showTeacherToast, setShowTeacherToast] = useState<boolean>(true);
 
+  // ─── Early Warning System (EWS) Cross-Referencing ────────────
+  const earlyWarningStudents = useMemo(() => {
+    const students = accountService.getStudents();
+    const subs = classroomService.getSubmissions();
+
+    return students
+      .map((student) => {
+        const kelas = student.KELAS || 'Kelas 4B';
+        const attendance = classroomService.getStudentAttendanceStats(student.ID, kelas);
+        const studentSubs = subs.filter((sub) => sub.SISWA_ID === student.ID);
+        const graded = studentSubs.filter((s) => s.STATUS === 'GRADED');
+        const avgScore = graded.length > 0 ? Math.round(graded.reduce((acc, s) => acc + (s.NILAI || 0), 0) / graded.length) : 72;
+        const missingSubs = Math.max(0, 8 - studentSubs.length);
+        const presensiPct = attendance.percentage;
+
+        const isAtRisk = presensiPct < 85 || avgScore < 75 || missingSubs >= 2;
+        let riskLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
+        if (presensiPct < 75 || avgScore < 70 || missingSubs >= 4) riskLevel = 'HIGH';
+        else if (isAtRisk) riskLevel = 'MEDIUM';
+
+        return {
+          student,
+          attendance,
+          presensiPct,
+          avgScore,
+          missingSubs,
+          isAtRisk,
+          riskLevel,
+        };
+      })
+      .filter((item) => item.isAtRisk)
+      .slice(0, 4);
+  }, []);
+
   // Submissions with status 'SUBMITTED' waiting for teacher grading
   const pendingSubmissionsForTeacher = isGuru
     ? submissions.filter((sub) => {
@@ -3500,8 +3618,94 @@ const DashboardView: React.FC<{
         })}
       </div>
 
+      {/* ─── EARLY WARNING SYSTEM (EWS) DASHBOARD WIDGET ───────── */}
+      {earlyWarningStudents.length > 0 && (
+        <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-amber-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl border border-rose-900/40 space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-2xl bg-rose-600/30 text-rose-300 ring-1 ring-rose-500/40">
+                <AlertTriangle size={22} className="animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-black text-white text-base flex items-center gap-2">
+                  Early Warning System (EWS) • Peringatan Dini Progres Siswa
+                </h3>
+                <p className="text-xs text-rose-200/80">
+                  Silang Data Log Kehadiran & Tren Penyerahan Tugas Siswa Teridentifikasi Perlu Intervensi
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-black border border-rose-500/30">
+                {earlyWarningStudents.length} Siswa Terdeteksi Risk
+              </span>
+            </div>
+          </div>
+
+          {/* At-Risk Students Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {earlyWarningStudents.map((item) => (
+              <div
+                key={item.student.ID}
+                className="p-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all space-y-3 backdrop-blur-xs flex flex-col justify-between"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="font-black text-sm text-white truncate">{item.student.NAMA}</h4>
+                      <span className="text-[10px] font-bold text-rose-300">{item.student.KELAS || 'Kelas 4B'}</span>
+                    </div>
+                    
+                    {/* Needs Intervention Badge */}
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0 ring-2 ring-rose-400/40 animate-pulse">
+                      <AlertCircle size={10} /> Needs Intervention
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] bg-slate-950/40 p-2 rounded-xl">
+                    <div>
+                      <span className="text-slate-400 block">Presensi</span>
+                      <strong className={item.presensiPct < 80 ? 'text-rose-400 font-black' : 'text-amber-300 font-black'}>
+                        {item.presensiPct}%
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Rata Nilai</span>
+                      <strong className={item.avgScore < 75 ? 'text-rose-400 font-black' : 'text-slate-200 font-black'}>
+                        {item.avgScore}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Tkt Tugas</span>
+                      <strong className={item.missingSubs > 0 ? 'text-amber-400 font-black' : 'text-emerald-400 font-black'}>
+                        -{item.missingSubs}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px]">
+                  <span className="text-rose-200 font-medium italic">Rekomendasi: Bimbingan Konseling / WA Ortu</span>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('students')}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition cursor-pointer"
+                  >
+                    Intervensi
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* P5 PROJECT PROGRESS TRACKER WIDGET FOR SISWA, GURU & KEPSEK */}
       <P5ProjectTrackerWidget account={account} />
+
+      {/* ─── D3.JS CLASSROOM OVERVIEW WIDGET ───────────────────── */}
+      <ClassroomOverviewWidget selectedClass={account.KELAS || 'Semua Kelas'} />
 
       {/* STUDENT BADGES & ACHIEVEMENTS VIRTUAL MEDALS WIDGET */}
       {isSiswa && (
