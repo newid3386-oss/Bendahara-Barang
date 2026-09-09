@@ -24,521 +24,7 @@ export const STANDARD_CLASSES = [
 ];
 
 const DEFAULT_ACCOUNTS: Account[] = [
-  // Kepala Sekolah
-  {
-    ID: 'ACC-CLS-001',
-    NAMA: 'Liestya Kusuma Sari, S.Pd., M.Pd.',
-    EMAIL: 'liestya.kusuma@sdntangerang6.sch.id',
-    USERNAME: 'kepsek',
-    PASSWORD: 'kepala123',
-    ROLE: 'KEPALA SEKOLAH',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '198406192009022007',
-    TELEPON: '081298765432',
-    CREATED_AT: nowISO(),
-  },
-
-  // Teachers (Guru Pengampu Kelas)
-  {
-    ID: 'ACC-CLS-002',
-    NAMA: 'Nurul Hidayah, S.Pd.',
-    EMAIL: 'nurul.hidayah@sdntangerang6.sch.id',
-    USERNAME: 'nurul',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '199512012022212014',
-    KELAS: 'Kelas 1',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567801',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-003',
-    NAMA: 'Endang Wahyuni, S.Pd.SD.',
-    EMAIL: 'endang.wahyuni@sdntangerang6.sch.id',
-    USERNAME: 'endang',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '197908102008012015',
-    KELAS: 'Kelas 2',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567802',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-004',
-    NAMA: 'Ahmad Fauzi, S.Pd.',
-    EMAIL: 'ahmad.fauzi@sdntangerang6.sch.id',
-    USERNAME: 'fauzi',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '198406182014031002',
-    KELAS: 'Kelas 3',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567803',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-005',
-    NAMA: 'Dewi Lestari, S.Pd.SD.',
-    EMAIL: 'dewi.lestari@sdntangerang6.sch.id',
-    USERNAME: 'dewi',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '199105222019022009',
-    KELAS: 'Kelas 4',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567804',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-006',
-    NAMA: 'M. Rizky Pratama, S.Pd.',
-    EMAIL: 'rizky.pratama@sdntangerang6.sch.id',
-    USERNAME: 'rizky',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '199308142020121006',
-    KELAS: 'Kelas 5',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567805',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-007',
-    NAMA: 'Drs. H. Mulyadi, M.Pd.',
-    EMAIL: 'mulyadi@sdntangerang6.sch.id',
-    USERNAME: 'mulyadi',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '196903251994121003',
-    KELAS: 'Kelas 6',
-    KELAS_LOCKED: true,
-    KELAS_LOCKED_AT: nowISO(),
-    KELAS_LOCKED_BY: 'SYSTEM_DEFAULT',
-    TELEPON: '081234567806',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'ACC-CLS-008',
-    NAMA: 'Guru Baru Pengganti, S.Pd.',
-    EMAIL: 'guru.baru@sdntangerang6.sch.id',
-    USERNAME: 'gurubaru',
-    PASSWORD: 'guru123',
-    ROLE: 'GURU',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '199801152024212001',
-    KELAS: '', // Belum memilih kelas (akan memicu modal pilihan & penguncian)
-    KELAS_LOCKED: false,
-    TELEPON: '081234567809',
-    CREATED_AT: nowISO(),
-  },
-
-  // ===== DATA SISWA TERKELOMPOK BERDASARKAN KELAS =====
-  // Kelas 1
-  {
-    ID: 'SISWA-001',
-    NAMA: 'Aisyah Putri Rahmadani',
-    EMAIL: 'aisyah.putri@student.sdntangerang6.sch.id',
-    USERNAME: 'aisyah',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202601001',
-    KELAS: 'Kelas 1',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-002',
-    NAMA: 'Bima Sakti Pratama',
-    EMAIL: 'bima.sakti@student.sdntangerang6.sch.id',
-    USERNAME: 'bima',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202601002',
-    KELAS: 'Kelas 1',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'INKLUSI_DISLEKSIA',
-    CATATAN_INKLUSI: 'Pendampingan fonik huruf dan metode membaca visual berulang',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-003',
-    NAMA: 'Dimas Arya Saputra',
-    EMAIL: 'dimas.arya@student.sdntangerang6.sch.id',
-    USERNAME: 'dimas',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202601003',
-    KELAS: 'Kelas 1',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-004',
-    NAMA: 'Zahra Aulia Nabila',
-    EMAIL: 'zahra.aulia@student.sdntangerang6.sch.id',
-    USERNAME: 'zahra',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202601004',
-    KELAS: 'Kelas 1',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'CERDAS_ISTIMEWA',
-    CATATAN_INKLUSI: 'Program pengayaan mandiri literasi & numerasi cepat',
-    CREATED_AT: nowISO(),
-  },
-
-  // Kelas 2
-  {
-    ID: 'SISWA-005',
-    NAMA: 'Fadil Ramadhan Al-Farisi',
-    EMAIL: 'fadil.ramadhan@student.sdntangerang6.sch.id',
-    USERNAME: 'fadil',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202602001',
-    KELAS: 'Kelas 2',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-006',
-    NAMA: 'Nayla Khairunnisa',
-    EMAIL: 'nayla.khairunnisa@student.sdntangerang6.sch.id',
-    USERNAME: 'nayla',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202602002',
-    KELAS: 'Kelas 2',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'INKLUSI_TUNARUNGU',
-    CATATAN_INKLUSI: 'Bantuan visual teks dan gerak bibir guru yang jelas',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-007',
-    NAMA: 'Rizky Maulana Ihsan',
-    EMAIL: 'rizky.maulana@student.sdntangerang6.sch.id',
-    USERNAME: 'rizkym',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202602003',
-    KELAS: 'Kelas 2',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-008',
-    NAMA: 'Tiara Salsabila Az-Zahra',
-    EMAIL: 'tiara.salsabila@student.sdntangerang6.sch.id',
-    USERNAME: 'tiara',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202602004',
-    KELAS: 'Kelas 2',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-
-  // Kelas 3
-  {
-    ID: 'SISWA-009',
-    NAMA: 'Citra Lestari Handoko',
-    EMAIL: 'citra.lestari@student.sdntangerang6.sch.id',
-    USERNAME: 'citra',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202603001',
-    KELAS: 'Kelas 3',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-010',
-    NAMA: 'Daniel Kurniawan Wijaya',
-    EMAIL: 'daniel.kurniawan@student.sdntangerang6.sch.id',
-    USERNAME: 'daniel',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202603002',
-    KELAS: 'Kelas 3',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'INKLUSI_TUNADAKSA',
-    CATATAN_INKLUSI: 'Penyesuaian aksesibilitas meja & kursi belajar di baris depan',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-011',
-    NAMA: 'Fitri Handayani Putri',
-    EMAIL: 'fitri.handayani@student.sdntangerang6.sch.id',
-    USERNAME: 'fitri',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202603003',
-    KELAS: 'Kelas 3',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-012',
-    NAMA: 'Gilang Pratama Yudha',
-    EMAIL: 'gilang.pratama@student.sdntangerang6.sch.id',
-    USERNAME: 'gilang',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202603004',
-    KELAS: 'Kelas 3',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-
-  // Kelas 4
-  {
-    ID: 'SISWA-013',
-    NAMA: 'Haikal Akbar Firdaus',
-    EMAIL: 'haikal.akbar@student.sdntangerang6.sch.id',
-    USERNAME: 'haikal',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202604001',
-    KELAS: 'Kelas 4',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-014',
-    NAMA: 'Intan Permatasari',
-    EMAIL: 'intan.permatasari@student.sdntangerang6.sch.id',
-    USERNAME: 'intan',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202604002',
-    KELAS: 'Kelas 4',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-015',
-    NAMA: 'Joko Susilo Purnomo',
-    EMAIL: 'joko.susilo@student.sdntangerang6.sch.id',
-    USERNAME: 'joko',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202604003',
-    KELAS: 'Kelas 4',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'INKLUSI_AUTISME',
-    CATATAN_INKLUSI: 'Instruksi bertahap, suasana kelas tenang & visual timer',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-016',
-    NAMA: 'Kania Dewi Anggraini',
-    EMAIL: 'kania.dewi@student.sdntangerang6.sch.id',
-    USERNAME: 'kania',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202604004',
-    KELAS: 'Kelas 4',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-
-  // Kelas 5
-  {
-    ID: 'SISWA-017',
-    NAMA: 'Lukman Hakim Al-Habsyi',
-    EMAIL: 'lukman.hakim@student.sdntangerang6.sch.id',
-    USERNAME: 'lukman',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202605001',
-    KELAS: 'Kelas 5',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-018',
-    NAMA: 'Melati Rahayu Lestari',
-    EMAIL: 'melati.rahayu@student.sdntangerang6.sch.id',
-    USERNAME: 'melati',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202605002',
-    KELAS: 'Kelas 5',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-019',
-    NAMA: 'Naufal Zaki Nugraha',
-    EMAIL: 'naufal.zaki@student.sdntangerang6.sch.id',
-    USERNAME: 'naufal',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202605003',
-    KELAS: 'Kelas 5',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'CERDAS_ISTIMEWA',
-    CATATAN_INKLUSI: 'Juara OSN Matematika Kota - Pengayaan modul olimpiade',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-020',
-    NAMA: 'Olivia Vanesha Santoso',
-    EMAIL: 'olivia.vanesha@student.sdntangerang6.sch.id',
-    USERNAME: 'olivia',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202605004',
-    KELAS: 'Kelas 5',
-    STATUS_KELULUSAN: 'AKTIF',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-
-  // Kelas 6 (Alumni / Lulus)
-  {
-    ID: 'SISWA-021',
-    NAMA: 'Pandu Winata Putra',
-    EMAIL: 'pandu.winata@student.sdntangerang6.sch.id',
-    USERNAME: 'pandu',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202606001',
-    KELAS: 'Kelas 6',
-    STATUS_KELULUSAN: 'LULUS',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-022',
-    NAMA: 'Qori Amelia Putri',
-    EMAIL: 'qori.amelia@student.sdntangerang6.sch.id',
-    USERNAME: 'qori',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202606002',
-    KELAS: 'Kelas 6',
-    STATUS_KELULUSAN: 'LULUS',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-023',
-    NAMA: 'Rian Hidayatullah',
-    EMAIL: 'rian.hidayat@student.sdntangerang6.sch.id',
-    USERNAME: 'rian',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202606003',
-    KELAS: 'Kelas 6',
-    STATUS_KELULUSAN: 'LULUS',
-    KEBUTUHAN_KHUSUS: 'INKLUSI_DISLEKSIA',
-    CATATAN_INKLUSI: 'Tuntas ujian sekolah dengan pembaca soal pendamping',
-    CREATED_AT: nowISO(),
-  },
-  {
-    ID: 'SISWA-024',
-    NAMA: 'Siti Nurhaliza Azzahra',
-    EMAIL: 'siti.nurhaliza@student.sdntangerang6.sch.id',
-    USERNAME: 'sitinur',
-    PASSWORD: 'siswa123',
-    ROLE: 'SISWA',
-    SISTEM: 'CLASSROOM',
-    STATUS: 'AKTIF',
-    NIP: '202606004',
-    KELAS: 'Kelas 6',
-    STATUS_KELULUSAN: 'LULUS',
-    KEBUTUHAN_KHUSUS: 'REGULER',
-    CREATED_AT: nowISO(),
-  },
-
-  // ===== ADMIN ACCOUNTS =====
+  // ===== ADMIN ACCOUNTS (ONLY) =====
   {
     ID: 'ACC-ADM-001',
     NAMA: 'Administrator Sistem',
@@ -586,22 +72,62 @@ class AccountService {
 
   public initAccounts(): void {
     const existingRaw = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-    let existingCount = 0;
+    let accounts: Account[] = [];
     try {
       if (existingRaw) {
         const parsed = JSON.parse(existingRaw);
         if (Array.isArray(parsed)) {
-          existingCount = parsed.length;
+          accounts = parsed;
         }
       }
     } catch (e) {
-      existingCount = 0;
+      accounts = [];
     }
 
-    if (existingCount === 0 || !localStorage.getItem(STORAGE_KEYS.ACCOUNTS_SEEDED)) {
+    // Auto-clean any non-admin accounts to ensure only admin accounts persist
+    const cleanupKey = 'BB_ACCOUNTS_CLEANED_ADMIN_ONLY_V2';
+    if (!localStorage.getItem(cleanupKey)) {
+      const adminOnly = accounts.filter(
+        (a) => a.ROLE === 'ADMIN' || a.SISTEM === 'ADMIN' || a.ID.startsWith('ACC-ADM')
+      );
+      this.setItem(STORAGE_KEYS.ACCOUNTS, adminOnly.length > 0 ? adminOnly : DEFAULT_ACCOUNTS);
+      localStorage.setItem(cleanupKey, 'true');
+      localStorage.setItem(STORAGE_KEYS.ACCOUNTS_SEEDED, 'true');
+
+      // Reset active classroom session if it was not an admin
+      const activeClass = this.getActiveClassroomAccount();
+      if (activeClass && activeClass.ROLE !== 'ADMIN' && activeClass.SISTEM !== 'ADMIN') {
+        this.setActiveClassroomAccount(null);
+      }
+      return;
+    }
+
+    if (accounts.length === 0 || !localStorage.getItem(STORAGE_KEYS.ACCOUNTS_SEEDED)) {
       this.setItem(STORAGE_KEYS.ACCOUNTS, DEFAULT_ACCOUNTS);
       localStorage.setItem(STORAGE_KEYS.ACCOUNTS_SEEDED, 'true');
     }
+  }
+
+  /**
+   * Cleans all non-admin accounts from the database and storage, retaining strictly Admin accounts.
+   */
+  public cleanNonAdminAccounts(): { deletedCount: number; remainingAdminCount: number } {
+    const all = this.getAccounts();
+    const adminAccounts = all.filter(
+      (a) => a.ROLE === 'ADMIN' || a.SISTEM === 'ADMIN' || a.ID.startsWith('ACC-ADM')
+    );
+    const deletedCount = all.length - adminAccounts.length;
+    const finalAccounts = adminAccounts.length > 0 ? adminAccounts : DEFAULT_ACCOUNTS;
+
+    this.setItem(STORAGE_KEYS.ACCOUNTS, finalAccounts);
+
+    // If active classroom session was non-admin, clear it
+    const activeClass = this.getActiveClassroomAccount();
+    if (activeClass && activeClass.ROLE !== 'ADMIN' && activeClass.SISTEM !== 'ADMIN') {
+      this.setActiveClassroomAccount(null);
+    }
+
+    return { deletedCount, remainingAdminCount: finalAccounts.length };
   }
 
   // --- Accounts CRUD ---

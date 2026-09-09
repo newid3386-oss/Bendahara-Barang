@@ -181,6 +181,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
+  const handleCleanNonAdminAccounts = () => {
+    if (confirm('Yakin ingin membersihkan semua akun kecuali akun Admin? Seluruh akun Guru, Siswa, dan Kepala Sekolah akan dihapus dan hanya akun Administrator yang dipertahankan.')) {
+      const result = accountService.cleanNonAdminAccounts();
+      loadAccounts();
+      showNotify(`Pembersihan selesai: ${result.deletedCount} akun non-admin dihapus. ${result.remainingAdminCount} akun Admin dipertahankan.`);
+    }
+  };
+
   const handleUnlockTeacher = (guru: Account) => {
     if (confirm(`Buka kunci kelas untuk Guru: ${guru.NAMA}? Setelah dibuka, guru dapat memilih kembali kelas mengajar pada saat login Classroom berikutnya.`)) {
       accountService.unlockTeacherClass(guru.ID, admin.USERNAME);
@@ -976,7 +984,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   {currentSistem === 'ADMIN' && 'Administrator sistem'}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleCleanNonAdminAccounts}
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                  title="Hapus semua akun selain akun administrator"
+                >
+                  <Trash2 size={14} className="text-rose-600" /> Bersihkan Non-Admin
+                </button>
                 {currentSistem === 'CLASSROOM' && (
                   <button
                     onClick={() => setShowImporter(true)}

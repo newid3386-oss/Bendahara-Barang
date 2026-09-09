@@ -9,7 +9,7 @@ import {
   ShieldCheck, Edit3, Eye, Download, Filter, Cloud, Mail, Copy, Bot, Mic, Square, Trash2, Radio, Palette, Trophy, RefreshCw, Cpu,
   QrCode, Scan, FolderArchive, Package, History, VolumeX, Volume2, SwitchCamera, Camera,
   Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Zap, Play, Pause,
-  Grid, ChevronDown
+  Grid, ChevronDown, HardDrive, SunMedium
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
@@ -47,6 +47,10 @@ import { NFCGateAttendanceModal } from './classroom/NFCGateAttendanceModal';
 import { BelajarIdSSOModal } from './BelajarIdSSOModal';
 import { RBACAuditLogModal } from './RBACAuditLogModal';
 import { IoTSmartClassroomModal } from './IoTSmartClassroomModal';
+import { InteractiveGuideModal } from './InteractiveGuideModal';
+import { StorageManagerModal } from './StorageManagerModal';
+import { TwoFactorAuthModal } from './TwoFactorAuthModal';
+import { LastScanInspectorModal } from './LastScanInspectorModal';
 import { useTheme } from '../utils/theme';
 import { LibraryKioskModal } from './LibraryKioskModal';
 import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
@@ -212,6 +216,9 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   });
   const [showProfileSettings, setShowProfileSettings] = useState<boolean>(false);
   const [showPortalApps, setShowPortalApps] = useState<boolean>(false);
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [showStorageModal, setShowStorageModal] = useState<boolean>(false);
+  const [showTwoFactorModal, setShowTwoFactorModal] = useState<boolean>(false);
 
   const handleToggleHighContrast = (enabled: boolean) => {
     setHighContrast(enabled);
@@ -302,13 +309,73 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [defaultScannerMode]);
 
-  // Quick QR Scanner FAB State & Schedule Proximity
+  // Quick QR Scanner FAB State, Arc Menu, Flashlight & Schedule Proximity
   const [qrScannerTargetMode, setQrScannerTargetMode] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>('ALL');
+  const [showArcMenu, setShowArcMenu] = useState(false);
   const [showFabContextMenu, setShowFabContextMenu] = useState(false);
+  const [showLastScanModal, setShowLastScanModal] = useState(false);
+  const [arcSearchQuery, setArcSearchQuery] = useState('');
+  const [isFlashlightOn, setIsFlashlightOn] = useState(false);
+  const flashlightStreamRef = useRef<MediaStream | null>(null);
   const [recentFabScans, setRecentFabScans] = useState<RecentScanItem[]>([]);
+  const [isContainerBouncing, setIsContainerBouncing] = useState(false);
+  const prevScansCountRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressActiveRef = useRef(false);
   const fabContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const triggerContainerBounce = useCallback(() => {
+    setIsContainerBouncing(true);
+    setTimeout(() => {
+      setIsContainerBouncing(false);
+    }, 750);
+  }, []);
+
+  // Trigger subtle spring bounce on the FAB container whenever a new item is added to history
+  useEffect(() => {
+    if (prevScansCountRef.current !== null && recentFabScans.length > prevScansCountRef.current) {
+      triggerContainerBounce();
+    }
+    prevScansCountRef.current = recentFabScans.length;
+  }, [recentFabScans, triggerContainerBounce]);
+
+  // Toggle device hardware/ambient flashlight
+  const toggleFlashlight = useCallback(async () => {
+    const nextState = !isFlashlightOn;
+    setIsFlashlightOn(nextState);
+    playFeedback('click');
+
+    if (nextState) {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+          });
+          flashlightStreamRef.current = stream;
+          const track = stream.getVideoTracks()[0];
+          const capabilities = (track.getCapabilities && track.getCapabilities()) as any;
+          if (capabilities && capabilities.torch) {
+            await (track as any).applyConstraints({ advanced: [{ torch: true }] });
+          }
+        }
+      } catch (err) {
+        console.debug('Hardware flashlight not available, using ambient screen torch mode:', err);
+      }
+    } else {
+      if (flashlightStreamRef.current) {
+        flashlightStreamRef.current.getTracks().forEach(t => t.stop());
+        flashlightStreamRef.current = null;
+      }
+    }
+  }, [isFlashlightOn]);
+
+  useEffect(() => {
+    return () => {
+      if (flashlightStreamRef.current) {
+        flashlightStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   // Load Recent Scans for FAB Context Menu
   const loadRecentFabScans = useCallback(() => {
@@ -337,23 +404,34 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     }
   }, []);
 
-  // Close FAB context menu when clicking outside
+  // Close FAB menus when clicking outside or pressing Escape
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (fabContainerRef.current && !fabContainerRef.current.contains(e.target as Node)) {
         setShowFabContextMenu(false);
+        setShowArcMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowFabContextMenu(false);
+        setShowArcMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
-  // Refresh recent scans when context menu opens
+  // Refresh recent scans when context menu or arc menu opens
   useEffect(() => {
-    if (showFabContextMenu) {
+    if (showFabContextMenu || showArcMenu || showLastScanModal) {
       loadRecentFabScans();
     }
-  }, [showFabContextMenu, loadRecentFabScans]);
+  }, [showFabContextMenu, showArcMenu, showLastScanModal, loadRecentFabScans]);
 
   // Target Class Code determination
   const targetClassCode = useMemo(() => {
@@ -548,21 +626,29 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
 
   const handleScanSuccessAnimation = useCallback(() => {
     setIsFabSuccessAnimating(true);
+    triggerContainerBounce();
     loadRecentFabScans();
     setTimeout(() => {
       setIsFabSuccessAnimating(false);
     }, 2200);
-  }, [loadRecentFabScans]);
+  }, [loadRecentFabScans, triggerContainerBounce]);
 
   useEffect(() => {
     const handleQrSuccess = () => {
       handleScanSuccessAnimation();
     };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sdn6_qr_recent_scans_v1') {
+        loadRecentFabScans();
+      }
+    };
     window.addEventListener('qr_scan_success', handleQrSuccess);
+    window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('qr_scan_success', handleQrSuccess);
+      window.removeEventListener('storage', handleStorage);
     };
-  }, [handleScanSuccessAnimation]);
+  }, [handleScanSuccessAnimation, loadRecentFabScans]);
 
   useEffect(() => {
     let batteryPromise: any;
@@ -729,22 +815,10 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       return;
     }
     
-    if (showFabContextMenu) {
-      playFeedback('click');
-      setShowFabContextMenu(false);
-      return;
-    }
-    
-    // Play subtle scanner beep sound via Web Audio API when initiating scan
-    playFeedback('scan');
-
-    // Auto-defaults to 'Scan Student Attendance' if within 10 minutes of a scheduled class
-    if (smartAutoTrigger && isWithinTenMinutesOfClass) {
-      setQrScannerTargetMode('STUDENT');
-    } else {
-      setQrScannerTargetMode(defaultScannerMode);
-    }
-    setShowGlobalQrScanner(true);
+    // Tapping the FAB opens an arc-style menu of secondary quick-actions instead of immediate navigation
+    playFeedback('click');
+    setShowFabContextMenu(false);
+    setShowArcMenu((prev) => !prev);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -861,6 +935,236 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       ? accountService.getStudents(account.KELAS)
       : accountService.getStudents();
   }, [isGuru, account.KELAS, refreshKey]);
+
+  // Calculate active session scan count & goal
+  const sessionScanGoal = useMemo(() => {
+    return classStudents.length > 0 ? classStudents.length : 25;
+  }, [classStudents]);
+
+  const sessionScanCount = useMemo(() => {
+    const sixHoursAgo = Date.now() - 6 * 3600 * 1000;
+    return recentFabScans.filter(s => s.timestamp >= sixHoursAgo).length;
+  }, [recentFabScans]);
+
+  const progressPct = useMemo(() => {
+    if (sessionScanGoal <= 0) return 0;
+    return Math.min(100, Math.round((sessionScanCount / sessionScanGoal) * 100));
+  }, [sessionScanCount, sessionScanGoal]);
+
+  // Handler for Printing / Exporting Scan History to PDF
+  const handlePrintScanHistoryPDF = useCallback(async () => {
+    playFeedback('click');
+    try {
+      const headers = ['No', 'Waktu', 'Kategori', 'Kode QR / Identitas', 'Nama / Keterangan'];
+      const rows = recentFabScans.map((s, idx) => [
+        (idx + 1).toString(),
+        new Date(s.timestamp).toLocaleString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        }),
+        s.type === 'STUDENT' ? 'Presensi Siswa' : s.type === 'ASSIGNMENT' ? 'Tugas Siswa' : s.type === 'ASSET' ? 'Aset Sarpras' : 'QR Umum',
+        s.code,
+        s.title || s.subtitle || '-'
+      ]);
+
+      await pdfService.generateBeritaAcara({
+        title: 'LAPORAN REKAPITULASI PEMINDAIAN QR CODE SESI PEMBELAJARAN',
+        docNo: `SCAN-LOG/${targetClassCode.replace(/\s+/g, '-')}/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
+        description: `Rekapitulasi log aktivitas pemindaian presensi siswa, evaluasi tugas, dan inventaris berbasis QR Scanner pada ${targetClassCode}. Tercatat total ${recentFabScans.length} pemindaian aktif (Pencapaian Sesi: ${sessionScanCount}/${sessionScanGoal} scan - ${progressPct}%).`,
+        tableHeaders: headers,
+        tableRows: rows.length > 0 ? rows : [['1', '-', '-', 'Belum ada log scan', '-']],
+        footerText: 'Dicetak secara digital melalui Base44 Smart Classroom System SDN Tangerang 6.',
+        rightSigner: {
+          title: 'Guru Pengampu / Operator',
+          name: account.NAMA || 'Guru Kelas',
+          nip: account.NIP || '19850315 201101 1 003'
+        },
+        includeHeadmaster: true,
+        autoSave: true,
+        styling: {
+          themeColor: 'emerald',
+          tableDensity: 'compact',
+          includeVerificationQR: true,
+        }
+      });
+    } catch (err) {
+      console.error('Failed to print scan history PDF:', err);
+      window.print();
+    }
+  }, [recentFabScans, targetClassCode, account, sessionScanCount, sessionScanGoal, progressPct]);
+
+  // Quick lookup of assignment, student, or asset codes for tiny search bar
+  const arcSearchResults = useMemo(() => {
+    const q = arcSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const results: {
+      id: string;
+      type: 'STUDENT' | 'ASSIGNMENT' | 'ASSET';
+      code: string;
+      title: string;
+      subtitle?: string;
+      rawObj?: any;
+    }[] = [];
+
+    // Search students
+    classStudents.forEach(stu => {
+      const combined = `${stu.NAMA} ${stu.USERNAME} ${stu.EMAIL || ''} ${stu.KELAS || ''}`.toLowerCase();
+      if (combined.includes(q)) {
+        results.push({
+          id: stu.ID,
+          type: 'STUDENT',
+          code: stu.USERNAME,
+          title: stu.NAMA,
+          subtitle: `${stu.KELAS || targetClassCode} • User: @${stu.USERNAME}`,
+          rawObj: stu,
+        });
+      }
+    });
+
+    // Search assignments
+    allAssignments.forEach(asg => {
+      const combined = `${asg.JUDUL} ${asg.ID} ${asg.DESKRIPSI || ''} ${asg.COURSE_ID || ''}`.toLowerCase();
+      if (combined.includes(q)) {
+        results.push({
+          id: asg.ID,
+          type: 'ASSIGNMENT',
+          code: asg.ID,
+          title: asg.JUDUL,
+          subtitle: `${asg.TYPE || 'TUGAS'} • Batas: ${asg.DEADLINE ? new Date(asg.DEADLINE).toLocaleDateString('id-ID') : 'Tidak ditentukan'}`,
+          rawObj: asg,
+        });
+      }
+    });
+
+    // Search recent scans
+    recentFabScans.forEach(scan => {
+      const combined = `${scan.code} ${scan.title || ''} ${scan.subtitle || ''}`.toLowerCase();
+      if (combined.includes(q) && !results.some(r => r.code === scan.code)) {
+        results.push({
+          id: scan.id || scan.code,
+          type: (scan.type as any) || 'ASSET',
+          code: scan.code,
+          title: scan.title || scan.code,
+          subtitle: scan.subtitle || 'Riwayat Scan',
+        });
+      }
+    });
+
+    return results.slice(0, 6);
+  }, [arcSearchQuery, classStudents, allAssignments, recentFabScans, targetClassCode]);
+
+  // Secondary Quick-Action Items for Arc Radial Menu
+  const arcMenuItems = useMemo(() => [
+    {
+      id: 'btn-arc-log-attendance',
+      label: 'Log Attendance',
+      desc: 'Presensi Siswa',
+      Icon: UserCheck,
+      bgGradient: 'from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500',
+      borderClass: 'border-emerald-300/50 text-white shadow-emerald-500/40',
+      badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50',
+      angle: 90, // straight UP
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('STUDENT');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+    {
+      id: 'btn-arc-view-last-scan',
+      label: 'View Last Scan',
+      desc: recentFabScans.length > 0 ? (recentFabScans[0].title || recentFabScans[0].code) : 'Riwayat Scan',
+      Icon: History,
+      bgGradient: 'from-amber-600 via-orange-600 to-amber-700 hover:from-amber-500 hover:to-orange-500',
+      borderClass: 'border-amber-300/50 text-white shadow-amber-500/40',
+      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50',
+      angle: 112.5,
+      onClick: () => {
+        setShowArcMenu(false);
+        setShowLastScanModal(true);
+        playFeedback('click');
+      },
+    },
+    {
+      id: 'btn-arc-print-history',
+      label: 'Print History',
+      desc: `Cetak PDF (${recentFabScans.length} Scan)`,
+      Icon: Printer,
+      bgGradient: 'from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500',
+      borderClass: 'border-rose-300/50 text-white shadow-rose-500/40',
+      badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50',
+      angle: 135,
+      onClick: () => {
+        setShowArcMenu(false);
+        handlePrintScanHistoryPDF();
+      },
+    },
+    {
+      id: 'btn-arc-toggle-flashlight',
+      label: isFlashlightOn ? 'Flashlight ON' : 'Toggle Flashlight',
+      desc: isFlashlightOn ? 'Senter Aktif (Klik Matikan)' : 'Nyalakan Senter',
+      Icon: isFlashlightOn ? Zap : SunMedium,
+      bgGradient: isFlashlightOn
+        ? 'from-yellow-400 via-amber-400 to-orange-500 text-slate-950 ring-2 ring-yellow-200 shadow-yellow-400/60 animate-pulse'
+        : 'from-slate-700 via-slate-800 to-slate-900 text-slate-200 hover:from-slate-600 hover:to-slate-800 shadow-slate-900/60',
+      borderClass: isFlashlightOn
+        ? 'border-yellow-200 font-black'
+        : 'border-slate-600/80',
+      badgeClass: isFlashlightOn
+        ? 'bg-yellow-950/90 text-yellow-300 border-yellow-400/60 font-black'
+        : 'bg-slate-900/90 text-slate-300 border-slate-700',
+      angle: 157.5,
+      onClick: () => {
+        toggleFlashlight();
+      },
+    },
+    {
+      id: 'btn-arc-scan-assignment',
+      label: 'Scan Tugas',
+      desc: 'Tugas Siswa',
+      Icon: BookOpen,
+      bgGradient: 'from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500',
+      borderClass: 'border-blue-300/50 text-white shadow-blue-500/40',
+      badgeClass: 'bg-blue-950/90 text-blue-300 border-blue-500/50',
+      angle: 180, // straight LEFT
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('ASSIGNMENT');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+    {
+      id: 'btn-arc-full-scanner',
+      label: 'Scanner Penuh',
+      desc: 'Auto Deteksi QR',
+      Icon: Scan,
+      bgGradient: 'from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-500 hover:to-pink-500',
+      borderClass: 'border-purple-300/50 text-white shadow-purple-500/40',
+      badgeClass: 'bg-purple-950/90 text-purple-300 border-purple-500/50',
+      angle: 202.5,
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('ALL');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+  ], [recentFabScans, isFlashlightOn, toggleFlashlight, handlePrintScanHistoryPDF]);
+
+  const getArcCoordinates = useCallback((angleDeg: number) => {
+    const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 640;
+    const r = isDesktop ? 106 : 94;
+    const rad = (angleDeg * Math.PI) / 180;
+    return {
+      x: Math.round(r * Math.cos(rad)),
+      y: Math.round(-r * Math.sin(rad))
+    };
+  }, []);
 
   const navItems: { id: ClassPage; label: string; icon: any; badge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -1156,6 +1460,52 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                             </div>
                           </button>
                         )}
+
+                        <div className="border-t border-white/10 my-1 pt-1">
+                          <div className="text-[9px] font-bold text-slate-400 uppercase px-2 mb-1">Bantuan & Keamanan</div>
+                        </div>
+
+                        {/* 9. Buku Panduan Interaktif */}
+                        <button
+                          onClick={() => { setShowGuideModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/30">
+                            <BookOpen size={14} className="text-amber-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">Buku Panduan Interaktif</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Manual operasional Guru, Siswa, & Kepsek</div>
+                          </div>
+                        </button>
+
+                        {/* 10. Manajemen Memori & Kompresi */}
+                        <button
+                          onClick={() => { setShowStorageModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0 border border-teal-500/30">
+                            <HardDrive size={14} className="text-teal-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">Memori & Kompresi Foto</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Status kuota lokal & pembersih cache</div>
+                          </div>
+                        </button>
+
+                        {/* 11. Keamanan 2FA & Sesi */}
+                        <button
+                          onClick={() => { setShowTwoFactorModal(true); setShowPortalApps(false); }}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                            <ShieldCheck size={14} className="text-indigo-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold">Keamanan 2FA & Auto-Lock</div>
+                            <div className="text-[9px] text-slate-400 font-normal">Autentikasi 2-langkah & kunci layar sesi</div>
+                          </div>
+                        </button>
                       </div>
                     </motion.div>
                   </>
@@ -2194,8 +2544,30 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           </kbd>
         </div>
 
-        {/* Floating Action Button Container */}
-        <div className="relative group flex items-center">
+        {/* Floating Action Button Container with Subtle Spring Bounce on New History Item */}
+        <motion.div
+          id="classroom-qr-fab-container"
+          animate={
+            isContainerBouncing
+              ? {
+                  y: [0, -14, 2, -6, 0],
+                  scale: [1, 1.08, 0.98, 1.03, 1],
+                  rotate: [0, -1.5, 1.5, -0.5, 0],
+                }
+              : { y: 0, scale: 1, rotate: 0 }
+          }
+          transition={
+            isContainerBouncing
+              ? {
+                  type: 'spring',
+                  stiffness: 420,
+                  damping: 14,
+                  mass: 0.7,
+                }
+              : { duration: 0.2 }
+          }
+          className="relative group flex items-center"
+        >
           {/* Visual Success Indicator Popover Banner on Scan Success */}
           <AnimatePresence>
             {isFabSuccessAnimating && (
@@ -2221,6 +2593,213 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             </>
           )}
 
+          {/* ARC-STYLE QUICK ACTION RADIAL MENU */}
+          <AnimatePresence>
+            {showArcMenu && (
+              <div className="absolute inset-0 pointer-events-none z-30">
+                {/* CIRCULAR PROGRESS RING FOR ACTIVE SESSION SCAN GOAL */}
+                <motion.div
+                  id="fab-arc-progress-ring"
+                  initial={{ scale: 0, opacity: 0, y: 10 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0, opacity: 0, y: 10 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 25, delay: 0.08 }}
+                  className="absolute -top-16 -left-12 sm:-left-16 p-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 shadow-2xl flex items-center gap-2 pointer-events-auto group/ring cursor-default z-40 select-none"
+                  title={`Sesi Aktif: ${sessionScanCount} dari target ${sessionScanGoal} scan (${progressPct}%)`}
+                >
+                  <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                    <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="14"
+                        className="stroke-slate-800"
+                        strokeWidth="3.5"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="14"
+                        className="stroke-emerald-400 transition-all duration-500 ease-out"
+                        strokeWidth="3.5"
+                        strokeDasharray={87.96}
+                        strokeDashoffset={87.96 - (progressPct / 100) * 87.96}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className="absolute text-[9px] font-black font-mono text-emerald-300">
+                      {progressPct}%
+                    </span>
+                  </div>
+                  <div className="pr-1">
+                    <div className="text-[10px] font-black text-white leading-tight">Sesi Scan</div>
+                    <div className="text-[9px] text-emerald-400 font-mono font-bold leading-tight">
+                      {sessionScanCount}/{sessionScanGoal} Goal
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* TINY SEARCH INPUT FIELD FOR CODE / ASSIGNMENT / STUDENT LOOKUP */}
+                <motion.div
+                  initial={{ opacity: 0, y: 15, scale: 0.92 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 15, scale: 0.92 }}
+                  transition={{ duration: 0.22, ease: 'easeOut' }}
+                  className="absolute bottom-[calc(100%+14px)] right-0 w-64 sm:w-72 p-2.5 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl z-40 space-y-2 pointer-events-auto"
+                >
+                  <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <Search size={13} className="text-emerald-400" />
+                      <span className="text-[11px] font-extrabold text-white">Cari Cepat Kode & Tugas</span>
+                    </div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                      {arcSearchResults.length > 0 ? `${arcSearchResults.length} match` : 'Lookup'}
+                    </span>
+                  </div>
+
+                  <div className="relative flex items-center">
+                    <Search size={13} className="absolute left-2.5 text-slate-400 pointer-events-none" />
+                    <input
+                      id="input-arc-quick-search"
+                      type="text"
+                      value={arcSearchQuery}
+                      onChange={(e) => setArcSearchQuery(e.target.value)}
+                      placeholder="Ketik NIS, Tugas, atau Kode Aset..."
+                      className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 font-medium transition"
+                    />
+                    {arcSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setArcSearchQuery('')}
+                        className="absolute right-2 p-0.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                        title="Bersihkan Pencarian"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filtered Search Results Popover */}
+                  {arcSearchQuery.trim() && (
+                    <div className="max-h-36 overflow-y-auto space-y-1 pt-1">
+                      {arcSearchResults.length > 0 ? (
+                        arcSearchResults.map((res) => (
+                          <button
+                            key={`${res.type}-${res.id}`}
+                            type="button"
+                            onClick={() => {
+                              setShowArcMenu(false);
+                              setArcSearchQuery('');
+                              if (res.type === 'STUDENT') {
+                                if (res.rawObj) {
+                                  setFabQuickGradeStudent(res.rawObj);
+                                } else {
+                                  setPage('attendance');
+                                }
+                              } else if (res.type === 'ASSIGNMENT') {
+                                setPage('assignments');
+                              } else {
+                                setShowLastScanModal(true);
+                              }
+                              playFeedback('click');
+                            }}
+                            className="w-full p-1.5 rounded-xl bg-slate-950/60 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-500/50 text-left transition flex items-center justify-between gap-2 group/res cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
+                                  res.type === 'STUDENT' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+                                  res.type === 'ASSIGNMENT' ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' :
+                                  'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                }`}>
+                                  {res.type === 'STUDENT' ? 'Siswa' : res.type === 'ASSIGNMENT' ? 'Tugas' : 'Aset'}
+                                </span>
+                                <span className="text-xs font-bold text-slate-200 group-hover/res:text-emerald-300 truncate">
+                                  {res.title}
+                                </span>
+                              </div>
+                              {res.subtitle && (
+                                <div className="text-[10px] text-slate-400 font-mono truncate mt-0.5">{res.subtitle}</div>
+                              )}
+                            </div>
+                            <ChevronRight size={13} className="text-slate-500 group-hover/res:text-emerald-400 shrink-0" />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="py-2 text-center text-[11px] text-slate-400">
+                          Tidak ada kode atau item yang cocok.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Search Footer Toolbar with Print History Shortcut */}
+                  <div className="pt-1.5 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      <span>Sesi: <strong className="text-emerald-300 font-mono">{sessionScanCount}/{sessionScanGoal}</strong></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowArcMenu(false);
+                        handlePrintScanHistoryPDF();
+                      }}
+                      className="text-[10px] font-bold text-rose-300 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-600 border border-rose-500/40 transition cursor-pointer"
+                      title="Download PDF Rekapitulasi Scan"
+                    >
+                      <Printer size={11} />
+                      <span>Print Log</span>
+                    </button>
+                  </div>
+                </motion.div>
+
+                {/* Arc Radial Buttons */}
+                {arcMenuItems.map((item, idx) => {
+                  const coords = getArcCoordinates(item.angle);
+                  const ItemIcon = item.Icon;
+                  return (
+                    <motion.div
+                      key={item.id}
+                      initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+                      animate={{ scale: 1, opacity: 1, x: coords.x, y: coords.y }}
+                      exit={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 450,
+                        damping: 24,
+                        delay: idx * 0.03,
+                      }}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto group/arc"
+                    >
+                      {/* Label Tooltip that renders on hover/focus */}
+                      <div className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-slate-950/95 backdrop-blur-md text-white text-[11px] font-bold shadow-2xl border border-slate-700 whitespace-nowrap pointer-events-none opacity-0 group-hover/arc:opacity-100 group-focus-within/arc:opacity-100 transition-all duration-200 translate-x-1 group-hover/arc:translate-x-0 z-40 flex items-center gap-1.5">
+                        <span className="text-white">{item.label}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({item.desc})</span>
+                      </div>
+
+                      {/* Arc Button */}
+                      <motion.button
+                        id={item.id}
+                        type="button"
+                        onClick={item.onClick}
+                        whileHover={{ scale: 1.15 }}
+                        whileTap={{ scale: 0.92 }}
+                        className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br ${item.bgGradient} border ${item.borderClass} shadow-xl flex items-center justify-center cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white`}
+                        title={`${item.label} - ${item.desc}`}
+                        aria-label={item.label}
+                      >
+                        <ItemIcon className="w-5 h-5 stroke-[2.2]" />
+                      </motion.button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </AnimatePresence>
+
           {/* Floating Action Button */}
           <motion.button
             id="btn-classroom-qr-fab"
@@ -2237,22 +2816,26 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             animate={
               isFabSuccessAnimating
                 ? {
-                    scale: [1, 1.3, 1.08, 1.18, 1],
-                    backgroundColor: ['#059669', '#10b981', '#059669'],
+                    scale: [1, 1.35, 0.94, 1.18, 0.97, 1.05, 1],
+                    rotate: [0, -4, 4, -2, 2, 0],
+                    backgroundColor: ['#3b82f6', '#10b981', '#fbbf24', '#059669', '#10b981'],
                     boxShadow: [
-                      '0px 0px 0px rgba(16, 185, 129, 0)',
-                      '0px 0px 50px rgba(16, 185, 129, 1)',
-                      '0px 0px 25px rgba(16, 185, 129, 0.7)',
-                      '0px 0px 0px rgba(16, 185, 129, 0)'
+                      '0px 0px 0px 0px rgba(16, 185, 129, 0.9)',
+                      '0px 0px 0px 18px rgba(16, 185, 129, 0.6)',
+                      '0px 0px 0px 32px rgba(52, 211, 153, 0.3)',
+                      '0px 0px 45px 8px rgba(52, 211, 153, 0.8)',
+                      '0px 0px 0px 0px rgba(16, 185, 129, 0)'
                     ]
                   }
+                : showArcMenu
+                ? { scale: 1.05 }
                 : (!isLowBattery && isWithinFiveMinutesOfClass)
                 ? { scale: [1, 1.04, 1] }
                 : { scale: 1 }
             }
             transition={
               isFabSuccessAnimating
-                ? { duration: 1.2, ease: 'easeOut' }
+                ? { duration: 0.85, ease: 'easeInOut' }
                 : (!isLowBattery && isWithinFiveMinutesOfClass)
                 ? { repeat: Infinity, duration: 1.5, ease: 'easeInOut' }
                 : { type: 'spring', stiffness: 400, damping: 25 }
@@ -2261,6 +2844,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             className={`relative flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 z-10 ${
               isFabSuccessAnimating
                 ? 'bg-emerald-500 text-white ring-4 ring-emerald-300 ring-offset-2 ring-offset-slate-900 font-extrabold shadow-emerald-500/70'
+                : showArcMenu
+                ? 'bg-gradient-to-r from-slate-800 to-slate-900 text-white ring-2 ring-emerald-400 border border-emerald-400/50 shadow-2xl'
                 : highContrast
                 ? 'bg-amber-400 text-black border-2 border-black font-black'
                 : scheduleNudge.status === 'ACTIVE'
@@ -2269,15 +2854,42 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 ? 'bg-gradient-to-r from-rose-600 via-pink-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white shadow-rose-500/40 border border-rose-300/40 ring-2 ring-rose-400/80 ring-offset-2 ring-offset-slate-900'
                 : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/30 border border-white/20'
             }`}
-            title={`Pindai QR Tugas / Siswa / Aset (Target: ${targetClassCode}) • Tekan lama atau Klik Kanan untuk Menu Pilihan Mode`}
+            title={`Menu Aksi Cepat QR (Target: ${targetClassCode}) • Klik untuk membuka Arc Menu pilihan aksi`}
             aria-label="Pindai QR Scanner Cepat"
+            aria-expanded={showArcMenu}
           >
+            {/* Concentric Haptic-like Ripple Shockwaves on Scan Success */}
+            {isFabSuccessAnimating && (
+              <>
+                <motion.span
+                  initial={{ scale: 0.8, opacity: 0.95 }}
+                  animate={{ scale: [0.8, 1.8, 2.6], opacity: [0.95, 0.45, 0] }}
+                  transition={{ duration: 0.85, ease: 'easeOut' }}
+                  className="absolute -inset-2 rounded-3xl border-2 border-emerald-400 pointer-events-none z-0"
+                />
+                <motion.span
+                  initial={{ scale: 0.6, opacity: 1 }}
+                  animate={{ scale: [0.6, 1.5, 2.2], opacity: [1, 0.5, 0] }}
+                  transition={{ duration: 0.7, ease: 'easeOut', delay: 0.08 }}
+                  className="absolute -inset-3 rounded-3xl bg-emerald-400/40 pointer-events-none z-0"
+                />
+                <motion.span
+                  initial={{ scale: 0.5, opacity: 0.85 }}
+                  animate={{ scale: [0.5, 2.0, 3.2], opacity: [0.85, 0.3, 0] }}
+                  transition={{ duration: 1.0, ease: 'easeOut', delay: 0.15 }}
+                  className="absolute -inset-4 rounded-3xl border border-teal-300/60 pointer-events-none z-0"
+                />
+              </>
+            )}
+
             {/* Dynamic Glowing Beacon Background with Proximity-Aware Intensity */}
             <span
               style={{ animationDuration: 'var(--pulse-duration)' }}
               className={`absolute -inset-0.5 rounded-2xl transition-opacity duration-300 -z-10 ${
                 isFabSuccessAnimating
                   ? 'bg-emerald-400 opacity-100 blur-md animate-pulse'
+                  : showArcMenu
+                  ? 'bg-emerald-400 opacity-70 blur-md animate-pulse'
                   : scheduleNudge.status === 'ACTIVE'
                   ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 opacity-90 blur-md animate-pulse'
                   : scheduleNudge.status === 'IMMINENT'
@@ -2326,6 +2938,13 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                   Berhasil!
                 </span>
               </>
+            ) : showArcMenu ? (
+              <>
+                <X className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.5] text-emerald-300" />
+                <span className="hidden sm:inline font-bold text-xs tracking-wide text-emerald-300">
+                  Tutup
+                </span>
+              </>
             ) : (
               <>
                 <Scan className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.2]" />
@@ -2335,7 +2954,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               </>
             )}
           </motion.button>
-        </div>
+        </motion.div>
       </div>
 
       {/* STUDENT FEEDBACK NOTIFICATIONS MODAL */}
@@ -2363,6 +2982,54 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         highContrast={highContrast}
         onToggleHighContrast={handleToggleHighContrast}
       />
+
+      {/* INTERACTIVE GUIDE & USER MANUAL MODAL */}
+      <InteractiveGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        initialRole={isSiswa ? 'SISWA' : isGuru ? 'GURU' : isKepsek ? 'KEPSEK' : 'GURU'}
+      />
+
+      {/* SMART STORAGE & COMPRESSION MANAGER MODAL */}
+      <StorageManagerModal
+        isOpen={showStorageModal}
+        onClose={() => setShowStorageModal(false)}
+      />
+
+      {/* TWO FACTOR AUTH & SESSION SECURITY MODAL */}
+      <TwoFactorAuthModal
+        isOpen={showTwoFactorModal}
+        onClose={() => setShowTwoFactorModal(false)}
+      />
+
+      {/* LAST SCAN INSPECTION & QUICK ACTIONS MODAL */}
+      <LastScanInspectorModal
+        isOpen={showLastScanModal}
+        onClose={() => setShowLastScanModal(false)}
+        lastScan={recentFabScans[0] || null}
+        savedVoiceNotes={savedVoiceNotes}
+        onOpenQuickVoiceNote={(item) => {
+          setQuickNoteItem(item);
+          setShowQuickNoteModal(true);
+        }}
+        onNavigateToAttendance={() => setPage('attendance')}
+        onNavigateToAssignments={() => setPage('assignments')}
+        onQuickGrade={(stu) => {
+          setFabQuickGradeStudent(stu);
+        }}
+        onRescanMode={(mode) => {
+          setQrScannerTargetMode(mode);
+          setShowGlobalQrScanner(true);
+        }}
+      />
+
+      {/* AMBIENT SCREEN FLASHLIGHT / TORCH OVERLAY */}
+      {isFlashlightOn && (
+        <div
+          id="ambient-screen-torch-overlay"
+          className="fixed inset-0 pointer-events-none z-[999] border-8 border-yellow-300/40 shadow-[inset_0_0_90px_rgba(253,224,71,0.3)] transition-opacity duration-300"
+        />
+      )}
 
       {/* GLOBAL QR SCANNER MODAL (Ctrl+Shift+S) */}
       <QRScannerModal

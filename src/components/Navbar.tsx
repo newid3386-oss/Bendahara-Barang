@@ -18,11 +18,17 @@ import {
   School,
   User as UserIcon,
   Cloud,
+  BookOpen,
+  HardDrive,
+  ShieldCheck,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { firebaseService, FirebaseSyncStatus } from '../services/firebaseService';
 import { User, ActivePage } from '../types';
 import { OfflineSyncIndicator } from './OfflineSyncIndicator';
+import { InteractiveGuideModal } from './InteractiveGuideModal';
+import { StorageManagerModal } from './StorageManagerModal';
+import { TwoFactorAuthModal } from './TwoFactorAuthModal';
 import { useTheme } from '../utils/theme';
 
 interface NavbarProps {
@@ -62,6 +68,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showStorageModal, setShowStorageModal] = useState(false);
+  const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
   const [ticker, setTicker] = useState(0);
 
   // Periodic ticker and event listener to recalculate relative sync time immediately
@@ -437,6 +446,47 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <div className="border-t border-slate-100 my-1" />
 
+                {/* Bantuan & Buku Panduan */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowGuideModal(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-slate-100 text-slate-700 text-left font-medium transition-colors"
+                >
+                  <BookOpen size={15} className="text-amber-600" />
+                  <span>Buku Panduan & Manual Sistem</span>
+                </button>
+
+                {/* Manajemen Memori & Storage */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowStorageModal(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-slate-100 text-slate-700 text-left font-medium transition-colors"
+                >
+                  <HardDrive size={15} className="text-teal-600" />
+                  <span>Memori & Kompresi Foto</span>
+                </button>
+
+                {/* Keamanan 2FA & Sesi */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowTwoFactorModal(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-slate-100 text-slate-700 text-left font-medium transition-colors"
+                >
+                  <ShieldCheck size={15} className="text-indigo-600" />
+                  <span>Keamanan 2FA & Kunci Sesi</span>
+                </button>
+
+                <div className="border-t border-slate-100 my-1" />
+
                 <button
                   type="button"
                   onClick={() => {
@@ -512,6 +562,25 @@ export const Navbar: React.FC<NavbarProps> = ({
         <OfflineSyncIndicator compact={true} showDetailsButton={true} />
       </div>
     </div>
+
+    {/* INTERACTIVE GUIDE MODAL */}
+    <InteractiveGuideModal
+      isOpen={showGuideModal}
+      onClose={() => setShowGuideModal(false)}
+      initialRole={activeUser.ROLE === 'ADMIN' ? 'BENDAHARA' : 'GURU'}
+    />
+
+    {/* SMART STORAGE & COMPRESSION MANAGER MODAL */}
+    <StorageManagerModal
+      isOpen={showStorageModal}
+      onClose={() => setShowStorageModal(false)}
+    />
+
+    {/* TWO FACTOR AUTH & SESSION SECURITY MODAL */}
+    <TwoFactorAuthModal
+      isOpen={showTwoFactorModal}
+      onClose={() => setShowTwoFactorModal(false)}
+    />
   </div>
 );
 };

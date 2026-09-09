@@ -19,6 +19,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
+import { mediaStorageService } from '../services/mediaStorageService';
 
 interface ExtractedItem {
   nama_barang: string;
@@ -192,17 +193,25 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setSelectedImage(result);
-      processImageWithAI(result, file.type || 'image/jpeg');
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Automatic client-side compression to avoid memory lag & storage bloat
+      const { dataUrl } = await mediaStorageService.compressImage(file, 1200, 0.85);
+      setSelectedImage(dataUrl);
+      processImageWithAI(dataUrl, 'image/jpeg');
+    } catch (err) {
+      console.warn('Compression fallback to direct read:', err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        setSelectedImage(result);
+        processImageWithAI(result, file.type || 'image/jpeg');
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const processImageWithAI = async (base64Img: string, mimeType: string) => {
