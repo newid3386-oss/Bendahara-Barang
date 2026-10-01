@@ -29,6 +29,7 @@ import { OfflineSyncIndicator } from './OfflineSyncIndicator';
 import { InteractiveGuideModal } from './InteractiveGuideModal';
 import { StorageManagerModal } from './StorageManagerModal';
 import { TwoFactorAuthModal } from './TwoFactorAuthModal';
+import { PWAInstallButton } from './PWAInstallButton';
 import { useTheme } from '../utils/theme';
 
 interface NavbarProps {
@@ -277,6 +278,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <School size={15} className={`${activeTheme.textAccent}`} />
             <span>Website Sekolah</span>
           </button>
+
+          {/* PWA In-App Install Button */}
+          <PWAInstallButton />
 
           {/* Gemini AI Assistant Button - Hidden on Mobile, Shown in Sub-header */}
           <button

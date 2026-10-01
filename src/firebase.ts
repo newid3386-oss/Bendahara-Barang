@@ -1,5 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  Firestore,
+  doc,
+  getDoc,
+  persistentLocalCache,
+  persistentSingleTabManager,
+  memoryLocalCache,
+} from 'firebase/firestore';
 import firebaseConfigRaw from '../firebase-applet-config.json';
 
 const firebaseConfig = firebaseConfigRaw as any;
@@ -7,10 +16,61 @@ const firebaseConfig = firebaseConfigRaw as any;
 // Initialize Firebase App
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firestore with custom databaseId if configured
-// Force vite cache invalidate
-export const firestore: Firestore = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Firestore with robust local persistent cache
+export const firestore: Firestore = (() => {
+  const databaseId = firebaseConfig.firestoreDatabaseId;
+  try {
+    return initializeFirestore(
+      app,
+      {
+        localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+        ignoreUndefinedProperties: true,
+      },
+      databaseId || undefined
+    );
+  } catch {
+    try {
+      return initializeFirestore(
+        app,
+        {
+          localCache: memoryLocalCache(),
+          ignoreUndefinedProperties: true,
+        },
+        databaseId || undefined
+      );
+    } catch {
+      return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+    }
+  }
+})();
+
+/**
+ * Validate connection to Cloud Firestore backend on app boot.
+ * Uses a fast 2-second timeout race and navigator status to prevent 10-second backend timeout notices.
+ */
+export async function testConnection(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    console.info('[Firestore] Browser offline. Local storage persistence active.');
+    return false;
+  }
+
+  try {
+    const checkPromise = getDoc(doc(firestore, '_connection_', 'status'));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Backend ping timeout')), 2000)
+    );
+
+    await Promise.race([checkPromise, timeoutPromise]);
+    return true;
+  } catch {
+    console.info('[Firestore] Operating in local offline persistence mode.');
+    return false;
+  }
+}
+
+// Execute connection check asynchronously on browser load
+if (typeof window !== 'undefined') {
+  testConnection();
+}
 
 export default app;

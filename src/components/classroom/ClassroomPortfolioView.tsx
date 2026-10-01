@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Account, StudentPortfolioItem } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
+import { STANDARD_CLASSES } from '../../services/accountService';
 import { P5RadarChartWidget } from './P5RadarChartWidget';
 
 interface ClassroomPortfolioViewProps {
@@ -26,7 +27,7 @@ interface ClassroomPortfolioViewProps {
 export const ClassroomPortfolioView: React.FC<ClassroomPortfolioViewProps> = ({ account }) => {
   const isGuruOrAdmin = account.ROLE === 'GURU' || account.ROLE === 'ADMIN' || account.ROLE === 'OPERATOR';
   const isSiswa = account.ROLE === 'SISWA';
-  const userKelas = account.KELAS || 'Kelas 1';
+  const userKelas = account.KELAS || 'Kelas 1A';
 
   const [items, setItems] = useState<StudentPortfolioItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('SEMUA');
@@ -206,14 +207,11 @@ export const ClassroomPortfolioView: React.FC<ClassroomPortfolioViewProps> = ({ 
           <select
             value={filterKelas}
             onChange={(e) => setFilterKelas(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none"
+            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none font-bold"
           >
-            <option value="Kelas 1">Kelas 1</option>
-            <option value="Kelas 2">Kelas 2</option>
-            <option value="Kelas 3">Kelas 3</option>
-            <option value="Kelas 4">Kelas 4</option>
-            <option value="Kelas 5">Kelas 5</option>
-            <option value="Kelas 6">Kelas 6</option>
+            {STANDARD_CLASSES.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
           </select>
         </div>
       </div>

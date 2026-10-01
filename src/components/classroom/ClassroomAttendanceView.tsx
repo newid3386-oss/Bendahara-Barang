@@ -7,6 +7,7 @@ import {
 import { Account, AttendanceRecord, AttendanceStatus } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
+import { SecureMaskedField } from '../common/SecureMaskedField';
 
 interface ClassroomAttendanceViewProps {
   account: Account;
@@ -456,7 +457,16 @@ export const ClassroomAttendanceView: React.FC<ClassroomAttendanceViewProps> = (
                           )}
                         </div>
                       </td>
-                      <td className="p-4 text-slate-500 font-mono text-[11px]">{siswa.NIP || siswa.ID}</td>
+                      <td className="p-4 text-slate-500 font-mono text-[11px]">
+                        <SecureMaskedField
+                          value={siswa.NIP || siswa.ID}
+                          type="nis"
+                          fieldId={`att-nis-${siswa.ID}`}
+                          label="NIS/NISN Siswa"
+                          monospace
+                          showDlpBadge
+                        />
+                      </td>
                       <td className="p-4 text-center">
                         <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
                           {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as AttendanceStatus[]).map((st) => {
@@ -653,7 +663,15 @@ export const ClassroomAttendanceView: React.FC<ClassroomAttendanceViewProps> = (
                           return (
                             <tr key={siswa.ID} className="hover:bg-slate-50">
                               <td className="p-2.5 text-center font-bold">{idx + 1}</td>
-                              <td className="p-2.5 font-mono text-[11px]">{siswa.NIP || siswa.ID}</td>
+                              <td className="p-2.5 font-mono text-[11px]">
+                                <SecureMaskedField
+                                  value={siswa.NIP || siswa.ID}
+                                  type="nis"
+                                  fieldId={`att-rec-nis-${siswa.ID}`}
+                                  label="NIS/NISN Siswa"
+                                  monospace
+                                />
+                              </td>
                               <td className="p-2.5 font-bold text-slate-900">{siswa.NAMA}</td>
                               <td className="p-2.5 text-center">{currentClassTarget}</td>
                               <td className="p-2.5 text-center font-black">

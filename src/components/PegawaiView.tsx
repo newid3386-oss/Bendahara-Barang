@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User } from '../types';
+import { SecureMaskedField } from './common/SecureMaskedField';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -382,12 +383,29 @@ export const PegawaiView: React.FC = () => {
                         <span>{user.NAMA}</span>
                       </div>
                       {/* NIP Di Bawah Nama dan Gelar */}
-                      <div className="text-[11px] font-mono text-emerald-800 font-semibold mt-0.5">
-                        {user.NIP ? `NIP. ${user.NIP}` : <span className="text-slate-400">NIP. - (Non-PNS)</span>}
+                      <div className="text-[11px] font-mono text-emerald-800 font-semibold mt-0.5 flex items-center gap-1">
+                        <span>NIP.</span>
+                        {user.NIP ? (
+                          <SecureMaskedField
+                            value={user.NIP}
+                            type="nis"
+                            fieldId={`pegawai-nip-${user.ID}`}
+                            label="NIP Pegawai"
+                            monospace
+                          />
+                        ) : (
+                          <span className="text-slate-400">- (Non-PNS)</span>
+                        )}
                       </div>
                       {user.EMAIL && (
                         <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Mail size={11} /> {user.EMAIL}
+                          <Mail size={11} />
+                          <SecureMaskedField
+                            value={user.EMAIL}
+                            type="email"
+                            fieldId={`pegawai-email-${user.ID}`}
+                            label="Email Pegawai"
+                          />
                         </div>
                       )}
                     </td>

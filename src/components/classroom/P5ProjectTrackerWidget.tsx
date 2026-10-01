@@ -12,16 +12,20 @@ import {
   Edit3,
   Calendar,
   UserCheck,
+  Send,
+  Loader2,
+  Bot,
+  User,
+  Trash2,
 } from 'lucide-react';
 import { Account, P5Project, P5ProjectStage } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
+import { STANDARD_CLASSES } from '../../services/accountService';
 
 interface P5ProjectTrackerWidgetProps {
   account: Account;
   className?: string;
 }
-
-const STANDARD_CLASSES = ['Kelas 1', 'Kelas 2', 'Kelas 3', 'Kelas 4', 'Kelas 5', 'Kelas 6'];
 
 export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ account, className = '' }) => {
   const isGuru = account.ROLE === 'GURU' || account.ROLE === 'ADMIN' || account.ROLE === 'OPERATOR';
@@ -32,6 +36,62 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
   const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 4');
   const [project, setProject] = useState<P5Project>(() => classroomService.getP5ProjectForClass(selectedKelas));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // P5 AI Mentor Bot States
+  const [showP5Bot, setShowP5Bot] = useState(false);
+  const [p5Messages, setP5Messages] = useState<Array<{ sender: 'user' | 'bot'; text: string }>>([
+    {
+      sender: 'bot',
+      text: `Halo! Saya **AI Mentor Karakter & Ide Kreatif P5**. 🧭✨\n\nSaya siap membantu Bapak/Ibu Guru merancang proyek P5 tingkat sekolah dasar.\n\nSilakan pilih salah satu pertanyaan cepat di bawah atau ketikkan pertanyaan Anda sendiri!`,
+    },
+  ]);
+  const [p5Input, setP5Input] = useState('');
+  const [p5Loading, setP5Loading] = useState(false);
+
+  const handleSendP5Message = async (textToSend?: string) => {
+    const text = (textToSend || p5Input).trim();
+    if (!text || p5Loading) return;
+
+    // Add user message
+    const userMsg = { sender: 'user' as const, text };
+    setP5Messages((prev) => [...prev, userMsg]);
+    if (!textToSend) setP5Input('');
+    setP5Loading(true);
+
+    try {
+      const response = await fetch('/api/ai/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          assistantType: 'P5_MENTOR',
+          userName: account.NAMA,
+          userRole: account.ROLE,
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success && result.data?.reply) {
+        setP5Messages((prev) => [
+          ...prev,
+          { sender: 'bot' as const, text: result.data.reply },
+        ]);
+      } else {
+        setP5Messages((prev) => [
+          ...prev,
+          { sender: 'bot' as const, text: 'Maaf, saya tidak dapat memproses tanggapan saat ini. Silakan coba beberapa saat lagi.' },
+        ]);
+      }
+    } catch (error) {
+      console.error('Error contacting P5 Bot:', error);
+      setP5Messages((prev) => [
+        ...prev,
+        { sender: 'bot' as const, text: 'Koneksi ke asisten AI terputus. Silakan periksa jaringan internet Anda.' },
+      ]);
+    } finally {
+      setP5Loading(false);
+    }
+  };
 
   useEffect(() => {
     const updated = classroomService.getP5ProjectForClass(selectedKelas);
@@ -117,24 +177,159 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
           </p>
         </div>
 
-        {/* Class Switcher for Teachers/Kepsek */}
-        {(isGuru || isKepsek) && (
-          <div className="flex items-center gap-2 shrink-0 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
-            <Layers size={14} className="text-slate-500 ml-2" />
-            <select
-              value={selectedKelas}
-              onChange={(e) => setSelectedKelas(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none pr-3 cursor-pointer py-1"
-            >
-              {STANDARD_CLASSES.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        {/* Actions Header container */}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {/* P5 AI Mentor Bot Trigger Button */}
+          <button
+            type="button"
+            onClick={() => setShowP5Bot(!showP5Bot)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black shadow-2xs border transition-all cursor-pointer select-none ${
+              showP5Bot
+                ? 'bg-indigo-600 border-indigo-600 text-white'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+            }`}
+          >
+            <Sparkles size={13} className={showP5Bot ? 'text-white' : 'text-indigo-600'} />
+            <span>AI Mentor P5</span>
+          </button>
+
+          {/* Class Switcher for Teachers/Kepsek */}
+          {(isGuru || isKepsek) && (
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+              <Layers size={14} className="text-slate-500 ml-2" />
+              <select
+                value={selectedKelas}
+                onChange={(e) => setSelectedKelas(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none pr-3 cursor-pointer py-1"
+              >
+                {STANDARD_CLASSES.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* P5 AI Mentor Bot Section */}
+      <AnimatePresence>
+        {showP5Bot && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="relative z-10 bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 mb-6 overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-indigo-100/60 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+                  <Sparkles size={12} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-indigo-950">AI Mentor Karakter & Ide P5</h4>
+                  <p className="text-[10px] text-indigo-700/80">Konsultan cerdas proyek Kurikulum Merdeka</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setP5Messages([
+                  {
+                    sender: 'bot',
+                    text: `Halo! Saya **AI Mentor Karakter & Ide Kreatif P5**. 🧭✨\n\nSaya siap membantu Bapak/Ibu Guru merancang proyek P5 tingkat sekolah dasar.\n\nSilakan pilih salah satu pertanyaan cepat di bawah atau ketikkan pertanyaan Anda sendiri!`,
+                  }
+                ])}
+                className="p-1 rounded-md hover:bg-indigo-100 text-indigo-600 transition"
+                title="Bersihkan Percakapan"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+
+            {/* Chat History Panel */}
+            <div className="max-h-[200px] overflow-y-auto mb-3 pr-1 space-y-2.5 scrollbar-thin scrollbar-thumb-indigo-200">
+              {p5Messages.map((msg, index) => (
+                <div
+                  key={index}
+                  className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-xl p-3 text-xs leading-relaxed ${
+                      msg.sender === 'user'
+                        ? 'bg-indigo-600 text-white rounded-br-none'
+                        : 'bg-white border border-slate-100 text-slate-800 rounded-bl-none shadow-3xs'
+                    }`}
+                  >
+                    <div className="whitespace-pre-line">
+                      {msg.text}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {p5Loading && (
+                <div className="flex justify-start">
+                  <div className="bg-white border border-slate-100 rounded-xl p-3 text-xs text-indigo-600 flex items-center gap-2 shadow-3xs">
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>AI Mentor sedang merumuskan ide...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Suggestions Pills */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button
+                type="button"
+                onClick={() => handleSendP5Message("Berikan saya ide kegiatan proyek kreatif P5 tema Gaya Hidup Berkelanjutan")}
+                className="px-2.5 py-1 rounded-lg bg-white border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-50 text-[10px] text-indigo-950 font-bold shadow-2xs transition cursor-pointer"
+              >
+                💡 Ide Gaya Hidup Berkelanjutan
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSendP5Message("Bagaimana rancangan rubrik penilaian karakter gotong royong dan kreatif (BB, MB, BSH, SAB)?")}
+                className="px-2.5 py-1 rounded-lg bg-white border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-50 text-[10px] text-indigo-950 font-bold shadow-2xs transition cursor-pointer"
+              >
+                📐 Rubrik Capaian Karakter
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSendP5Message("Beri contoh tahapan alur proyek P5 untuk tema Kewirausahaan tingkat SD")}
+                className="px-2.5 py-1 rounded-lg bg-white border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-50 text-[10px] text-indigo-950 font-bold shadow-2xs transition cursor-pointer"
+              >
+                📑 Alur Tema Kewirausahaan
+              </button>
+            </div>
+
+            {/* Chat Input Bar */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendP5Message();
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={p5Input}
+                onChange={(e) => setP5Input(e.target.value)}
+                placeholder="Tanyakan ide proyek, indikator dimensi, atau draf modul P5..."
+                disabled={p5Loading}
+                className="flex-1 bg-white border border-indigo-100 text-xs px-3.5 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 text-indigo-950 placeholder:text-indigo-400"
+              />
+              <button
+                type="submit"
+                disabled={p5Loading || !p5Input.trim()}
+                className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
+              >
+                <Send size={13} />
+              </button>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Overall Progress Section */}
       <div className="relative z-10 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl mb-6 shadow-md">

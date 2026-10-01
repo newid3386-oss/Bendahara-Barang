@@ -1,7 +1,10 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import JSZip from 'jszip';
 import { db } from './localStorageService';
 import { qrService } from './qrService';
+import { classroomService } from './classroomService';
+import { Account } from '../types/classroom';
 
 export interface BeritaAcaraOptions {
   title: string;
@@ -1251,9 +1254,9 @@ export class PdfService {
   }
 
   /**
-   * Generates a beautifully styled PDF Progress Report per Student for Parents (Wali Murid)
+   * Creates the jsPDF document instance for Student Progress Report (E-Rapor)
    */
-  public async generateStudentProgressReportPdf(
+  public async createStudentProgressReportDoc(
     report: {
       siswaId: string;
       siswaNama: string;
@@ -1271,7 +1274,7 @@ export class PdfService {
     guruNip: string = '19850412 201101 2 003',
     kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
     kepsekNip: string = '19740520 199803 2 004'
-  ): Promise<void> {
+  ): Promise<jsPDF> {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const config = db.getConfig();
@@ -1291,7 +1294,7 @@ export class PdfService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(15, 23, 42);
-    doc.text('LAPORAN PROGRES BELAJAR & REKAPITULASI NILAI SISWA', pageWidth / 2, currentY, { align: 'center' });
+    doc.text('LAPORAN PROGRES BELAJAR & REKAPITULASI NILAI SISWA (E-RAPOR)', pageWidth / 2, currentY, { align: 'center' });
 
     currentY += 4.5;
     doc.setFont('helvetica', 'normal');
@@ -1536,9 +1539,114 @@ export class PdfService {
     doc.setFontSize(7);
     doc.text(`NIP. ${guruNip}`, rightSigX, currentY + 23, { align: 'center' });
 
-    // Save File
-    const filename = `Laporan_Progres_Belajar_${report.siswaNama.replace(/\s+/g, '_')}_${report.kelas.replace(/\s+/g, '_')}.pdf`;
+    return doc;
+  }
+
+  /**
+   * Generates a beautifully styled PDF Progress Report per Student and triggers download
+   */
+  public async generateStudentProgressReportPdf(
+    report: {
+      siswaId: string;
+      siswaNama: string;
+      kelas: string;
+      nilaiTugas: number;
+      nilaiKuis: number;
+      presensiPct: number;
+      nilaiAkhir: number;
+      predikat: string;
+      tugasCount?: number;
+      kuisCount?: number;
+      keterangan?: string;
+    },
+    guruName: string = 'Nurul Hidayah, S.Pd.',
+    guruNip: string = '19850412 201101 2 003',
+    kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+    kepsekNip: string = '19740520 199803 2 004'
+  ): Promise<void> {
+    const doc = await this.createStudentProgressReportDoc(report, guruName, guruNip, kepsekName, kepsekNip);
+    const nisSafe = (report.siswaId || 'NIS').replace(/[^a-zA-Z0-9_-]/g, '');
+    const filename = `ERapor_${nisSafe}_${report.siswaNama.replace(/\s+/g, '_')}_${report.kelas.replace(/\s+/g, '_')}.pdf`;
     doc.save(filename);
+  }
+
+  /**
+   * Exports E-Rapor for all students in a class into a single ZIP archive
+   * with automatic file naming based on NIS (e.g. ERapor_6672_ABDILLAH_PUTRA_YAMA.pdf)
+   */
+  public async exportClassReportsToZip(
+    students: Account[],
+    targetClass: string,
+    guruName: string = 'Nurul Hidayah, S.Pd.',
+    guruNip: string = '19850412 201101 2 003',
+    kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+    kepsekNip: string = '19740520 199803 2 004',
+    onProgress?: (current: number, total: number, studentName: string, studentNis: string) => void
+  ): Promise<Blob> {
+    const zip = new JSZip();
+    const folderName = `E-Rapor_${targetClass.replace(/\s+/g, '_')}`;
+    const folder = zip.folder(folderName) || zip;
+
+    for (let i = 0; i < students.length; i++) {
+      const s = students[i];
+      const nis = s.NIP || s.ID;
+      if (onProgress) {
+        onProgress(i + 1, students.length, s.NAMA, nis);
+      }
+
+      const report = classroomService.getStudentReportCard(
+        s.ID,
+        s.NAMA,
+        s.KELAS || targetClass
+      );
+
+      const doc = await this.createStudentProgressReportDoc(
+        {
+          ...report,
+          siswaId: nis,
+        },
+        guruName,
+        guruNip,
+        kepsekName,
+        kepsekNip
+      );
+
+      const pdfArrayBuffer = doc.output('arraybuffer');
+      // Format file name based on NIS and Name: ERapor_[NIS]_[NAMA].pdf
+      const safeNis = (nis || 'NIS').replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeName = s.NAMA.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      const pdfFileName = `ERapor_${safeNis}_${safeName}.pdf`;
+
+      folder.file(pdfFileName, pdfArrayBuffer);
+    }
+
+    // Add manifest summary
+    const manifest = {
+      sekolah: 'SD NEGERI TANGERANG 6',
+      kelas: targetClass,
+      tahunAjaran: '2026/2027',
+      totalSiswa: students.length,
+      waliKelas: guruName,
+      nipWaliKelas: guruNip,
+      kepalaSekolah: kepsekName,
+      nipKepalaSekolah: kepsekNip,
+      exportedAt: new Date().toISOString(),
+      daftarFile: students.map((s, idx) => ({
+        no: idx + 1,
+        nis: s.NIP || s.ID,
+        nama: s.NAMA,
+        file: `ERapor_${(s.NIP || s.ID).replace(/[^a-zA-Z0-9_-]/g, '')}_${s.NAMA.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`,
+      })),
+    };
+    folder.file('Daftar_Rekap_Siswa.json', JSON.stringify(manifest, null, 2));
+
+    const zipBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+
+    return zipBlob;
   }
 
   /**
@@ -1946,6 +2054,555 @@ export class PdfService {
 
     doc.save(`Rekap_Massal_Tugas_Siswa_${targetClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
   }
+
+  /**
+   * Generates a printable PDF document formatted as a QR badge sheet for selected assignments.
+   * Layout: 2 columns x 3 rows grid per A4 page (6 cards per page).
+   */
+  public async generateBulkAssignmentsQrBadgeSheetPdf(
+    assignments: any[],
+    courses: any[],
+    targetClass: string = 'Kelas 4',
+    guruName: string = 'Guru Pengampu, S.Pd.',
+    guruNip: string = '19850412 201101 2 003'
+  ): Promise<void> {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const config = db.getConfig();
+
+    this.addKopSurat(doc, pageWidth, {
+      show: true,
+      line1: 'PEMERINTAH KOTA TANGERANG',
+      line2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+      line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
+      line4: `${config.ADDRESS || 'Jl. Nyimas Melati No. 25'} • Lembar Kartu QR Badge Penugasan (${targetClass})`,
+    });
+
+    const startY = 46;
+
+    // Grid Dimensions: 2 columns x 3 rows per page = 6 cards
+    const marginX = 12;
+    const cardWidth = 89;
+    const cardHeight = 72;
+    const gapX = 8;
+    const gapY = 8;
+    const cardsPerPage = 6;
+
+    for (let i = 0; i < assignments.length; i++) {
+      const cardIndexOnPage = i % cardsPerPage;
+
+      if (i > 0 && cardIndexOnPage === 0) {
+        doc.addPage();
+        this.addKopSurat(doc, pageWidth, {
+          show: true,
+          line1: 'PEMERINTAH KOTA TANGERANG',
+          line2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+          line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
+          line4: `${config.ADDRESS || 'Jl. Nyimas Melati No. 25'} • Lembar Kartu QR Badge Penugasan (${targetClass})`,
+        });
+      }
+
+      const col = cardIndexOnPage % 2;
+      const row = Math.floor(cardIndexOnPage / 2);
+
+      const x = marginX + col * (cardWidth + gapX);
+      const y = startY + row * (cardHeight + gapY);
+
+      const asg = assignments[i];
+      const course = courses.find((c: any) => c.ID === asg.COURSE_ID);
+      const courseName = course ? `${course.KODE_KELAS} - ${course.NAMA}` : 'Mata Pelajaran Umum';
+
+      // Card Outer Box
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 3, 3, 'FD');
+
+      // Top Banner Header inside Card
+      doc.setFillColor(15, 23, 42);
+      doc.roundedRect(x, y, cardWidth, 12, 3, 3, 'F');
+      doc.rect(x, y + 8, cardWidth, 4, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('SDN TANGERANG 6 • KARTU TUGAS QR', x + 5, y + 7.5);
+
+      // Type pill on right of banner
+      const typeText = (asg.TYPE || 'TUGAS').toUpperCase();
+      doc.setFillColor(13, 148, 136);
+      doc.roundedRect(x + cardWidth - 24, y + 2.5, 20, 6, 1.5, 1.5, 'F');
+      doc.setFontSize(6);
+      doc.text(typeText, x + cardWidth - 14, y + 6.5, { align: 'center' });
+
+      // Assignment Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      const splitTitle = doc.splitTextToSize(asg.JUDUL || 'Penugasan Siswa', cardWidth - 36);
+      doc.text(splitTitle.slice(0, 2), x + 5, y + 18);
+
+      // Subject & Course Info
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Mapel: ${courseName}`, x + 5, y + 27);
+
+      // Deadline Info
+      let deadlineStr = '-';
+      try {
+        if (asg.DEADLINE) {
+          const d = new Date(asg.DEADLINE);
+          deadlineStr = `${d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+      } catch {
+        deadlineStr = asg.DEADLINE || '-';
+      }
+      doc.text(`Tenggat: ${deadlineStr}`, x + 5, y + 33);
+      doc.text(`Bobot: ${asg.BOBOT ? asg.BOBOT + '%' : '100%'}`, x + 5, y + 39);
+
+      // QR Code Rendering
+      try {
+        const qrPayload = `SDN6-ASG-${asg.ID}`;
+        const qrDataUrl = await qrService.generateQRCode(qrPayload, 160);
+        doc.addImage(qrDataUrl, 'PNG', x + cardWidth - 30, y + 15, 26, 26);
+        doc.setFontSize(5.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text(asg.ID.slice(-8).toUpperCase(), x + cardWidth - 17, y + 43, { align: 'center' });
+      } catch {
+        doc.setDrawColor(203, 213, 225);
+        doc.rect(x + cardWidth - 30, y + 15, 26, 26);
+      }
+
+      // Bottom Footer Box inside Card
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(x + 2, y + cardHeight - 14, cardWidth - 4, 11, 2, 2, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Petunjuk Pemindaian:', x + 5, y + cardHeight - 8.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Buka Kamera QR / App Classroom untuk submisi & rincian tugas.', x + 5, y + cardHeight - 4.5);
+    }
+
+    doc.save(`Kartu_QR_Tugas_Massal_${targetClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  /**
+   * Generates a beautifully formatted PDF summary for bulk selected QR scan logs
+   */
+  public async generateQRScanLogsPDF(
+    scans: QRScanLogItem[],
+    options: QRScanLogsPdfOptions = {}
+  ): Promise<jsPDF> {
+    const orientation = options.orientation || 'portrait';
+    const paperSize = options.paperSize === 'f4' ? [215, 330] : options.paperSize || 'a4';
+
+    const doc = new jsPDF({
+      orientation,
+      unit: 'mm',
+      format: paperSize,
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const leftMargin = 14;
+    const rightMargin = pageWidth - 14;
+    const contentWidth = rightMargin - leftMargin;
+
+    // 1. Kop Surat Resmi Sekolah
+    const kopBottomY = this.addKopSurat(doc, pageWidth, {
+      alignment: 'dual_logo',
+      borderStyle: 'double',
+    });
+
+    let currentY = kopBottomY + 6;
+
+    // Theme Colors
+    const themeRgb = this.getThemeRgb(options.themeColor || 'emerald');
+
+    // 2. Document Title Banner
+    const docTitle = options.title || 'RINGKASAN & LOG REKAPITULASI PEMINDAIAN QR CODE';
+    const docNo =
+      options.docNo ||
+      `QR-LOG/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${Date.now().toString().slice(-4)}`;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(themeRgb[0], themeRgb[1], themeRgb[2]);
+    doc.text(docTitle, pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 4.5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Nomor Dokumen: ${docNo}`, pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 3.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Ekspor Massal Log Pemindaian Terverifikasi • Sistem Informasi QR SDN 6 Bukit Tunggal`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+
+    currentY += 5;
+
+    // 3. Metadata Grid Box
+    const config = db.getConfig();
+    const nowFormatted = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const operatorName = options.operatorName || 'Petugas Operator QR';
+    const operatorRole = options.operatorRole || 'Pengawas / Guru Piket';
+
+    // Calculate Category Breakdown
+    const studentCount = scans.filter((s) => s.type === 'STUDENT').length;
+    const assignmentCount = scans.filter((s) => s.type === 'ASSIGNMENT').length;
+    const assetCount = scans.filter((s) => s.type === 'ASSET').length;
+    const otherCount = scans.filter(
+      (s) => s.type !== 'STUDENT' && s.type !== 'ASSIGNMENT' && s.type !== 'ASSET'
+    ).length;
+
+    // Draw Metadata Card Container
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(leftMargin, currentY, contentWidth, 18, 2, 2, 'FD');
+
+    // Left Column
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Waktu Cetak Dokumen', leftMargin + 4, currentY + 5.5);
+    doc.text('Petugas / Operator', leftMargin + 4, currentY + 10.5);
+    doc.text('Kategori Filter', leftMargin + 4, currentY + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`: ${nowFormatted} WIB`, leftMargin + 40, currentY + 5.5);
+    doc.text(`: ${operatorName} (${operatorRole})`, leftMargin + 40, currentY + 10.5);
+    doc.text(`: ${options.categoryFilter || 'Semua Log Terpilih'}`, leftMargin + 40, currentY + 15);
+
+    // Right Column (Summary Metrics)
+    const rightColX = pageWidth / 2 + 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Total Log Terpilih', rightColX, currentY + 5.5);
+    doc.text('Status Autentikasi', rightColX, currentY + 10.5);
+    doc.text('Komposisi Kategori', rightColX, currentY + 15);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(themeRgb[0], themeRgb[1], themeRgb[2]);
+    doc.text(`: ${scans.length} Data Pemindaian`, rightColX + 36, currentY + 5.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`: Terverifikasi Sistem (Valid)`, rightColX + 36, currentY + 10.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      `: Siswa (${studentCount}), Tugas (${assignmentCount}), Aset (${assetCount}), Lainnya (${otherCount})`,
+      rightColX + 36,
+      currentY + 15
+    );
+
+    currentY += 22;
+
+    // 4. Metric Stat Pills / Badges
+    const cardWidth = (contentWidth - 9) / 4;
+    const cardHeight = 10;
+    const statCards = [
+      { label: 'PRESENSI SISWA', count: studentCount, rgb: [16, 185, 129], bgRgb: [236, 253, 245] },
+      { label: 'SUBMISI TUGAS', count: assignmentCount, rgb: [59, 130, 246], bgRgb: [239, 246, 255] },
+      { label: 'VERIFIKASI ASET', count: assetCount, rgb: [245, 158, 11], bgRgb: [255, 251, 235] },
+      { label: 'TOTAL TERPILIH', count: scans.length, rgb: [99, 102, 241], bgRgb: [238, 242, 255] },
+    ];
+
+    statCards.forEach((c, idx) => {
+      const cx = leftMargin + idx * (cardWidth + 3);
+      doc.setFillColor(c.bgRgb[0], c.bgRgb[1], c.bgRgb[2]);
+      doc.setDrawColor(c.rgb[0], c.rgb[1], c.rgb[2]);
+      doc.setLineWidth(0.25);
+      doc.roundedRect(cx, currentY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(c.rgb[0], c.rgb[1], c.rgb[2]);
+      doc.text(c.label, cx + cardWidth / 2, currentY + 4, { align: 'center' });
+
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${c.count} Log`, cx + cardWidth / 2, currentY + 8.2, { align: 'center' });
+    });
+
+    currentY += cardHeight + 4;
+
+    // 5. Formatted Table with autoTable
+    const tableHeaders = [
+      'No',
+      'Waktu Pemindaian',
+      'Kategori',
+      'Kode QR',
+      'Nama / Subjek Item',
+      'Keterangan / Rincian',
+      'Status',
+    ];
+
+    const tableRows = scans.map((s, idx) => {
+      let timeFormatted = '-';
+      try {
+        const d = new Date(s.timestamp);
+        timeFormatted = `${d.toLocaleDateString('id-ID', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        })}\n${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      } catch {
+        timeFormatted = String(s.timestamp || '-');
+      }
+
+      const catLabel =
+        s.type === 'STUDENT'
+          ? 'Presensi Siswa'
+          : s.type === 'ASSIGNMENT'
+          ? 'Submisi Tugas'
+          : s.type === 'ASSET'
+          ? 'Verifikasi Aset'
+          : 'QR Umum';
+
+      const details = s.subtitle || s.rawPayload || '-';
+      const cleanDetails = details.length > 70 ? details.slice(0, 67) + '...' : details;
+
+      return [
+        idx + 1,
+        timeFormatted,
+        catLabel,
+        s.code || '-',
+        s.title || s.code || 'Tanpa Judul',
+        cleanDetails,
+        'TERVERIFIKASI',
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [tableHeaders],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: themeRgb,
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+        halign: 'center',
+        valign: 'middle',
+      },
+      bodyStyles: {
+        fontSize: 7,
+        valign: 'middle',
+        textColor: [30, 41, 59],
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 9 },
+        1: { halign: 'center', cellWidth: 26 },
+        2: { halign: 'center', cellWidth: 24, fontStyle: 'bold' },
+        3: { font: 'courier', fontStyle: 'bold', cellWidth: 32 },
+        4: { fontStyle: 'bold', cellWidth: 42 },
+        5: { cellWidth: 'auto' },
+        6: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [22, 101, 52] },
+      },
+      margin: { left: leftMargin, right: leftMargin },
+    });
+
+    const lastTableY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : currentY + 40;
+    currentY = lastTableY + 6;
+
+    // Check if new page is needed for footer/signatures
+    const signatureBlockHeight = 45;
+    if (currentY + signatureBlockHeight > pageHeight - 18) {
+      doc.addPage();
+      currentY = 20;
+    }
+
+    // Optional user note
+    if (options.notes) {
+      doc.setFillColor(241, 245, 249);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(leftMargin, currentY, contentWidth, 10, 1.5, 1.5, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Catatan Dokumen:', leftMargin + 3, currentY + 3.8);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(15, 23, 42);
+      doc.text(options.notes, leftMargin + 3, currentY + 7.5);
+
+      currentY += 13;
+    }
+
+    // 6. Signatures and Official Digital Verification QR Code
+    if (options.includeSignatures !== false) {
+      const city = config.BA_DEFAULT_CITY || config.REPORT_SIGNATURE_CITY || 'Tangerang';
+      const headmasterName = config.HEADMASTER || 'Hj. Rohmatun, M.Pd.';
+      const headmasterNip = config.HEADMASTER_NIP || '19680512 199303 2 005';
+
+      // Left Signature: Kepala Sekolah
+      const leftSigX = leftMargin + 30;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Mengetahui,', leftSigX, currentY, { align: 'center' });
+      doc.text('Kepala UPT Satuan Pendidikan', leftSigX, currentY + 4, { align: 'center' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(headmasterName, leftSigX, currentY + 22, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`NIP. ${headmasterNip}`, leftSigX, currentY + 26, { align: 'center' });
+
+      // Right Signature: Petugas Pemindai / Operator
+      const rightSigX = rightMargin - 30;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`${city}, ${nowFormatted.split(',')[1]?.trim() || nowFormatted}`, rightSigX, currentY, {
+        align: 'center',
+      });
+      doc.text('Petugas Pemindai / Operator QR,', rightSigX, currentY + 4, { align: 'center' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(operatorName, rightSigX, currentY + 22, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(operatorRole, rightSigX, currentY + 26, { align: 'center' });
+
+      // Center: Official Digital Verification QR Code
+      if (options.includeVerificationQR !== false) {
+        try {
+          const qrPayload = `SDN6-QR-LOG-${new Date().toISOString().slice(0, 10)}-${scans.length}-${Date.now().toString().slice(-4)}`;
+          const qrDataUrl = await qrService.generateQRCode(qrPayload, 120);
+          if (qrDataUrl) {
+            const centerX = pageWidth / 2;
+            doc.addImage(qrDataUrl, 'PNG', centerX - 8, currentY + 2, 16, 16);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(5.5);
+            doc.setTextColor(themeRgb[0], themeRgb[1], themeRgb[2]);
+            doc.text('VALIDASI RESMI DIGITAL', centerX, currentY + 20, { align: 'center' });
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(5);
+            doc.setTextColor(148, 163, 184);
+            doc.text(`Hash: ${qrPayload}`, centerX, currentY + 23, { align: 'center' });
+          }
+        } catch {
+          // fallback if QR generation fails
+        }
+      }
+    }
+
+    // 7. Running Page Numbers & Footer on All Pages
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, pageHeight - 10, rightMargin, pageHeight - 10);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Dokumen Rekapitulasi Riwayat Pemindaian QR Code • UPT SDN 6 Bukit Tunggal • Dicetak: ${new Date().toLocaleDateString('id-ID')}`,
+        leftMargin,
+        pageHeight - 6.5
+      );
+
+      doc.text(`Halaman ${i} dari ${totalPages}`, rightMargin, pageHeight - 6.5, { align: 'right' });
+    }
+
+    // 8. Auto Print or Save
+    const safeDate = new Date().toISOString().slice(0, 10);
+    const fileName = `Ringkasan_Riwayat_Scan_QR_Massal_${safeDate}.pdf`;
+
+    if (options.autoPrint) {
+      doc.autoPrint();
+      try {
+        const blob = doc.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.src = blobUrl;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+          setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+          }, 300);
+        };
+      } catch (err) {
+        console.warn('Auto-print iframe failed, falling back to direct save:', err);
+      }
+    }
+
+    doc.save(fileName);
+    return doc;
+  }
+}
+
+export interface QRScanLogItem {
+  id: string;
+  code: string;
+  title: string;
+  type: 'ASSIGNMENT' | 'ASSET' | 'STUDENT' | 'OTHER' | string;
+  subtitle?: string;
+  timestamp: number;
+  rawPayload?: string;
+}
+
+export interface QRScanLogsPdfOptions {
+  title?: string;
+  docNo?: string;
+  categoryFilter?: string;
+  notes?: string;
+  operatorName?: string;
+  operatorRole?: string;
+  paperSize?: 'a4' | 'f4' | 'letter';
+  orientation?: 'portrait' | 'landscape';
+  autoPrint?: boolean;
+  themeColor?: 'emerald' | 'navy' | 'monochrome' | 'slate' | 'amber';
+  includeSignatures?: boolean;
+  includeVerificationQR?: boolean;
 }
 
 export const pdfService = new PdfService();

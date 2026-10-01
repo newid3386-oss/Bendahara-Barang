@@ -3,7 +3,8 @@
   "description": "Sistem Informasi Manajemen Sekolah, Kelas, Inventaris Aset, dan Pembelajaran UPT SD Negeri Tangerang 6 (NPSN: 20606498).",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "geolocation"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

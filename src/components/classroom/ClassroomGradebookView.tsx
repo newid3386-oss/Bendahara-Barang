@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Award, FileText, Printer, Download, Search, CheckCircle2, ChevronRight, User,
-  Sparkles, School, GraduationCap, X, TrendingUp, BarChart2, BookOpen, Layers, Sliders
+  Sparkles, School, GraduationCap, X, TrendingUp, BarChart2, BookOpen, Layers, Sliders,
+  FolderArchive, RefreshCw
 } from 'lucide-react';
 import { ClassroomGradeWeightingModal } from './ClassroomGradeWeightingModal';
 import {
@@ -21,6 +22,7 @@ import { Account } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
 import { pdfService } from '../../services/pdfService';
+import { SecureMaskedField } from '../common/SecureMaskedField';
 
 interface ClassroomGradebookViewProps {
   account: Account;
@@ -32,11 +34,18 @@ export const ClassroomGradebookView: React.FC<ClassroomGradebookViewProps> = ({ 
   const isSiswa = account.ROLE === 'SISWA';
   const isKepsek = account.ROLE === 'KEPALA SEKOLAH';
 
-  const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 1');
+  const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 1A');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewRaporStudent, setPreviewRaporStudent] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'TABLE' | 'CHART' | 'KEPSEK_COMPARISON' | 'HEATMAP' | 'AI_INSIGHTS'>('CHART');
   const [showWeightingModal, setShowWeightingModal] = useState<boolean>(false);
+  const [isExportingZip, setIsExportingZip] = useState(false);
+  const [exportZipProgress, setExportZipProgress] = useState<{
+    current: number;
+    total: number;
+    studentName: string;
+    studentNis: string;
+  } | null>(null);
 
   // AI Insights and Trends states
   const [selectedInsightStudentId, setSelectedInsightStudentId] = useState<string>('');
@@ -51,6 +60,41 @@ export const ClassroomGradebookView: React.FC<ClassroomGradebookViewProps> = ({ 
   const [remedialScore, setRemedialScore] = useState(65);
   const [generatedWorksheet, setGeneratedWorksheet] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleExportClassReportsZip = async () => {
+    const targetClass = isSiswa || isGuru ? account.KELAS || 'Kelas 1A' : selectedKelas;
+    const students = accountService.getStudents(targetClass);
+    if (students.length === 0) return;
+
+    setIsExportingZip(true);
+    try {
+      const guruNama = isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.';
+      const guruNip = isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003';
+
+      const zipBlob = await pdfService.exportClassReportsToZip(
+        students,
+        targetClass,
+        guruNama,
+        guruNip,
+        'Liestya Kusuma Sari, S.Pd., M.Pd.',
+        '19740520 199803 2 004',
+        (current, total, studentName, studentNis) => {
+          setExportZipProgress({ current, total, studentName, studentNis });
+        }
+      );
+
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `E-Rapor_${targetClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.zip`;
+      link.click();
+    } catch (err) {
+      console.error('Gagal mengekspor E-Rapor ZIP:', err);
+    } finally {
+      setIsExportingZip(false);
+      setExportZipProgress(null);
+    }
+  };
 
   const handleAnalyzeTrends = async (studentId: string, studentName: string, studentClass: string) => {
     setIsAnalyzing(true);
@@ -388,10 +432,28 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
               </button>
 
               <button
+                onClick={handleExportClassReportsZip}
+                disabled={isExportingZip}
+                title="Ekspor seluruh E-Rapor PDF siswa kelas ini ke dalam satu file ZIP dengan penamaan otomatis berdasarkan NIS"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-60"
+              >
+                {isExportingZip ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <FolderArchive size={14} />
+                )}
+                <span>
+                  {isExportingZip
+                    ? `Mengekspor ZIP (${exportZipProgress?.current || 0}/${exportZipProgress?.total || 0})...`
+                    : 'Ekspor E-Rapor Kelas (ZIP)'}
+                </span>
+              </button>
+
+              <button
                 onClick={() =>
                   pdfService.generateClassGradebookSummaryPdf(
                     filteredReports,
-                    isSiswa || isGuru ? account.KELAS || 'Kelas 1' : selectedKelas,
+                    isSiswa || isGuru ? account.KELAS || 'Kelas 1A' : selectedKelas,
                     account.NAMA
                   )
                 }
@@ -448,7 +510,7 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
                 }}
                 className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500"
               >
-                {STANDARD_CLASSES.map((k) => (
+                {accountService.getAvailableClasses().map((k) => (
                   <option key={k} value={k}>
                     {k}
                   </option>
@@ -1316,9 +1378,16 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
                     <span className="w-32 text-slate-500 font-medium">Nama Peserta Didik</span>
                     <span className="font-bold text-slate-900">: {previewRaporStudent.siswaNama}</span>
                   </div>
-                  <div className="flex">
-                    <span className="w-32 text-slate-500 font-medium">NISN / Nomor Induk</span>
-                    <span className="font-mono text-slate-700">: {previewRaporStudent.siswaId}</span>
+                  <div className="flex items-center">
+                    <span className="w-32 text-slate-500 font-medium shrink-0">NISN / Nomor Induk:</span>
+                    <SecureMaskedField
+                      value={previewRaporStudent.siswaId}
+                      type="nis"
+                      fieldId={`rapor-nis-${previewRaporStudent.siswaId}`}
+                      label="NISN Siswa"
+                      monospace
+                      showDlpBadge
+                    />
                   </div>
                   <div className="flex">
                     <span className="w-32 text-slate-500 font-medium">Sekolah</span>
@@ -1558,6 +1627,47 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
                 Tutup
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export All E-Rapor ZIP Progress Modal */}
+      {isExportingZip && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-3xl p-6 shadow-2xl border border-slate-100 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto shadow-inner">
+              <RefreshCw size={28} className="animate-spin" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-base font-black text-slate-900">
+                Mengekspor E-Rapor Seluruh Siswa ke ZIP
+              </h4>
+              <p className="text-xs text-slate-500">
+                Memproses dokumen PDF resmi untuk setiap siswa dengan penamaan otomatis berdasarkan NIS...
+              </p>
+            </div>
+            {exportZipProgress && (
+              <div className="space-y-3 bg-purple-50/60 p-3.5 rounded-2xl border border-purple-100 text-left">
+                <div className="flex items-center justify-between text-xs font-bold text-purple-900">
+                  <span>Progres: {exportZipProgress.current} / {exportZipProgress.total} Siswa</span>
+                  <span>{Math.round((exportZipProgress.current / exportZipProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-purple-200 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full transition-all duration-200"
+                    style={{
+                      width: `${Math.round((exportZipProgress.current / exportZipProgress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-[11px] text-purple-700 truncate font-medium">
+                  📄 Sedang memproses: <strong className="font-bold">{exportZipProgress.studentName}</strong> (NIS: {exportZipProgress.studentNis})
+                </div>
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400">
+              File ZIP akan otomatis terunduh begitu proses kompilasi PDF selesai.
+            </p>
           </div>
         </div>
       )}

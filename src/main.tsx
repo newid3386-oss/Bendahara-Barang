@@ -14,3 +14,17 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>,
 );
+
+// Register PWA Service Worker for offline capabilities
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(
+      (reg) => {
+        console.info('[PWA] Service Worker active:', reg.scope);
+      },
+      (err) => {
+        console.info('[PWA] Service Worker registration notice:', err?.message || err);
+      }
+    );
+  });
+}

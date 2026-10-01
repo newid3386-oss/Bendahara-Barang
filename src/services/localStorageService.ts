@@ -2561,6 +2561,61 @@ class LocalStorageService {
     this.setItem(STORAGE_KEYS.PUBLIC_MEDIA_ITEMS, items);
     this.logAudit('DELETE', 'PUBLIC_MEDIA', id, { deletedId: id });
   }
+
+  // --- Storage Performance & Health Utilities ---
+  public getStorageUsageBreakdown(): { key: string; sizeKB: number }[] {
+    const breakdown: { key: string; sizeKB: number }[] = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) {
+          const val = localStorage.getItem(k) || '';
+          const sizeKB = Math.round((val.length * 2) / 1024 * 10) / 10;
+          breakdown.push({ key: k, sizeKB });
+        }
+      }
+      breakdown.sort((a, b) => b.sizeKB - a.sizeKB);
+    } catch (e) {
+      console.error('Error calculating storage usage:', e);
+    }
+    return breakdown;
+  }
+
+  public cleanExpiredScanLogs(maxDays: number = 30): number {
+    let removedCount = 0;
+    try {
+      const keys = ['sdn6_qr_recent_scans_v1', 'sdn6_fab_recent_scans_v1'];
+      const cutoff = Date.now() - maxDays * 24 * 60 * 60 * 1000;
+
+      keys.forEach((key) => {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const scans: any[] = JSON.parse(raw);
+          if (Array.isArray(scans)) {
+            const filtered = scans.filter((s) => s.timestamp && s.timestamp >= cutoff);
+            removedCount += scans.length - filtered.length;
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Error cleaning expired scan logs:', e);
+    }
+    return removedCount;
+  }
+
+  public optimizeStorage(): { freedKB: number; cleanedLogs: number } {
+    const beforeBreakdown = this.getStorageUsageBreakdown();
+    const totalBefore = beforeBreakdown.reduce((sum, item) => sum + item.sizeKB, 0);
+
+    const cleanedLogs = this.cleanExpiredScanLogs(30);
+
+    const afterBreakdown = this.getStorageUsageBreakdown();
+    const totalAfter = afterBreakdown.reduce((sum, item) => sum + item.sizeKB, 0);
+
+    const freedKB = Math.max(0, Math.round((totalBefore - totalAfter) * 10) / 10);
+    return { freedKB, cleanedLogs };
+  }
 }
 
 export const db = new LocalStorageService();

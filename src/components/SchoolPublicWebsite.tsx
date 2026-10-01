@@ -37,6 +37,7 @@ import {
   Image as ImageIcon,
   Filter,
   Camera,
+  ArrowUp,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { User, Asset, Item } from '../types';
@@ -71,6 +72,20 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
   const publicMediaItems = db.getPublicMediaItems();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(initialLoginOpen);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Monitor scroll for back-to-top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 350);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Public QR Verification Search
   const [verificationInput, setVerificationInput] = useState('');
@@ -1323,11 +1338,22 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
         </div>
       </footer>
 
-      {/* Floating AI Information Chatbot Button */}
-      <div className="fixed bottom-6 right-6 z-40">
+      {/* Floating Action Controls: Back to Top & AI Information Chatbot */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+        {showScrollTop && (
+          <button
+            onClick={scrollToTop}
+            className="p-3 bg-white/95 hover:bg-white text-slate-700 hover:text-blue-600 rounded-full shadow-lg border border-slate-200 hover:border-blue-300 hover:scale-110 transition-all active:scale-95 cursor-pointer backdrop-blur-xs"
+            title="Kembali ke Atas Halaman"
+            aria-label="Kembali ke atas"
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
+
         <button
           onClick={() => setIsAIModalOpen(true)}
-          className="group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 text-white rounded-full shadow-2xl hover:shadow-blue-900/40 border border-blue-400/40 hover:scale-105 transition-all active:scale-95"
+          className="group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 text-white rounded-full shadow-2xl hover:shadow-blue-900/40 border border-blue-400/40 hover:scale-105 transition-all active:scale-95 cursor-pointer"
           title="Tanya Asisten AI Informasi Sekolah"
         >
           <div className="relative">

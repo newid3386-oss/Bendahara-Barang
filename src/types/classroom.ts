@@ -2,7 +2,7 @@
 
 export type SystemType = 'SIPERSEDA' | 'CLASSROOM' | 'ADMIN';
 
-export type AccountRole = 'ADMIN' | 'OPERATOR' | 'KEPALA SEKOLAH' | 'GURU' | 'SISWA';
+export type AccountRole = 'ADMIN' | 'OPERATOR' | 'KEPALA SEKOLAH' | 'GURU' | 'SISWA' | 'STAFF' | 'STAFF TU';
 
 export type StatusKelulusan = 'AKTIF' | 'LULUS' | 'TINGGAL_KELAS' | 'PINDAH_MUTASI' | 'PINDAH' | 'DROPOUT';
 export type KebutuhanKhusus =

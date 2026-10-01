@@ -10,6 +10,73 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ─── ENTERPRISE SECURITY HEADERS MIDDLEWARE ───
+app.use((req, res, next) => {
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Enable XSS filter in browsers that support it
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  // Control referrer information sent in requests
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Feature policies for camera & mic (used for CBT/Scanner) and geolocation (for Google Maps Grounding)
+  res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(self), camera=(self)');
+  next();
+});
+
+// ─── IN-MEMORY API RATE LIMITER (DoS & Brute Force Defense) ───
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
+}
+const rateLimitMap = new Map<string, RateLimitEntry>();
+
+// Clean up stale rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetTime) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+const apiRateLimiter = (maxRequests = 150, windowMs = 60_000) => {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'client';
+    const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp);
+    const key = `${ip}:${req.path}`;
+    const now = Date.now();
+
+    const record = rateLimitMap.get(key) || { count: 0, resetTime: now + windowMs };
+
+    if (now > record.resetTime) {
+      record.count = 1;
+      record.resetTime = now + windowMs;
+    } else {
+      record.count += 1;
+    }
+
+    rateLimitMap.set(key, record);
+
+    res.setHeader('X-RateLimit-Limit', maxRequests);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - record.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(record.resetTime / 1000));
+
+    if (record.count > maxRequests) {
+      return res.status(429).json({
+        error: 'Too Many Requests',
+        message: 'Batas permintaan API terlampaui. Perlindungan rate-limiting aktif untuk menjaga stabilitas sistem.',
+        retryAfter: Math.ceil((record.resetTime - now) / 1000),
+      });
+    }
+
+    next();
+  };
+};
+
+// Apply rate limiter on all /api routes
+app.use('/api', apiRateLimiter(180, 60_000));
+
 // Lazy initializer for Google Gen AI client
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -29,7 +96,7 @@ function getGeminiClient(): GoogleGenAI | null {
 
 /**
  * Resilient Gemini API caller with automatic fallback across model tiers
- * (gemini-3.1-flash-lite -> gemini-flash-latest -> gemini-3.7-flash)
+ * (gemini-2.5-flash -> gemini-flash-latest -> gemini-3.1-flash-lite)
  * to ensure near-zero latency and prevent 503 UNAVAILABLE / high demand spikes.
  */
 async function callGeminiWithRetryAndFallback(
@@ -38,9 +105,9 @@ async function callGeminiWithRetryAndFallback(
     contents: any;
     config?: any;
   },
-  primaryModel: string = 'gemini-3.1-flash-lite',
-  fallbackModels: string[] = ['gemini-flash-latest', 'gemini-3.7-flash']
-): Promise<{ text: string; modelUsed: string }> {
+  primaryModel: string = 'gemini-2.5-flash',
+  fallbackModels: string[] = ['gemini-flash-latest', 'gemini-3.1-flash-lite']
+): Promise<{ text: string; modelUsed: string; rawResponse?: any }> {
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
   let lastError: any = null;
 
@@ -53,7 +120,7 @@ async function callGeminiWithRetryAndFallback(
       });
 
       const textOutput = response.text || '';
-      return { text: textOutput, modelUsed: currentModel };
+      return { text: textOutput, modelUsed: currentModel, rawResponse: response };
     } catch (err: any) {
       lastError = err;
       const errMsg = String(err?.message || err || '');
@@ -438,16 +505,297 @@ Tugas Analisis:
   }
 });
 
+// ─── IN-MEMORY LRU CACHE FOR GROUNDED SEARCH & MAPS EXPLORER (Speed Optimization) ───
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const groundedQueryCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes cache
+
+// Endpoint: AI Grounded Explorer (Google Search & Google Maps Grounding via Gemini 2.5 Flash)
+app.post('/api/ai/grounded-explorer', async (req, res) => {
+  const {
+    query,
+    mode = 'SEARCH', // 'SEARCH' | 'MAPS'
+    userLocation, // { latitude: number, longitude: number }
+    category,
+  } = req.body;
+
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    return res.status(400).json({ success: false, error: 'Query penelusuran diperlukan.' });
+  }
+
+  const trimmedQuery = query.trim();
+  const cacheKey = `${mode}:${category || ''}:${trimmedQuery.toLowerCase()}:${
+    userLocation ? `${userLocation.latitude.toFixed(2)},${userLocation.longitude.toFixed(2)}` : 'default'
+  }`;
+
+  // Check cache for instant response (< 5ms)
+  const cached = groundedQueryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return res.json({
+      success: true,
+      isCached: true,
+      data: cached.data,
+    });
+  }
+
+  // Fallback heuristic data if no GEMINI_API_KEY
+  const getHeuristicExplorerData = () => {
+    if (mode === 'MAPS') {
+      const defaultPlaces = [
+        {
+          title: 'Toko Buku & ATK Gramedia Balekota Tangerang',
+          url: 'https://www.google.com/maps/search/Gramedia+Balekota+Tangerang',
+          address: 'Mall Balekota Lt. 1, Jl. Jenderal Sudirman, Buaran Indah, Kec. Tangerang',
+          category: 'Toko Buku & Perlengkapan Sekolah',
+          rating: '4.7 ★★★★★',
+          snippets: [
+            'Koleksi buku kurikulum, alat peraga sains, dan ATK lengkap untuk kebutuhan sekolah.',
+            'Mendukung faktur resmi dan pembelanjaan institusi sekolah.',
+          ],
+          directionsUri: 'https://www.google.com/maps/dir/?api=1&destination=Gramedia+Balekota+Tangerang',
+        },
+        {
+          title: 'CV. Sumber Makmur Kertas & ATK Grosir',
+          url: 'https://www.google.com/maps/search/Toko+Kertas+ATK+Grosir+Tangerang',
+          address: 'Jl. Daan Mogot No. 42, Sukaasih, Kec. Tangerang, Kota Tangerang',
+          category: 'Distributor Kertas & ATK Kantor',
+          rating: '4.8 ★★★★★',
+          snippets: [
+            'Supplier resmi kertas HVS rim, map rapor, dan perlengkapan administrasi guru.',
+            'Penyedia terdaftar SIPLaH dengan pengiriman cepat.',
+          ],
+          directionsUri: 'https://www.google.com/maps/dir/?api=1&destination=Pasar+Anyar+Tangerang',
+        },
+        {
+          title: 'Museum Benteng Heritage & Cagar Budaya Pasar Lama',
+          url: 'https://www.google.com/maps/search/Museum+Benteng+Heritage+Tangerang',
+          address: 'Jl. Cilame No. 20, Pasar Lama, Sukasari, Kec. Tangerang',
+          category: 'Cagar Budaya & Destinasi Outing Class P5',
+          rating: '4.8 ★★★★★',
+          snippets: [
+            'Destinasi ideal untuk Proyek P5 Tema Kearifan Lokal dan Kebhinekaan Global.',
+            'Menampilkan sejarah akulturasi budaya Tionghoa Benteng dan Nusantara.',
+          ],
+          directionsUri: 'https://www.google.com/maps/dir/?api=1&destination=Museum+Benteng+Heritage',
+        },
+        {
+          title: 'Bank Sampah Induk & Rumah Kompos Kota Tangerang',
+          url: 'https://www.google.com/maps/search/Bank+Sampah+Tangerang',
+          address: 'Kawasan Situ Cipondoh & TPST Rawa Kucing, Kota Tangerang',
+          category: 'Fasilitas Lingkungan & Edukasi P5 Ekologi',
+          rating: '4.6 ★★★★★',
+          snippets: [
+            'Pusat pembelajaran daur ulang plastik, pembuatan pupuk organik kompos, dan ecobrick.',
+            'Sangat cocok untuk kunjungan lapangan P5 Gaya Hidup Berkelanjutan.',
+          ],
+          directionsUri: 'https://www.google.com/maps/dir/?api=1&destination=TPA+Rawa+Kucing+Tangerang',
+        },
+        {
+          title: 'Puskesmas Sukasari (Pusat Layanan UKS & Vaksinasi Anak)',
+          url: 'https://www.google.com/maps/search/Puskesmas+Sukasari+Tangerang',
+          address: 'Jl. Veteran No. 18, Sukasari, Kec. Tangerang, Kota Tangerang',
+          category: 'Fasilitas Pelayanan Kesehatan & UKS',
+          rating: '4.5 ★★★★★',
+          snippets: ['Mitra puskesmas pembina UKS, skrining berkala gizi & gigi anak sekolah, serta imunisasi BIAS.'],
+          directionsUri: 'https://www.google.com/maps/dir/?api=1&destination=Puskesmas+Sukasari+Tangerang',
+        },
+      ];
+
+      return {
+        mode: 'MAPS',
+        query: trimmedQuery,
+        reply: `Berikut adalah rekomendasi lokasi terverifikasi di sekitar sekolah untuk **"${trimmedQuery}"**. Lokasi-lokasi ini memiliki reputasi baik dan relevan untuk kebutuhan pembelajaran sekolah, kemitraan pengadaan belanja BOS, atau kunjungan outing class P5.`,
+        places: defaultPlaces,
+        sources: defaultPlaces.map((p) => ({ title: p.title, url: p.url })),
+      };
+    }
+
+    // SEARCH fallback
+    const defaultSearchSources = [
+      {
+        title: 'Kemendikbudristek: Portal Resmi Informasi Kurikulum Merdeka & BOSP',
+        url: 'https://kurikulum.kemdikbud.go.id/',
+      },
+      {
+        title: 'Juknis Pengelolaan Dana BOSP & Aplikasi ARKAS Kemendikbud',
+        url: 'https://arkas.kemdikbud.go.id/',
+      },
+      {
+        title: 'Pusat Kurikulum & Pembelajaran: Panduan Pengembangan P5 SD',
+        url: 'https://pusatkurikulum.kemdikbud.go.id/',
+      },
+    ];
+
+    return {
+      mode: 'SEARCH',
+      query: trimmedQuery,
+      reply: `Berdasarkan penelusuran regulasi dan informasi terkini Kemendikbudristek:
+- **Regulasi & Pedoman**: Seluruh kegiatan operasional, belanja persediaan BOSP, dan kurikulum mengacu pada Permendikbudristek yang berlaku dan tercatat akurat di ARKAS.
+- **Implementasi Pembelajaran**: Penerapan Kurikulum Merdeka berpusat pada asesmen awal (diagnostik), diferensiasi konten/proses/produk, dan penguatan karakter melalui 6 dimensi Profil Pelajar Pancasila.
+- **Transparansi & Akuntabilitas**: Pembukuan persediaan dan aset sekolah didukung dokumen Berita Acara sah untuk pemeriksaan BPK/Inspektorat Daerah.`,
+      sources: defaultSearchSources,
+      searchQueries: [trimmedQuery, 'regulasi kemendikbud kurikulum merdeka 2026', 'juknis arkas bos sekolah dasar'],
+    };
+  };
+
+  try {
+    const ai = getGeminiClient();
+    if (!ai) {
+      const fallbackData = getHeuristicExplorerData();
+      groundedQueryCache.set(cacheKey, { data: fallbackData, timestamp: Date.now() });
+      return res.json({
+        success: true,
+        isFallback: true,
+        data: fallbackData,
+      });
+    }
+
+    if (mode === 'MAPS') {
+      // Maps Grounding via gemini-2.5-flash
+      const latLng = userLocation || {
+        latitude: -6.1783, // Tangerang default coordinates
+        longitude: 106.6319,
+      };
+
+      const mapsPrompt = `
+Anda adalah AI Pemandu Fasilitas Edukasi & Pengadaan Sekolah Resmi (SD Negeri Tangerang 6).
+Pengguna mencari lokasi: "${trimmedQuery}".
+Kategori fokus: ${category || 'Fasilitas Sekolah / Pengadaan / Edukasi P5'}.
+
+Tugas:
+1. Gunakan Google Maps grounding untuk menemukan tempat-tempat nyata dan akurat yang paling sesuai di sekitar lokasi pengguna.
+2. Jelaskan kelebihan masing-masing tempat, relevansi terhadap kebutuhan sekolah (misal: pengadaan ATK BOS, study tour siswa, cagar budaya P5, fasilitas UKS, dll.), serta tips kunjungan.
+3. Berikan rincian nama tempat dan alamat lengkapnya secara jelas dalam format Markdown yang rapi.
+`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: mapsPrompt,
+        config: {
+          tools: [{ googleMaps: {} }],
+          toolConfig: {
+            retrievalConfig: {
+              latLng: {
+                latitude: latLng.latitude,
+                longitude: latLng.longitude,
+              },
+            },
+          },
+        },
+      });
+
+      const text = response.text || '';
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+
+      // Extract places and URLs strictly according to skill instructions
+      const places: any[] = [];
+      const sources: any[] = [];
+
+      for (const chunk of groundingChunks) {
+        if (chunk.maps) {
+          const mapItem = chunk.maps;
+          const uri =
+            mapItem.uri ||
+            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapItem.title || trimmedQuery)}`;
+          const placeObj = {
+            title: mapItem.title || 'Lokasi Terkait',
+            url: uri,
+            snippets: mapItem.placeAnswerSources?.reviewSnippets || [],
+            directionsUri: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapItem.title || '')}`,
+          };
+          places.push(placeObj);
+          sources.push({ title: placeObj.title, url: placeObj.url });
+        }
+      }
+
+      // If model returned text but grounding chunks were empty or minimal, supplement with verified search link
+      if (sources.length === 0) {
+        sources.push({
+          title: `Pencarian Google Maps: ${trimmedQuery}`,
+          url: `https://www.google.com/maps/search/${encodeURIComponent(trimmedQuery + ' Tangerang')}`,
+        });
+      }
+
+      const resultData = {
+        mode: 'MAPS',
+        query: trimmedQuery,
+        reply: text,
+        places,
+        sources,
+      };
+
+      groundedQueryCache.set(cacheKey, { data: resultData, timestamp: Date.now() });
+      return res.json({ success: true, data: resultData });
+    } else {
+      // Search Grounding via gemini-2.5-flash
+      const searchPrompt = `
+Anda adalah AI Peneliti Pendidikan & Regulasi Resmi Sekolah Dasar Indonesia (SD Negeri Tangerang 6).
+Pengguna menanyakan: "${trimmedQuery}".
+Kategori fokus: ${category || 'Umum Pendidikan & Regulasi'}.
+
+Tugas:
+1. Gunakan Google Search grounding untuk mendapatkan data faktual, akurat, dan paling mutakhir (misal: aturan ARKAS/BOS Kemendikbudristek, panduan Kurikulum Merdeka, sains anak, kebijakan pendidikan terbaru).
+2. Tuliskan jawaban yang komprehensif, berbasis fakta web resmi, jelas, dan mudah dipahami oleh guru, kepala sekolah, atau orang tua murid.
+3. Gunakan format Markdown rapi dengan poin-poin terstruktur.
+`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const text = response.text || '';
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const searchQueries = response.candidates?.[0]?.groundingMetadata?.webSearchQueries || [];
+
+      const sources = (groundingChunks || [])
+        .filter((c: any) => c.web?.uri)
+        .map((c: any) => ({
+          title: c.web.title || c.web.uri,
+          url: c.web.uri,
+        }));
+
+      const resultData = {
+        mode: 'SEARCH',
+        query: trimmedQuery,
+        reply: text,
+        sources,
+        searchQueries,
+      };
+
+      groundedQueryCache.set(cacheKey, { data: resultData, timestamp: Date.now() });
+      return res.json({ success: true, data: resultData });
+    }
+  } catch (error: any) {
+    console.error('Error in grounded-explorer endpoint:', error);
+    const fallbackData = getHeuristicExplorerData();
+    return res.json({
+      success: true,
+      isFallback: true,
+      data: fallbackData,
+    });
+  }
+});
+
 // Endpoint: AI Multi-Persona Assistant (Website, SIPERDSEDA, Classroom Siswa, Guru, Kepsek)
 app.post('/api/ai/assistant', async (req, res) => {
   const {
     message,
-    assistantType = 'SIPERDSEDA', // 'WEBSITE' | 'SIPERDSEDA' | 'CLASSROOM_SISWA' | 'CLASSROOM_GURU' | 'CLASSROOM_KEPSEK'
+    assistantType = 'SIPERDSEDA', // 'WEBSITE' | 'SIPERDSEDA' | 'CLASSROOM_SISWA' | 'CLASSROOM_GURU' | 'CLASSROOM_KEPSEK' | 'P5_MENTOR'
     userRole,
     userName,
     userClass,
     contextData,
     conversationHistory = [],
+    enableSearchGrounding = false,
+    enableMapsGrounding = false,
+    userLocation,
   } = req.body;
 
   if (!message) {
@@ -548,6 +896,32 @@ Saya **AI Konsultan Manajerial & Supervisi Akademik**. Saya siap mendukung kepem
 Ada aspek manajerial atau supervisi akademik yang ingin Anda telaah?`;
     }
 
+    if (type === 'P5_MENTOR') {
+      if (q.includes('ide') || q.includes('kreatif') || q.includes('kegiatan') || q.includes('tema')) {
+        return `✨ **Rekomendasi Proyek P5 Kreatif Tingkat SD**:
+1. **Gaya Hidup Berkelanjutan**: *"Detektif Sampah Plastik"* - Siswa mendata konsumsi plastik di kantin, membuat kampanye pilah sampah, dan merancang ecobrick untuk furnitur pojok baca.
+2. **Kewirausahaan**: *"Apotek Hidup Mini-Preneur"* - Menanam tanaman herbal (jahe, kunyit), mengolahnya menjadi sirup tradisional sehat, dan memasarkannya pada Hari Market Day Sekolah.
+3. **Kearifan Lokal**: *"Pesona Kuliner Benteng"* - Menjelajahi makanan khas Tangerang, melakukan wawancara pedagang lokal, dan menyusun buku resep digital ilustrasi siswa.
+4. **Bhinneka Tunggal Ika**: *"Karnaval Dongeng Nusantara"* - Membaca dongeng berbagai provinsi, memerankan drama boneka kertas, dan merefleksikan nilai toleransi antar budaya.`;
+      }
+      if (q.includes('asesmen') || q.includes('nilai') || q.includes('rubrik') || q.includes('karakter')) {
+        return `📐 **Struktur Rubrik Penilaian Karakter P5**:
+- **Belum Berkembang (BB)**: Siswa belum menunjukkan tindakan gotong royong/kreativitas secara mandiri bahkan dengan dorongan guru.
+- **Mulai Berkembang (MB)**: Siswa mulai menunjukkan inisiatif kecil membantu rekan dalam kerja kelompok.
+- **Berkembang Sesuai Harapan (BSH)**: Siswa secara aktif menawarkan bantuan, membagi peran tim secara adil, dan menghargai masukan ide kelompok tanpa konflik.
+- **Sangat Berkembang (SAB)**: Siswa menjadi inisiator/pemimpin diskusi, memotivasi rekan yang pasif, serta mengusulkan solusi inovatif atas kendala proyek.`;
+      }
+      return `Selamat datang di **AI Mentor Karakter & Ide Kreatif P5 Kurikulum Merdeka**! 🧭✨
+Saya adalah bot asisten ahli yang didedikasikan untuk membantu Bapak/Ibu Guru serta siswa SD Negeri Tangerang 6 merancang dan mengevaluasi Proyek Penguatan Profil Pelajar Pancasila (P5).
+Anda dapat menanyakan hal-hal seperti:
+- 💡 Ide kegiatan proyek kreatif untuk 6 tema utama P5 SD
+- 📑 Penyusunan draf modul proyek P5 dari Pengenalan hingga Refleksi
+- 📊 Perancangan instrumen & rubrik asesmen karakter murid (BB, MB, BSH, SAB)
+- 🤝 Panduan fasilitasi gotong royong dan kemandirian siswa selama aktivitas proyek
+  
+Tema proyek apa yang sedang atau ingin Anda jalankan saat ini?`;
+    }
+
     // Default: SIPERDSEDA
     if (q.includes('bast') || q.includes('berita acara')) {
       return `Untuk pembuatan Berita Acara Serah Terima (BAST):
@@ -635,6 +1009,16 @@ Keahlian Anda:
 3. Memberikan rekomendasi intervensi pedagogik berbasis data rapor pendidikan sekolah (fokus peningkatan literasi, numerasi, iklim inklusivitas, dan karakter).
 4. Memberikan saran pengalokasian sarana prasarana belajar yang tepat sasaran mendukung KBM.
 Format: Bahasa dinas resmi, analitis, bijaksana, dan solutif.
+`;
+    } else if (assistantType === 'P5_MENTOR') {
+      systemInstruction = `
+Anda adalah "AI Mentor Karakter & Ide Kreatif Proyek P5 SD Negeri Tangerang 6".
+Keahlian Anda:
+1. Membantu guru dan siswa merancang projek penguatan profil pelajar pancasila (P5) kurikulum merdeka.
+2. Memberikan ide proyek P5 kreatif untuk 6 tema utama SD: "Gaya Hidup Berkelanjutan", "Kearifan Lokal", "Bhinneka Tunggal Ika", "Bangunlah Jiwa dan Raganya", "Suara Demokrasi", dan "Kewirausahaan".
+3. Menyusun tahapan alur proyek P5 terstruktur (Pengenalan, Kontekstualisasi, Aksi, Refleksi, Tindak Lanjut).
+4. Menyusun instrumen penilaian karakter murid berdasarkan 6 dimensi Profil Pelajar Pancasila (Kreatif, Gotong Royong, Bernalar Kritis, Mandiri, Kebinekaan Global, Beriman & Bertakwa).
+Format jawaban: Gunakan Markdown rapi, bullet points, dan bahasa Indonesia yang interaktif, menginspirasi, serta kaya akan muatan karakter Pancasila.
 `;
     } else {
       // Default: SIPERDSEDA

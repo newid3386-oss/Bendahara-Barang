@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Account, VirtualLiveClassSession } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
+import { STANDARD_CLASSES } from '../../services/accountService';
 
 interface ClassroomLiveClassViewProps {
   account: Account;
@@ -23,7 +24,7 @@ interface ClassroomLiveClassViewProps {
 
 export const ClassroomLiveClassView: React.FC<ClassroomLiveClassViewProps> = ({ account }) => {
   const isGuruOrAdmin = account.ROLE === 'GURU' || account.ROLE === 'ADMIN' || account.ROLE === 'OPERATOR';
-  const userKelas = account.KELAS || 'Kelas 1';
+  const userKelas = account.KELAS || 'Kelas 1A';
 
   const [sessions, setSessions] = useState<VirtualLiveClassSession[]>([]);
   const [filterKelas, setFilterKelas] = useState<string>(isGuruOrAdmin ? userKelas : userKelas);
@@ -151,12 +152,9 @@ export const ClassroomLiveClassView: React.FC<ClassroomLiveClassViewProps> = ({ 
               className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="Semua">Semua Kelas</option>
-              <option value="Kelas 1">Kelas 1</option>
-              <option value="Kelas 2">Kelas 2</option>
-              <option value="Kelas 3">Kelas 3</option>
-              <option value="Kelas 4">Kelas 4</option>
-              <option value="Kelas 5">Kelas 5</option>
-              <option value="Kelas 6">Kelas 6</option>
+              {STANDARD_CLASSES.map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
             </select>
           ) : (
             <span className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 font-extrabold text-xs border border-blue-200">

@@ -86,9 +86,9 @@ export const ClassroomAutoImporterModal: React.FC<ClassroomAutoImporterModalProp
 
   const downloadTemplate = () => {
     const templateData = [
-      { NAMA: 'Budi Santoso', USERNAME: 'budi', EMAIL: 'budi@sekolah.id', PASSWORD: 'siswa123', ROLE: 'SISWA', KELAS: 'Kelas 1' },
-      { NAMA: 'Siti Aminah', USERNAME: 'siti', EMAIL: 'siti@sekolah.id', PASSWORD: 'siswa123', ROLE: 'SISWA', KELAS: 'Kelas 2' },
-      { NAMA: 'Ahmad Guru', USERNAME: 'ahmad', EMAIL: 'ahmad@sekolah.id', PASSWORD: 'guru123', ROLE: 'GURU', KELAS: 'Kelas 1' },
+      { NAMA: 'Budi Santoso', USERNAME: 'budi', EMAIL: 'budi@sekolah.id', PASSWORD: 'siswa123', ROLE: 'SISWA', KELAS: 'Kelas 1A' },
+      { NAMA: 'Siti Aminah', USERNAME: 'siti', EMAIL: 'siti@sekolah.id', PASSWORD: 'siswa123', ROLE: 'SISWA', KELAS: 'Kelas 2A' },
+      { NAMA: 'Ahmad Guru', USERNAME: 'ahmad', EMAIL: 'ahmad@sekolah.id', PASSWORD: 'guru123', ROLE: 'GURU', KELAS: 'Kelas 1A' },
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();

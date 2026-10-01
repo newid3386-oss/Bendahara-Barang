@@ -38,8 +38,14 @@ export interface FirestoreErrorInfo {
 
 // Global Firestore Error Handler matching the skill instructions
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const isOfflineError =
+    errMsg.includes('Could not reach Cloud Firestore backend') ||
+    errMsg.includes('the client is offline') ||
+    errMsg.includes('unavailable');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: isOfflineError ? 'Operating in local offline mode (backend unreachable).' : errMsg,
     authInfo: {
       userId: null,
       email: null,
@@ -51,7 +57,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+
+  if (isOfflineError) {
+    console.info('[Firestore Sync] Operating in local offline persistence mode for path:', path);
+  } else {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -222,8 +233,20 @@ class FirebaseService {
             this.notify();
           },
           (error) => {
-            console.warn(`Firestore collection listener failed on path '${col.path}':`, error.message);
-            this.lastError = error.message;
+            const isOffline =
+              error.message.includes('Could not reach Cloud Firestore backend') ||
+              error.message.includes('the client is offline') ||
+              error.message.includes('unavailable');
+
+            if (isOffline) {
+              this.isConnected = false;
+              this.isRealtimeActive = false;
+              this.lastError = 'Mode Offline (Penyimpanan Lokal Aktif)';
+              console.info(`[Firestore] Collection '${col.path}' operating in local offline mode.`);
+            } else {
+              console.warn(`Firestore collection listener failed on path '${col.path}':`, error.message);
+              this.lastError = error.message;
+            }
             this.notify();
           }
         );

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Account } from '../../types/classroom';
 import { StudentBadgesWidget } from './StudentBadgesWidget';
+import { SecureMaskedField } from '../common/SecureMaskedField';
 
 interface UserProfileSettingsModalProps {
   account: Account;
@@ -181,7 +182,28 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">
                   <span className="text-[10px] font-extrabold uppercase text-slate-400">NIS / NIP</span>
-                  <div className="font-bold text-xs text-slate-800">{account.NIP || '-'}</div>
+                  <div>
+                    <SecureMaskedField
+                      value={account.NIP || '-'}
+                      type="nis"
+                      fieldId={`profile-nis-${account.ID}`}
+                      label={account.ROLE === 'SISWA' ? 'NIS Siswa' : 'NIP Pegawai'}
+                      monospace
+                      showDlpBadge
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400">Email Akun</span>
+                  <div>
+                    <SecureMaskedField
+                      value={account.EMAIL}
+                      type="email"
+                      fieldId={`profile-email-${account.ID}`}
+                      label="Email Akun"
+                    />
+                  </div>
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Lock, BookOpen, ShieldCheck, ChevronRight, LogIn, ArrowLeft, UserCheck, GraduationCap, Settings } from 'lucide-react';
+import { Lock, BookOpen, ShieldCheck, ChevronRight, LogIn, GraduationCap, Settings, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { accountService } from '../services/accountService';
+import { securityService } from '../services/securityService';
 import { User } from '../types';
 import { SystemType } from '../types/classroom';
 
@@ -109,11 +110,36 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
       setFormError('Username dan kata sandi wajib diisi.');
       return;
     }
-    const account = accountService.authenticate(sistem, username, password);
-    if (!account) {
-      setFormError('Username atau kata sandi salah. Silakan coba lagi.');
+
+    // 1. Check Brute-Force lockout
+    const lockCheck = securityService.checkAccountLockout(username);
+    if (lockCheck.locked) {
+      setFormError(
+        `🔒 Akun ini dikunci sementara demi keamanan karena terlalu banyak kesalahan kata sandi. Silakan tunggu ${Math.ceil(
+          lockCheck.lockTimeRemainingSeconds / 60
+        )} menit.`
+      );
       return;
     }
+
+    const account = accountService.authenticate(sistem, username, password);
+    if (!account) {
+      const record = securityService.recordFailedAttempt(username);
+      if (record.locked) {
+        setFormError(
+          `⛔ Terlalu banyak percobaan gagal (${securityService.getConfig().maxFailedAttempts}x). Akun dikunci otomatis selama ${securityService.getConfig().lockoutDurationMinutes} menit untuk mencegah serangan brute-force.`
+        );
+      } else {
+        setFormError(
+          `Username atau kata sandi salah. Sisa kesempatan login: ${record.remainingAttempts} kali.`
+        );
+      }
+      return;
+    }
+
+    // Record successful login & reset counters
+    securityService.recordSuccessfulLogin(username, account.ROLE);
+
     setIsLoggingIn(true);
     setTimeout(() => {
       if (sistem === 'CLASSROOM') {
@@ -316,21 +342,23 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
           )}
 
           {step === 'classroom' && (
-            <div>
-              <div className="flex items-center gap-2 mb-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl border border-blue-200">
                 <GraduationCap size={18} className="text-blue-700 shrink-0" />
-                <p className="text-[11px] text-blue-800 font-medium">Masuk sebagai Siswa, Guru, atau Kepala Sekolah untuk mengakses pembelajaran online.</p>
+                <p className="text-[11px] text-blue-800 font-medium">Masuk menggunakan akun Siswa, Guru, atau Kepala Sekolah.</p>
               </div>
+
               {renderCredentialForm('CLASSROOM', 'from-blue-700 to-indigo-800')}
             </div>
           )}
 
           {step === 'admin' && (
-            <div>
-              <div className="flex items-center gap-2 mb-4 p-3 bg-slate-100 rounded-xl border border-slate-300">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-xl border border-slate-300">
                 <ShieldCheck size={18} className="text-slate-700 shrink-0" />
-                <p className="text-[11px] text-slate-700 font-medium">Khusus Administrator. Mengelola seluruh akun SIPERSEDA, Classroom, dan website.</p>
+                <p className="text-[11px] text-slate-700 font-medium">Khusus Administrator. Masukkan username dan kata sandi admin Anda.</p>
               </div>
+
               {renderCredentialForm('ADMIN', 'from-slate-800 to-slate-950')}
             </div>
           )}

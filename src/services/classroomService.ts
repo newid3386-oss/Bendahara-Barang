@@ -23,6 +23,7 @@ import {
   P5ProjectStage,
 } from '../types/classroom';
 import { offlineSyncManager } from './offlineSyncManager';
+import { progressSyncService } from './progressSyncService';
 
 const STORAGE_KEYS = {
   COURSES: 'BB_CLASSROOM_COURSES',
@@ -1158,6 +1159,53 @@ class ClassroomService {
     return saved;
   }
 
+  public saveAssignments(assignments: Partial<ClassroomAssignment>[]): ClassroomAssignment[] {
+    if (!assignments || assignments.length === 0) return [];
+    const list = this.getAssignments();
+    let maxNum = list.reduce((max, a) => {
+      const match = a.ID?.match(/^ASG-(\d+)$/);
+      if (match) {
+        const val = parseInt(match[1], 10);
+        return val > max ? val : max;
+      }
+      return max;
+    }, 0);
+    if (maxNum < list.length) maxNum = list.length;
+
+    const savedList: ClassroomAssignment[] = [];
+    for (const assignment of assignments) {
+      if (assignment.ID) {
+        const idx = list.findIndex((a) => a.ID === assignment.ID);
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...assignment } as ClassroomAssignment;
+          savedList.push(list[idx]);
+        } else {
+          const item = { ...assignment, ID: assignment.ID } as ClassroomAssignment;
+          list.push(item);
+          savedList.push(item);
+        }
+      } else {
+        maxNum++;
+        const item: ClassroomAssignment = {
+          ID: `ASG-${String(maxNum).padStart(3, '0')}`,
+          COURSE_ID: assignment.COURSE_ID || '',
+          JUDUL: assignment.JUDUL || '',
+          DESKRIPSI: assignment.DESKRIPSI || '',
+          DEADLINE: assignment.DEADLINE || '',
+          TYPE: assignment.TYPE || 'TUGAS',
+          CREATED_AT: nowISO(),
+          GURU_ID: assignment.GURU_ID || '',
+          GURU_NAMA: assignment.GURU_NAMA || '',
+          IS_PRIORITY: assignment.IS_PRIORITY ?? false,
+        };
+        list.push(item);
+        savedList.push(item);
+      }
+    }
+    this.setItem(STORAGE_KEYS.ASSIGNMENTS, list);
+    return savedList;
+  }
+
   public deleteAssignment(id: string): void {
     this.setItem(STORAGE_KEYS.ASSIGNMENTS, this.getAssignments().filter((a) => a.ID !== id));
     this.setItem(STORAGE_KEYS.SUBMISSIONS, this.getSubmissions().filter((s) => s.ASSIGNMENT_ID !== id));
@@ -1219,6 +1267,9 @@ class ClassroomService {
       `Tugas ${saved.ASSIGNMENT_ID} siswa ${saved.SISWA_NAMA} (${saved.STATUS})`,
       saved
     );
+    try {
+      progressSyncService.notifySubmissionChange(saved, 'SAVE');
+    } catch {}
     return saved;
   }
 
@@ -1238,6 +1289,9 @@ class ClassroomService {
         `Nilai tugas ${sub.SISWA_NAMA}: ${nilai}/100 oleh ${gradedBy}`,
         sub
       );
+      try {
+        progressSyncService.notifySubmissionChange(sub, 'GRADE');
+      } catch {}
     }
   }
 
@@ -1246,6 +1300,7 @@ class ClassroomService {
     gradedBy: string
   ): void {
     const list = this.getItem<ClassroomSubmission[]>(STORAGE_KEYS.SUBMISSIONS, []);
+    let lastSub: ClassroomSubmission | null = null;
     updates.forEach(({ id, nilai, feedback, voiceNote }) => {
       const sub = list.find((s) => s.ID === id);
       if (sub) {
@@ -1255,9 +1310,15 @@ class ClassroomService {
         sub.GRADED_BY = gradedBy;
         sub.GRADED_AT = ts();
         sub.STATUS = 'GRADED';
+        lastSub = sub;
       }
     });
     this.setItem(STORAGE_KEYS.SUBMISSIONS, list);
+    if (lastSub) {
+      try {
+        progressSyncService.notifySubmissionChange(lastSub, 'BULK_GRADE');
+      } catch {}
+    }
   }
 
   // --- Reports ---
@@ -2154,6 +2215,51 @@ class ClassroomService {
       list.push(newReview);
     }
     this.setItem('BB_CLASSROOM_PEER_REVIEWS_V1', list);
+  }
+
+  public togglePeerReviewThumbsUp(reviewId: string): void {
+    const list = this.getItem<any[]>('BB_CLASSROOM_PEER_REVIEWS_V1', []);
+    const idx = list.findIndex(r => r.ID === reviewId);
+    if (idx >= 0) {
+      list[idx].THUMBS_UP = !list[idx].THUMBS_UP;
+      this.setItem('BB_CLASSROOM_PEER_REVIEWS_V1', list);
+    } else {
+      // If the review ID is a demo review, we can persist it to let users interact with it
+      const demoReviews = [
+        {
+          ID: 'demo-peer-1',
+          SCORE_KREATIVITAS: 92,
+          FEEDBACK_KREATIVITAS: 'Penyajian ide sangat kreatif, orisinal, dan visualisasi tugas sangat rapi.',
+          SCORE_STRUKTUR: 85,
+          FEEDBACK_STRUKTUR: 'Format penulisan sudah sistematis, alur pengerjaan cukup jelas dan berurutan.',
+          SCORE_MATERI: 78,
+          FEEDBACK_MATERI: 'Sebagian jawaban pada nomor 3 dan 4 perlu diperiksa kembali rumus dasarnya.',
+          GENERAL_COMMENT: 'Kerja keras yang luar biasa! Pertahankan kreativitasmu dan teliti kembali perhitungan.',
+          SUBMITTED_AT: '2026-03-01 09:30',
+          REVIEWER_ID: 'SISWA-001', // Make it come from a valid student ID so they get the Helper Badge
+          THUMBS_UP: false,
+        },
+        {
+          ID: 'demo-peer-2',
+          SCORE_KREATIVITAS: 90,
+          FEEDBACK_KREATIVITAS: 'Ide solusi sangat segar dan berbeda dari teman yang lain.',
+          SCORE_STRUKTUR: 88,
+          FEEDBACK_STRUKTUR: 'Tabel dan diagram dibuat dengan rapi.',
+          SCORE_MATERI: 80,
+          FEEDBACK_MATERI: 'Sudah sesuai dengan petunjuk guru, hanya perlu sedikit elaborasi di kesimpulan.',
+          GENERAL_COMMENT: 'Sangat inspiratif! Senang membaca hasil pekerjaanmu.',
+          SUBMITTED_AT: '2026-03-01 11:15',
+          REVIEWER_ID: 'SISWA-002', // Another student ID
+          THUMBS_UP: false,
+        }
+      ];
+      const foundDemo = demoReviews.find(r => r.ID === reviewId);
+      if (foundDemo) {
+        foundDemo.THUMBS_UP = true;
+        list.push(foundDemo);
+        this.setItem('BB_CLASSROOM_PEER_REVIEWS_V1', list);
+      }
+    }
   }
 
   // --- P5 Project Tracker System ---

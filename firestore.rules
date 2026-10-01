@@ -123,51 +123,66 @@ service cloud.firestore {
 
     // Additional Normalized Collections for school management
     match /reports/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /forum_posts/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /attendance/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /quizzes/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /suppliers/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /mutasi/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /pemeliharaan/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /penghapusan/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /pengambilan_atk/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /stock_opname_sessions/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /stock_opname_scans/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /procurement_plans/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /procurement_plan_details/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
     match /configs/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(id);
     }
 
     // Backward compatibility match for initial bundles
     match /school_data/{bundleId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isValidId(bundleId);
     }
   }
 }

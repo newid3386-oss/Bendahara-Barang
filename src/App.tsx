@@ -9,6 +9,9 @@ import { QRScannerModal } from './components/QRScannerModal';
 import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
 import { QRStickerModal } from './components/QRStickerModal';
 import { DataReconciliationDialog } from './components/DataReconciliationDialog';
+import { DlpGlobalNotice } from './components/common/DlpGlobalNotice';
+import { InactivityLockModal } from './components/common/InactivityLockModal';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { accountService } from './services/accountService';
 import { classroomService } from './services/classroomService';
 import { db } from './services/localStorageService';
@@ -53,6 +56,7 @@ export default function App() {
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
 
   // Scanned / Public Verification State
@@ -99,7 +103,7 @@ export default function App() {
     setNotificationCount(lowStock + pendingApprovals);
   }, [activePage, viewMode]);
 
-  // Global keyboard shortcut for search (Ctrl+K / Cmd+K) and QR Scanner (Ctrl+Shift+S / Cmd+Shift+S)
+  // Global keyboard shortcut for search (Ctrl+K), QR Scanner (Ctrl+Shift+S), and Shortcuts (Ctrl+/)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+K or Cmd+K -> Universal Search
@@ -111,6 +115,11 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         setIsQRScannerOpen((prev) => !prev);
+      }
+      // Ctrl+/ or Cmd+/ -> Keyboard Shortcuts Overlay
+      if ((e.metaKey || e.ctrlKey) && (e.key === '/' || e.key === '?')) {
+        e.preventDefault();
+        setIsShortcutsOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -301,21 +310,38 @@ export default function App() {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-          <Suspense fallback={<div className="flex items-center justify-center h-full w-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div></div>}>
+        <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-28 lg:p-8 lg:pb-32 max-w-7xl mx-auto w-full">
+          <Suspense
+            fallback={
+              <div className="w-full space-y-5 animate-pulse p-2">
+                <div className="h-28 bg-slate-200/70 rounded-3xl w-full"></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="h-24 bg-slate-200/60 rounded-2xl"></div>
+                  <div className="h-24 bg-slate-200/60 rounded-2xl"></div>
+                  <div className="h-24 bg-slate-200/60 rounded-2xl"></div>
+                  <div className="h-24 bg-slate-200/60 rounded-2xl"></div>
+                </div>
+                <div className="h-72 bg-slate-200/50 rounded-3xl w-full"></div>
+              </div>
+            }
+          >
             {renderActiveView()}
           </Suspense>
         </main>
       </div>
 
-      {/* Global Universal Search Modal */}
+      {/* Global Universal Search & Omnibar Command Palette Modal */}
       <UniversalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onNavigate={(page) => {
+        onNavigate={(page, queryParam) => {
           handleNavigate(page);
           setIsSearchOpen(false);
         }}
+        onOpenQRScanner={() => setIsQRScannerOpen(true)}
+        onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
+        onOpenGoogleSync={() => setIsGoogleModalOpen(true)}
+        onSwitchViewMode={(mode) => setViewMode(mode)}
       />
 
       {/* Global Google Sheets Sync & Apps Script Modal */}
@@ -375,6 +401,18 @@ export default function App() {
 
       {/* Connection & Offline Conflict Reconciliation Dialog */}
       <DataReconciliationDialog />
+
+      {/* Global Keyboard Shortcuts Overlay */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      {/* Global DLP Anti-Exfiltration Alert Notice */}
+      <DlpGlobalNotice />
+
+      {/* Inactivity Security Auto-Lock Modal */}
+      <InactivityLockModal />
     </div>
   );
 }

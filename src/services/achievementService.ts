@@ -178,8 +178,33 @@ class AchievementService {
       points: 100,
     };
 
+    // --- BADGE 6: Helper Badge / Mitra Belajar Terbaik ---
+    const allPeerReviews = classroomService.getPeerReviews();
+    const thumbsUpCount = allPeerReviews.filter(
+      (r) => r.REVIEWER_ID === siswaId && r.THUMBS_UP
+    ).length;
+
+    const helperBadgeUnlocked = thumbsUpCount >= 1;
+    const helperBadgeProgress = thumbsUpCount > 0 ? 100 : 0;
+    const badgeHelper: BadgeItem = {
+      id: 'helper_badge',
+      name: 'Lencana Helper Sejati',
+      category: 'PRESTASI',
+      description: "Diberikan saat ulasan peer-review konstruktif Anda disukai (Thumbs-Up 👍) oleh teman sekelas.",
+      iconName: 'MessageSquare',
+      gradient: 'from-pink-400 via-rose-500 to-red-600',
+      borderColor: 'border-rose-400',
+      textColor: 'text-rose-700',
+      badgeBg: 'bg-rose-50',
+      unlocked: helperBadgeUnlocked,
+      unlockedAt: helperBadgeUnlocked ? 'Aktif' : undefined,
+      progress: helperBadgeProgress,
+      progressLabel: `${thumbsUpCount}/1 Thumbs-Up Diterima`,
+      points: 100,
+    };
+
     // Count unlocked basic badges
-    const basicBadges = [badgeFastLearner, badgeAttendance, badgeForum, badgeQuiz, badgeLiteracy];
+    const basicBadges = [badgeFastLearner, badgeAttendance, badgeForum, badgeQuiz, badgeLiteracy, badgeHelper];
     const unlockedBasicCount = basicBadges.filter((b) => b.unlocked).length;
 
     // --- BADGE 6: Siswa Teladan / Bintang Papan Atas ---

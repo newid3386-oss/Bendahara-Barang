@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ShieldCheck, Users, LogOut, Plus, Search, X, Edit2, Trash2,
+  ShieldCheck, ShieldAlert, Users, LogOut, Plus, Search, X, Edit2, Trash2,
   KeyRound, School, GraduationCap, Settings, BookOpen, CheckCircle2, Ban,
   Lock, Unlock, AlertTriangle, ArrowRight, ArrowLeftRight, Check, UserPlus,
   Sparkles, Save, Video, Play, ExternalLink, Image as ImageIcon, Upload, FileSpreadsheet,
+  Download, RefreshCw, Copy, Filter, Layers, ChevronLeft, ChevronRight, CheckCheck
 } from 'lucide-react';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { Account, SystemType, AccountRole } from '../types/classroom';
@@ -11,13 +12,17 @@ import { db } from '../services/localStorageService';
 import { Config, PublicMediaItem } from '../types';
 import { themes, useTheme } from '../utils/theme';
 import { ClassroomAutoImporterModal } from './ClassroomAutoImporterModal';
+import { SecureMaskedField } from './common/SecureMaskedField';
+import { SecureMaskingBar } from './common/SecureMaskingBar';
+import { SecurityCenterView } from './admin/SecurityCenterView';
+import { maskingService } from '../services/maskingService';
 import * as XLSX from 'xlsx';
 
 interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin' | 'website';
+type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin' | 'website' | 'security';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const { styles, setThemeId, setThemeMode, setPreview, previewThemeId, previewThemeMode } = useTheme();
@@ -25,10 +30,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [tab, setTab] = useState<AdminTab>('overview');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [search, setSearch] = useState('');
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('ALL');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('Semua');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 40;
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isSyncingAccounts, setIsSyncingAccounts] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showImporter, setShowImporter] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('Semua');
   const [notification, setNotification] = useState<string | null>(null);
   const [config, setConfig] = useState<Config>(db.getConfig());
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -122,7 +132,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
   // Transfer student modal state
   const [transferSiswa, setTransferSiswa] = useState<Account | null>(null);
-  const [newTargetClass, setNewTargetClass] = useState<string>('Kelas 1');
+  const [newTargetClass, setNewTargetClass] = useState<string>('Kelas 1A');
 
   useEffect(() => {
     accountService.initAccounts();
@@ -154,13 +164,111 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     return null;
   }
 
-  const filtered = accounts.filter(
-    (a) =>
-      a.NAMA.toLowerCase().includes(search.toLowerCase()) ||
-      a.USERNAME.toLowerCase().includes(search.toLowerCase()) ||
-      a.EMAIL.toLowerCase().includes(search.toLowerCase()) ||
-      (a.KELAS && a.KELAS.toLowerCase().includes(search.toLowerCase()))
-  );
+  const handleSyncDapodikAccounts = () => {
+    setIsSyncingAccounts(true);
+    setTimeout(() => {
+      const res = accountService.syncAllDapodikClassroomAccounts();
+      loadAccounts();
+      setIsSyncingAccounts(false);
+      showNotify(`Sinkronisasi Berhasil: ${res.totalAccounts} Akun (${res.siswaCount} Siswa + ${res.ptkCount} PTK + ${res.adminCount} Admin) siap digunakan.`);
+    }, 400);
+  };
+
+  const handleExportAccountsCsv = () => {
+    const dataToExport = filtered;
+    if (dataToExport.length === 0) {
+      alert('Tidak ada akun yang dapat diekspor sesuai filter saat ini.');
+      return;
+    }
+
+    const headers = ['ID Akun', 'Nama Lengkap', 'Role', 'Sistem', 'Kelas', 'NIP / NIS', 'Email', 'Username', 'Password Default', 'Status'];
+    const rows = dataToExport.map((a) => [
+      `"${a.ID || ''}"`,
+      `"${(a.NAMA || '').replace(/"/g, '""')}"`,
+      `"${a.ROLE || ''}"`,
+      `"${a.SISTEM || ''}"`,
+      `"${a.KELAS || '-'}"`,
+      `"${a.NIP || '-'}"`,
+      `"${a.EMAIL || ''}"`,
+      `"${a.USERNAME || ''}"`,
+      `"${a.PASSWORD || (a.ROLE === 'SISWA' ? 'siswa123' : a.ROLE === 'ADMIN' ? 'admin123' : 'guru123')}"`,
+      `"${a.STATUS || 'AKTIF'}"`,
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Daftar_Akun_Classroom_SDN_Tangerang_6_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showNotify(`Berhasil mengekspor ${dataToExport.length} data akun ke file CSV.`);
+  };
+
+  const handleCopyCredentials = (acc: Account) => {
+    // Prevent unauthorized data exfiltration of student credentials when masked
+    if (
+      acc.ROLE === 'SISWA' &&
+      maskingService.isGlobalMaskingEnabled() &&
+      !maskingService.isFieldRevealed(`admin-pass-${acc.ID}`)
+    ) {
+      maskingService.preventClipboardCopy(
+        { preventDefault: () => {}, stopPropagation: () => {} } as any,
+        `Kredensial Siswa (${acc.NAMA})`
+      );
+      showNotify(
+        '🔒 Kredensial siswa dilindungi Secure Data Masking (DLP). Buka ikon mata terlebih dahulu untuk menyalin akun siswa.'
+      );
+      return;
+    }
+
+    const text = `Username: ${acc.USERNAME}\nPassword: ${acc.PASSWORD || (acc.ROLE === 'SISWA' ? 'siswa123' : acc.ROLE === 'ADMIN' ? 'admin123' : 'guru123')}\nRole: ${acc.ROLE}\nKelas: ${acc.KELAS || '-'}`;
+    navigator.clipboard.writeText(text);
+    setCopiedId(acc.ID);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const filtered = useMemo(() => {
+    return accounts.filter((a) => {
+      // 1. Text search
+      const matchesSearch =
+        !search.trim() ||
+        a.NAMA.toLowerCase().includes(search.toLowerCase()) ||
+        a.USERNAME.toLowerCase().includes(search.toLowerCase()) ||
+        a.EMAIL.toLowerCase().includes(search.toLowerCase()) ||
+        (a.NIP && a.NIP.toLowerCase().includes(search.toLowerCase())) ||
+        (a.KELAS && a.KELAS.toLowerCase().includes(search.toLowerCase()));
+
+      if (!matchesSearch) return false;
+
+      // 2. Role filter in classroom tab
+      if (tab === 'classroom' && selectedRoleFilter !== 'ALL') {
+        if (selectedRoleFilter === 'STAFF TU' && (a.ROLE === 'STAFF TU' || a.ROLE === 'STAFF')) {
+          // match
+        } else if (a.ROLE !== selectedRoleFilter) {
+          return false;
+        }
+      }
+
+      // 3. Class filter
+      if (selectedClassFilter !== 'Semua') {
+        if (!a.KELAS || a.KELAS.trim().toLowerCase() !== selectedClassFilter.trim().toLowerCase()) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [accounts, search, selectedRoleFilter, selectedClassFilter, tab]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paginatedAccounts = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(start, start + itemsPerPage);
+  }, [filtered, currentPage, itemsPerPage]);
 
   const allAccounts = accountService.getAccounts();
   const classesSummary = accountService.getClassSummary();
@@ -227,6 +335,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
   const tabs: { id: AdminTab; label: string; icon: any; color: string; badge?: string }[] = [
     { id: 'overview', label: 'Ringkasan', icon: ShieldCheck, color: 'text-slate-700' },
+    { id: 'security', label: 'Pusat Keamanan & Kepatuhan', icon: ShieldAlert, color: 'text-rose-700', badge: 'Cyber Defense' },
     { id: 'grouping', label: 'Pengelompokan Kelas & Siswa', icon: School, color: 'text-blue-700', badge: 'Fitur Utama' },
     { id: 'classroom', label: 'Akun Classroom', icon: BookOpen, color: 'text-indigo-700' },
     { id: 'siperseda', label: 'Akun SIPERSEDA', icon: School, color: 'text-emerald-700' },
@@ -814,7 +923,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                       ROLE: 'SISWA',
                       SISTEM: 'CLASSROOM',
                       STATUS: 'AKTIF',
-                      KELAS: 'Kelas 1',
+                      KELAS: 'Kelas 1A',
                       CREATED_AT: new Date().toISOString(),
                     });
                     setShowForm(true);
@@ -845,7 +954,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             {/* Classes Detail Grid */}
             <div className="space-y-4">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Status Kelas 1 s/d Kelas 6 SDN Tangerang 6
+                Status Rombongan Belajar (Rombel) Kelas 1A s/d 6D SDN Tangerang 6
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -973,138 +1082,362 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         )}
 
         {/* SIPERSEDA, CLASSROOM & ADMIN ACCOUNT TABS */}
-        {tab !== 'overview' && tab !== 'grouping' && (
+        {tab !== 'overview' && tab !== 'grouping' && tab !== 'website' && tab !== 'security' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
+            {/* Secure Data Masking & DLP Banner */}
+            <SecureMaskingBar scopeLabel={`Akun ${currentSistem} & Data Kredensial`} />
+
+            {/* Header & Main Actions */}
+            <div className="flex items-center justify-between gap-3 flex-wrap bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Akun {currentSistem}</h2>
-                <p className="text-xs text-slate-500">
-                  {currentSistem === 'SIPERSEDA' && 'Operator & Kepala Sekolah'}
-                  {currentSistem === 'CLASSROOM' && 'Siswa, Guru & Kepala Sekolah'}
-                  {currentSistem === 'ADMIN' && 'Administrator sistem'}
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-black text-slate-900">Akun {currentSistem}</h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-900 text-white">
+                    {filtered.length} Akun
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {currentSistem === 'SIPERSEDA' && 'Kelola akun Operator & Kepala Sekolah untuk SIPERSEDA'}
+                  {currentSistem === 'CLASSROOM' && '742 Akun Siswa Dapodik, Guru Wali Kelas, Mapel & Kepala Sekolah'}
+                  {currentSistem === 'ADMIN' && 'Kelola kredensial akun Administrator & Operator Sekolah'}
                 </p>
               </div>
+
               <div className="flex items-center gap-2 flex-wrap">
+                {currentSistem === 'CLASSROOM' && (
+                  <>
+                    <button
+                      onClick={handleSyncDapodikAccounts}
+                      disabled={isSyncingAccounts}
+                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                      title="Sinkronkan seluruh akun Classroom otomatis dari Dapodik (742 Siswa + 45 PTK + Admin)"
+                    >
+                      <RefreshCw size={14} className={isSyncingAccounts ? 'animate-spin' : ''} />
+                      {isSyncingAccounts ? 'Menyinkronkan...' : 'Sinkronkan Akun Dapodik'}
+                    </button>
+                    <button
+                      onClick={handleExportAccountsCsv}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                      title="Ekspor daftar akun terpilih ke file CSV / Excel untuk dibagikan atau dicetak"
+                    >
+                      <Download size={14} /> Ekspor CSV
+                    </button>
+                    <button
+                      onClick={() => setShowImporter(true)}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <FileSpreadsheet size={14} /> Auto-Importer
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={handleCleanNonAdminAccounts}
-                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                   title="Hapus semua akun selain akun administrator"
                 >
                   <Trash2 size={14} className="text-rose-600" /> Bersihkan Non-Admin
                 </button>
-                {currentSistem === 'CLASSROOM' && (
-                  <button
-                    onClick={() => setShowImporter(true)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-                  >
-                    <FileSpreadsheet size={14} /> Auto-Importer Siswa
-                  </button>
-                )}
                 <button
                   onClick={() => { setEditAccount(null); setShowForm(true); }}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <Plus size={14} /> Tambah Akun
                 </button>
               </div>
             </div>
 
-            <div className="relative max-w-sm">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Cari nama, username, email, kelas..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-slate-600"
-              />
+            {/* Filter & Search Bar */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
+              {/* Role Filter Chips (for Classroom) */}
+              {currentSistem === 'CLASSROOM' && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                  {[
+                    { id: 'ALL', label: 'Semua Akun', count: accounts.length },
+                    { id: 'SISWA', label: 'Siswa', count: accounts.filter((a) => a.ROLE === 'SISWA').length },
+                    { id: 'GURU', label: 'Guru & Wali Kelas', count: accounts.filter((a) => a.ROLE === 'GURU').length },
+                    { id: 'KEPALA SEKOLAH', label: 'Kepsek', count: accounts.filter((a) => a.ROLE === 'KEPALA SEKOLAH').length },
+                    { id: 'STAFF TU', label: 'Staff & TU', count: accounts.filter((a) => a.ROLE === 'STAFF TU' || a.ROLE === 'STAFF').length },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        setSelectedRoleFilter(f.id);
+                        setCurrentPage(1);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                        selectedRoleFilter === f.id
+                          ? 'bg-blue-700 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span>{f.label}</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                        selectedRoleFilter === f.id ? 'bg-blue-900/40 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {f.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Class Filter & Search Inputs */}
+              <div className="flex items-center gap-2.5 flex-1 max-w-xl ml-auto">
+                {currentSistem === 'CLASSROOM' && (
+                  <select
+                    value={selectedClassFilter}
+                    onChange={(e) => {
+                      setSelectedClassFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-bold text-slate-700 shrink-0 focus:outline-blue-600"
+                  >
+                    <option value="Semua">Semua Kelas</option>
+                    {STANDARD_CLASSES.map((cls) => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
+                )}
+
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari nama, username, NIS/NIP, kelas..."
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-slate-600 font-medium"
+                  />
+                  {search && (
+                    <button
+                      onClick={() => setSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
+            {/* Account List Grid / Table */}
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
               {filtered.length === 0 ? (
-                <div className="p-10 text-center">
-                  <Users size={32} className="text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">Tidak ada akun ditemukan.</p>
+                <div className="p-12 text-center space-y-3">
+                  <Users size={40} className="text-slate-300 mx-auto" />
+                  <div className="text-sm font-bold text-slate-700">Tidak ada akun ditemukan</div>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    {search ? `Tidak ada akun yang cocok dengan kata kunci "${search}".` : 'Belum ada data akun yang sesuai filter.'}
+                  </p>
+                  {currentSistem === 'CLASSROOM' && (
+                    <button
+                      onClick={handleSyncDapodikAccounts}
+                      className="mt-2 px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs inline-flex items-center gap-1.5"
+                    >
+                      <RefreshCw size={13} /> Sinkronkan Seluruh Akun Dapodik
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {filtered.map((a) => (
-                    <div key={a.ID} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                          {a.NAMA.charAt(0)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-bold text-slate-900 truncate">{a.NAMA}</span>
-                            {a.STATUS === 'AKTIF' ? (
-                              <span className="text-[9px] font-bold text-emerald-700 flex items-center gap-0.5"><CheckCircle2 size={10} /> Aktif</span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-rose-600 flex items-center gap-0.5"><Ban size={10} /> Nonaktif</span>
-                            )}
-                            {a.ROLE === 'GURU' && (
-                              a.KELAS_LOCKED ? (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
-                                  <Lock size={9} /> Kelas Terkunci ({a.KELAS})
+                  {paginatedAccounts.map((a) => {
+                    const defaultPassword = a.PASSWORD || (a.ROLE === 'SISWA' ? 'siswa123' : a.ROLE === 'ADMIN' ? 'admin123' : 'guru123');
+                    const isCopied = copiedId === a.ID;
+
+                    return (
+                      <div key={a.ID} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors">
+                        <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${
+                            a.ROLE === 'ADMIN' ? 'bg-slate-900 text-white' :
+                            a.ROLE === 'KEPALA SEKOLAH' ? 'bg-purple-600 text-white' :
+                            a.ROLE === 'GURU' ? 'bg-blue-600 text-white' :
+                            a.ROLE === 'SISWA' ? 'bg-indigo-500 text-white' :
+                            'bg-emerald-600 text-white'
+                          }`}>
+                            {a.NAMA.charAt(0)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-slate-900 truncate">{a.NAMA}</span>
+                              {a.STATUS === 'AKTIF' ? (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-md flex items-center gap-0.5">
+                                  <CheckCircle2 size={10} /> Aktif
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-0.5">
-                                  <Unlock size={9} /> Kunci Terbuka
+                                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md flex items-center gap-0.5">
+                                  <Ban size={10} /> Nonaktif
                                 </span>
-                              )
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                            @{a.USERNAME} • {a.EMAIL} {a.NIP ? `• NIP/NIS: ${a.NIP}` : ''}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                              a.ROLE === 'ADMIN' ? 'bg-slate-200 text-slate-800' :
-                              a.ROLE === 'KEPALA SEKOLAH' ? 'bg-purple-100 text-purple-800' :
-                              a.ROLE === 'GURU' ? 'bg-blue-100 text-blue-800' :
-                              a.ROLE === 'SISWA' ? 'bg-indigo-100 text-indigo-800' :
-                              'bg-emerald-100 text-emerald-800'
-                            }`}>{a.ROLE}</span>
-                            {a.KELAS && <span className="text-[10px] font-bold text-blue-700">{a.KELAS}</span>}
+                              )}
+                              {a.ROLE === 'GURU' && (
+                                a.KELAS_LOCKED ? (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
+                                    <Lock size={9} /> Kelas Terkunci ({a.KELAS})
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-0.5">
+                                    <Unlock size={9} /> Kunci Terbuka
+                                  </span>
+                                )
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-slate-700 font-bold bg-slate-100 px-1.5 py-0.2 rounded">
+                                @{a.USERNAME}
+                              </span>
+                              <span>•</span>
+                              <SecureMaskedField
+                                value={a.EMAIL}
+                                type="email"
+                                fieldId={`admin-email-${a.ID}`}
+                                label="Email Akun"
+                              />
+                              {a.NIP && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-slate-600 font-medium">
+                                    {a.ROLE === 'SISWA' ? 'NIS: ' : 'NIP: '}
+                                  </span>
+                                  <SecureMaskedField
+                                    value={a.NIP}
+                                    type="nis"
+                                    fieldId={`admin-nip-${a.ID}`}
+                                    label={a.ROLE === 'SISWA' ? 'NIS Siswa' : 'NIP Pegawai'}
+                                    monospace
+                                  />
+                                </>
+                              )}
+                              <span>•</span>
+                              <span className="text-slate-400 font-mono text-[10px] flex items-center gap-1">
+                                <span>Pass:</span>
+                                <SecureMaskedField
+                                  value={defaultPassword}
+                                  type="password"
+                                  fieldId={`admin-pass-${a.ID}`}
+                                  label="Kata Sandi"
+                                  monospace
+                                />
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
+                                a.ROLE === 'ADMIN' ? 'bg-slate-200 text-slate-800' :
+                                a.ROLE === 'KEPALA SEKOLAH' ? 'bg-purple-100 text-purple-800' :
+                                a.ROLE === 'GURU' ? 'bg-blue-100 text-blue-800' :
+                                a.ROLE === 'SISWA' ? 'bg-indigo-100 text-indigo-800' :
+                                'bg-emerald-100 text-emerald-800'
+                              }`}>{a.ROLE}</span>
+                              {a.KELAS && (
+                                <span className="text-[10px] font-black text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                                  {a.KELAS}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        {/* Teacher Lock / Unlock Toggle Button */}
-                        {a.ROLE === 'GURU' && (
-                          a.KELAS_LOCKED ? (
-                            <button
-                              onClick={() => handleUnlockTeacher(a)}
-                              className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1"
-                              title="Buka Kunci Kelas Guru"
-                            >
-                              <Unlock size={11} /> Buka Kunci
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleLockTeacher(a)}
-                              className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[10px] flex items-center gap-1"
-                              title="Kunci Kelas Guru"
-                            >
-                              <Lock size={11} /> Kunci Kelas
-                            </button>
-                          )
-                        )}
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                          {/* Copy Credential Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyCredentials(a)}
+                            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                              isCopied
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                            }`}
+                            title="Salin Username dan Password Akun ini"
+                          >
+                            {isCopied ? <CheckCheck size={12} /> : <Copy size={12} />}
+                            <span>{isCopied ? 'Tersalin' : 'Salin Akun'}</span>
+                          </button>
 
-                        <button onClick={() => { setEditAccount(a); setShowForm(true); }} className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" title="Edit">
-                          <Edit2 size={14} />
-                        </button>
-                        <button onClick={() => handleDelete(a.ID)} className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="Hapus">
-                          <Trash2 size={14} />
-                        </button>
+                          {/* Teacher Lock / Unlock Toggle Button */}
+                          {a.ROLE === 'GURU' && (
+                            a.KELAS_LOCKED ? (
+                              <button
+                                onClick={() => handleUnlockTeacher(a)}
+                                className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="Buka Kunci Kelas Guru"
+                              >
+                                <Unlock size={11} /> Buka Kunci
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleLockTeacher(a)}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="Kunci Kelas Guru"
+                              >
+                                <Lock size={11} /> Kunci Kelas
+                              </button>
+                            )
+                          )}
+
+                          <button
+                            onClick={() => { setEditAccount(a); setShowForm(true); }}
+                            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Edit Data Akun"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(a.ID)}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Hapus Akun"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pagination Controls */}
+              {filtered.length > itemsPerPage && (
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
+                  <div className="text-xs text-slate-500 font-medium">
+                    Menampilkan <strong className="text-slate-800 font-bold">{((currentPage - 1) * itemsPerPage) + 1}</strong> - <strong className="text-slate-800 font-bold">{Math.min(currentPage * itemsPerPage, filtered.length)}</strong> dari <strong className="text-slate-800 font-bold">{filtered.length}</strong> akun
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                    >
+                      <ChevronLeft size={14} /> Sebelumnya
+                    </button>
+                    <span className="text-xs font-bold text-slate-700 px-2">
+                      Halaman {currentPage} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                    >
+                      Berikutnya <ChevronRight size={14} />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
+        )}
+
+        {/* SECURITY & CYBER DEFENSE CENTER TAB */}
+        {tab === 'security' && (
+          <SecurityCenterView
+            accounts={accounts}
+            onRefreshAccounts={loadAccounts}
+            onShowNotify={showNotify}
+          />
         )}
       </main>
 
@@ -1193,7 +1526,7 @@ const AccountFormModal: React.FC<{ sistem: SystemType; account: Account | null; 
   const [role, setRole] = useState<AccountRole>(account?.ROLE || (sistem === 'CLASSROOM' ? 'GURU' : sistem === 'SIPERSEDA' ? 'OPERATOR' : 'ADMIN'));
   const [status, setStatus] = useState<'AKTIF' | 'NONAKTIF'>(account?.STATUS || 'AKTIF');
   const [nip, setNip] = useState(account?.NIP || '');
-  const [kelas, setKelas] = useState(account?.KELAS || 'Kelas 1');
+  const [kelas, setKelas] = useState(account?.KELAS || 'Kelas 1A');
   const [kelasLocked, setKelasLocked] = useState<boolean>(account?.KELAS_LOCKED || false);
 
   const roleOptions: AccountRole[] =

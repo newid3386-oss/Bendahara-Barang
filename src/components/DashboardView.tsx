@@ -36,6 +36,8 @@ import { classroomService } from '../services/classroomService';
 import { ActivePage, Asset } from '../types';
 import { Sparkline, AreaChart, DonutChart, BarChart, ProgressRing } from './charts';
 import { AIInsightsPanel } from './AIInsightsPanel';
+import { P5ProjectAnalyticsWidget } from './classroom/P5ProjectAnalyticsWidget';
+import { AutomatedGradeTrendAnalyticsWidget } from './classroom/AutomatedGradeTrendAnalyticsWidget';
 
 import { useTheme } from '../utils/theme';
 
@@ -965,6 +967,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* P5 Project Analytics Widget */}
+      <P5ProjectAnalyticsWidget />
+
+      {/* ─── Automated Grade Trend Analytics & Weekly Performance ──── */}
+      <AutomatedGradeTrendAnalyticsWidget
+        onNavigateToClassroom={() => onNavigate('e_rapor' as ActivePage)}
+      />
 
       {/* ─── AI Insights + Critical Stock ───────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

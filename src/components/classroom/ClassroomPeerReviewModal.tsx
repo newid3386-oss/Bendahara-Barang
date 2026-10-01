@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, X, Trophy, Edit3, CheckCircle2, FileText, ClipboardList,
   Sparkles, Check, Plus, RefreshCw, Bot, Star, Send, Copy, ThumbsUp,
-  Lightbulb, Heart, Zap, ArrowRight, ShieldCheck
+  Lightbulb, Heart, Zap, ArrowRight, ShieldCheck, MessageSquare
 } from 'lucide-react';
 import { ClassroomAssignment, ClassroomSubmission, Account } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
@@ -61,6 +61,15 @@ export const ClassroomPeerReviewModal: React.FC<ClassroomPeerReviewModalProps> =
   const [aiTargetCategory, setAiTargetCategory] = useState<RubricCategory | null>(null);
   const [batchSuggestions, setBatchSuggestions] = useState<AISuggestionResult[] | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
+  const [likedReviewsToggle, setLikedReviewsToggle] = useState(0);
+
+  const handleToggleReviewThumbsUp = (reviewId: string) => {
+    classroomService.togglePeerReviewThumbsUp(reviewId);
+    setLikedReviewsToggle((prev) => prev + 1);
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
 
   // Student's own submission and reviews received from peers
   const mySubmission = useMemo(
@@ -70,7 +79,7 @@ export const ClassroomPeerReviewModal: React.FC<ClassroomPeerReviewModalProps> =
 
   const receivedReviews = useMemo(
     () => (mySubmission ? classroomService.getPeerReviews(assignment.ID, mySubmission.ID) : []),
-    [assignment.ID, mySubmission]
+    [assignment.ID, mySubmission, likedReviewsToggle]
   );
 
   // Rubric Summary Calculation (Highest and Lowest scoring rubrics)
@@ -156,6 +165,7 @@ export const ClassroomPeerReviewModal: React.FC<ClassroomPeerReviewModalProps> =
       totalReviews: reviewsToAnalyze.length,
       isLiveReceivedData: receivedReviews.length > 0,
       generalComments: reviewsToAnalyze.map((r) => r.GENERAL_COMMENT).filter(Boolean),
+      reviewsToAnalyze,
     };
   }, [receivedReviews]);
 
@@ -558,6 +568,95 @@ export const ClassroomPeerReviewModal: React.FC<ClassroomPeerReviewModalProps> =
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Detailed Peer Reviews Received & Helpful Thumbs Up */}
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <h5 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <MessageSquare size={14} className="text-indigo-600" />
+                  Daftar Umpan Balik Lengkap dari Teman Kelas
+                </h5>
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">
+                  {rubricsSummary.reviewsToAnalyze.length} Masukan Anonim
+                </span>
+              </div>
+
+              <div className="space-y-3.5">
+                {rubricsSummary.reviewsToAnalyze.map((r, i) => {
+                  const averageScore = Math.round(
+                    ((r.SCORE_KREATIVITAS || 85) + (r.SCORE_STRUKTUR || 85) + (r.SCORE_MATERI || 85) + (r.SCORE_SIKAP || 90)) / 4
+                  );
+                  const isThumbsUp = !!r.THUMBS_UP;
+
+                  return (
+                    <div key={r.ID || i} className="p-4 rounded-2xl bg-slate-50 border border-slate-150 space-y-3 relative overflow-hidden transition hover:shadow-2xs">
+                      <div className="flex items-start justify-between flex-wrap gap-2">
+                        <div className="space-y-0.5">
+                          <h6 className="text-xs font-black text-slate-900">
+                            Umpan Balik Sejawat #{i + 1}
+                          </h6>
+                          <span className="text-[10px] text-slate-400 font-medium block">
+                            Disubmit secara rahasia • {r.SUBMITTED_AT || 'Baru Saja'}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-black bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg">
+                          Skor Rata-Rata: {averageScore}/100
+                        </span>
+                      </div>
+
+                      {/* Comment grids */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-700">
+                        {r.FEEDBACK_KREATIVITAS && (
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-100">
+                            <strong className="text-[9px] text-indigo-800 uppercase block mb-0.5 font-bold">🎨 Kreativitas ({r.SCORE_KREATIVITAS || 85})</strong>
+                            <p className="italic">"{r.FEEDBACK_KREATIVITAS}"</p>
+                          </div>
+                        )}
+                        {r.FEEDBACK_STRUKTUR && (
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-100">
+                            <strong className="text-[9px] text-indigo-800 uppercase block mb-0.5 font-bold">📋 Struktur ({r.SCORE_STRUKTUR || 85})</strong>
+                            <p className="italic">"{r.FEEDBACK_STRUKTUR}"</p>
+                          </div>
+                        )}
+                        {r.FEEDBACK_MATERI && (
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-100">
+                            <strong className="text-[9px] text-indigo-800 uppercase block mb-0.5 font-bold">📚 Materi ({r.SCORE_MATERI || 85})</strong>
+                            <p className="italic">"{r.FEEDBACK_MATERI}"</p>
+                          </div>
+                        )}
+                        {r.GENERAL_COMMENT && (
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-100 sm:col-span-2">
+                            <strong className="text-[9px] text-indigo-800 uppercase block mb-0.5 font-bold">💬 Komentar Umum</strong>
+                            <p className="italic font-bold text-slate-800">"{r.GENERAL_COMMENT}"</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Reward Integration / Thumbs-up Action Button */}
+                      <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                          <Sparkles size={11} className="text-amber-500" />
+                          <span>Membantu teman sekelas membangun sikap gotong royong Pancasila.</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleToggleReviewThumbsUp(r.ID)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-3xs select-none border shrink-0 ${
+                            isThumbsUp
+                              ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 font-extrabold'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-300 font-extrabold'
+                          }`}
+                        >
+                          <ThumbsUp size={13} className={isThumbsUp ? 'fill-white text-white' : 'text-slate-400'} />
+                          <span>{isThumbsUp ? 'Bermanfaat! ✓ (+100 Poin Lencana Helper Sejati)' : 'Beri Thumbs-Up 👍'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
