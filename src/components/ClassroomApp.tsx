@@ -219,6 +219,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const [isMobileNav, setIsMobileNav] = useState(false);
   const [showUnlockInfo, setShowUnlockInfo] = useState(false);
   const [dismissedFabQueueFlyout, setDismissedFabQueueFlyout] = useState(false);
+  const [showFabExportClearConfirm, setShowFabExportClearConfirm] = useState(false);
   
   const [isLowBattery, setIsLowBattery] = useState(false);
   const [isLowBatterySimulated, setIsLowBatterySimulated] = useState(false);
@@ -702,6 +703,16 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     try { localStorage.setItem('sdn6_qr_mute_feedback', String(newState)); } catch {}
   };
 
+  const [showFabSessionStats, setShowFabSessionStats] = useState(() => {
+    try { return localStorage.getItem('sdn6_show_fab_session_stats') === 'true'; } catch { return false; }
+  });
+
+  const toggleFabSessionStats = () => {
+    const newState = !showFabSessionStats;
+    setShowFabSessionStats(newState);
+    try { localStorage.setItem('sdn6_show_fab_session_stats', String(newState)); } catch {}
+  };
+
   const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>(() => {
     try { return (localStorage.getItem('sdn6_qr_camera_facing') as 'environment' | 'user') || 'environment'; } catch { return 'environment'; }
   });
@@ -1054,6 +1065,22 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       trend.push({ day: days[d.getDay()], scans: count });
     }
     return trend;
+  }, [recentFabScans]);
+
+  // Computed scanning frequency stats for the current session (last 60 mins in 5-min bins)
+  const sessionStatsData = useMemo(() => {
+    const now = Date.now();
+    const bins = [];
+    for (let i = 11; i >= 0; i--) {
+      const minutesAgo = i * 5;
+      const binTime = new Date(now - minutesAgo * 60 * 1000);
+      const label = binTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const startTime = now - (minutesAgo + 5) * 60 * 1000;
+      const endTime = now - minutesAgo * 60 * 1000;
+      const count = recentFabScans.filter(s => s.timestamp >= startTime && s.timestamp < endTime).length;
+      bins.push({ Time: label, Scans: count });
+    }
+    return bins;
   }, [recentFabScans]);
 
   // Long-press and touch handlers for FAB
@@ -2652,6 +2679,24 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 </button>
                 <button
                   type="button"
+                  onClick={toggleFabSessionStats}
+                  className="w-full px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-md ${showFabSessionStats ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                      <BarChart2 size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-[11px] font-bold text-slate-200">Show Session Stats</div>
+                      <div className="text-[9px] text-slate-400">Grafik frekuensi scan sesi aktif</div>
+                    </div>
+                  </div>
+                  <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${showFabSessionStats ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                    <div className={`w-3 h-3 rounded-full bg-white transition-transform ${showFabSessionStats ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+                <button
+                  type="button"
                   onClick={toggleCameraFacingMode}
                   className="w-full px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
                 >
@@ -2872,6 +2917,39 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                   </div>
                 ) : filteredFabScans.length > 0 ? (
                   <div className="space-y-1">
+                    {showFabSessionStats && (
+                      <div className="mx-1 my-1.5 p-2 rounded-xl bg-slate-900/90 border border-slate-800 shadow-inner">
+                        <div className="flex items-center justify-between text-[9px] text-slate-300 mb-1 font-extrabold px-1">
+                          <span className="flex items-center gap-1.5 text-slate-200">
+                            <BarChart2 size={11} className="text-emerald-400" />
+                            <span>Frekuensi Scan Sesi Aktif</span>
+                          </span>
+                          <span className="text-emerald-400 font-mono font-bold bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded-md">
+                            {recentFabScans.length} Scan Total
+                          </span>
+                        </div>
+                        <div className="h-[55px] w-full mt-1.5 -ml-4">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={sessionStatsData} margin={{ top: 2, right: 2, left: -20, bottom: 2 }}>
+                              <XAxis dataKey="Time" tick={{ fill: '#94a3b8', fontSize: 6.5 }} tickLine={false} axisLine={false} />
+                              <YAxis tick={{ fill: '#94a3b8', fontSize: 6.5 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                              <Tooltip
+                                contentStyle={{
+                                  background: '#0f172a',
+                                  border: '1px solid #334155',
+                                  borderRadius: '6px',
+                                  fontSize: '8px',
+                                  color: '#fff',
+                                  padding: '2px 4px',
+                                }}
+                                cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
+                              />
+                              <Bar dataKey="Scans" fill="#10b981" radius={[1.5, 1.5, 0, 0]} isAnimationActive={false} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                     {filteredFabScans.slice(0, 5).map((scan) => {
                       const timeStr = (() => {
                         const diffSec = Math.floor((Date.now() - scan.timestamp) / 1000);
@@ -3145,59 +3223,88 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 initial={{ opacity: 0, y: 15, scale: 0.9 }}
                 animate={{ opacity: 1, y: -16, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                className="absolute -top-14 right-0 z-50 flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900 text-white font-extrabold text-xs shadow-2xl border border-amber-500/50 shadow-amber-500/20 whitespace-nowrap"
+                className="absolute -top-14 right-0 z-50 flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900 text-white font-extrabold text-xs shadow-2xl border border-amber-500/50 shadow-amber-500/20 whitespace-nowrap animate-in fade-in duration-200"
               >
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                <span className="text-amber-300 font-mono font-bold">{recentFabScans.length} Item</span>
-                <span className="hidden sm:inline text-slate-300 font-medium">di Antrean</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const headers = ['ID', 'Tipe', 'Kode/Payload', 'Nama/Judul', 'Detail/Subtitel', 'Waktu Pindai'];
-                      const rows = recentFabScans.map((item: any) => {
-                        const timeStr = new Date(item.timestamp).toLocaleString('id-ID');
-                        return [
-                          `"${(item.id || '').replace(/"/g, '""')}"`,
-                          `"${(item.type || '').replace(/"/g, '""')}"`,
-                          `"${(item.code || '').replace(/"/g, '""')}"`,
-                          `"${(item.title || '').replace(/"/g, '""')}"`,
-                          `"${(item.subtitle || '').replace(/"/g, '""')}"`,
-                          `"${timeStr}"`
-                        ];
-                      });
-                      const csvContent = [headers.join(','), ...rows.map((e: any) => e.join(','))].join('\n');
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.setAttribute('href', url);
-                      link.setAttribute('download', `riwayat_pemindaian_batch_sdn6_${new Date().toISOString().split('T')[0]}.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      localStorage.removeItem('sdn6_qr_recent_scans_v1');
-                      setRecentFabScans([]);
-                      setDismissedFabQueueFlyout(true);
-                      setToastMessage(`Batch ${recentFabScans.length} item berhasil diekspor & antrean dibersihkan.`);
-                      setTimeout(() => setToastMessage(null), 3500);
-                    } catch (e) {
-                      console.error('Error exporting batch from FAB:', e);
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] flex items-center gap-1 shadow-xs transition cursor-pointer"
-                  title="Ekspor CSV & bersihkan antrean batch"
-                >
-                  <Download size={11} />
-                  <span>Ekspor & Bersihkan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDismissedFabQueueFlyout(true)}
-                  className="text-slate-400 hover:text-white p-0.5 transition cursor-pointer"
-                  title="Abaikan"
-                >
-                  <X size={13} />
-                </button>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                <div className="flex flex-col text-left min-w-0 pr-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-amber-300 font-mono font-bold">{recentFabScans.length} Item</span>
+                    <span className="text-slate-300 font-bold">{showFabExportClearConfirm ? "Anda Yakin?" : "di Antrean"}</span>
+                  </div>
+                  {showFabExportClearConfirm && (
+                    <span className="text-[9px] text-slate-400 font-medium leading-none mt-0.5">Ekspor CSV & hapus antrean?</span>
+                  )}
+                </div>
+                {!showFabExportClearConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowFabExportClearConfirm(true)}
+                    className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] flex items-center gap-1 shadow-xs transition cursor-pointer"
+                    title="Ekspor CSV & bersihkan antrean batch"
+                  >
+                    <Download size={11} />
+                    <span>Ekspor & Bersihkan</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          const headers = ['ID', 'Tipe', 'Kode/Payload', 'Nama/Judul', 'Detail/Subtitel', 'Waktu Pindai'];
+                          const rows = recentFabScans.map((item: any) => {
+                            const timeStr = new Date(item.timestamp).toLocaleString('id-ID');
+                            return [
+                              `"${(item.id || '').replace(/"/g, '""')}"`,
+                              `"${(item.type || '').replace(/"/g, '""')}"`,
+                              `"${(item.code || '').replace(/"/g, '""')}"`,
+                              `"${(item.title || '').replace(/"/g, '""')}"`,
+                              `"${(item.subtitle || '').replace(/"/g, '""')}"`,
+                              `"${timeStr}"`
+                            ];
+                          });
+                          const csvContent = [headers.join(','), ...rows.map((e: any) => e.join(','))].join('\n');
+                          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.setAttribute('href', url);
+                          link.setAttribute('download', `riwayat_pemindaian_batch_sdn6_${new Date().toISOString().split('T')[0]}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          localStorage.removeItem('sdn6_qr_recent_scans_v1');
+                          setRecentFabScans([]);
+                          setShowFabExportClearConfirm(false);
+                          setDismissedFabQueueFlyout(true);
+                          setToastMessage(`Batch ${recentFabScans.length} item berhasil diekspor & antrean dibersihkan.`);
+                          setTimeout(() => setToastMessage(null), 3500);
+                        } catch (e) {
+                          console.error('Error exporting batch from FAB:', e);
+                        }
+                      }}
+                      className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]"
+                    >
+                      Ya
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowFabExportClearConfirm(false)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px]"
+                    >
+                      Tidak
+                    </button>
+                  </div>
+                )}
+                {!showFabExportClearConfirm && (
+                  <button
+                    type="button"
+                    onClick={() => setDismissedFabQueueFlyout(true)}
+                    className="text-slate-400 hover:text-white p-0.5 transition cursor-pointer"
+                    title="Abaikan"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

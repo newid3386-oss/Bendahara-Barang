@@ -56,6 +56,7 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
   const [encouragementNote, setEncouragementNote] = useState<string>(presetNotes[0]);
   const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isExportingP5, setIsExportingP5] = useState<boolean>(false);
   const [exportedSuccess, setExportedSuccess] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
@@ -104,6 +105,27 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
       console.error('Gagal mengekspor PDF:', err);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleDownloadP5Pdf = async () => {
+    setIsExportingP5(true);
+    try {
+      await pdfService.generateStudentP5ReportPdf(
+        {
+          ID: student.ID,
+          NAMA: student.NAMA,
+          KELAS: kelas,
+        },
+        teacherName,
+        teacherNip
+      );
+      setExportedSuccess(true);
+      setTimeout(() => setExportedSuccess(false), 3000);
+    } catch (err) {
+      console.error('Gagal mengekspor Rapor P5 PDF:', err);
+    } finally {
+      setIsExportingP5(false);
     }
   };
 
@@ -160,6 +182,16 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
             >
               <Download size={15} />
               {isExporting ? 'Proses PDF...' : 'Unduh File PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadP5Pdf}
+              disabled={isExportingP5}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50"
+              title="Unduh Lembaran Rapor P5 Resmi berbasis Kurikulum Merdeka"
+            >
+              <Award size={15} />
+              {isExportingP5 ? 'Proses Rapor P5...' : 'Unduh Rapor P5'}
             </button>
             <button
               type="button"

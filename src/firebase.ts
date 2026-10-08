@@ -25,6 +25,7 @@ export const firestore: Firestore = (() => {
       {
         localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
         ignoreUndefinedProperties: true,
+        experimentalForceLongPolling: true,
       },
       databaseId || undefined
     );
@@ -35,6 +36,7 @@ export const firestore: Firestore = (() => {
         {
           localCache: memoryLocalCache(),
           ignoreUndefinedProperties: true,
+          experimentalForceLongPolling: true,
         },
         databaseId || undefined
       );

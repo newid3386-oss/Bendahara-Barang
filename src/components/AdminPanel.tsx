@@ -159,10 +159,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  if (!admin) {
-    onLogout();
-    return null;
-  }
+  useEffect(() => {
+    if (!admin) {
+      onLogout();
+    }
+  }, [admin, onLogout]);
 
   const handleSyncDapodikAccounts = () => {
     setIsSyncingAccounts(true);
@@ -345,6 +346,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
   const currentSistem: SystemType | null =
     tab === 'siperseda' ? 'SIPERSEDA' : tab === 'classroom' ? 'CLASSROOM' : tab === 'admin' ? 'ADMIN' : null;
+
+  if (!admin) {
+    return null;
+  }
 
   return (
     <div className={`min-h-screen ${styles.bgApp} flex flex-col font-sans antialiased`}>

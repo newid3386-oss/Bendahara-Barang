@@ -581,6 +581,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
   const [undoToast, setUndoToast] = useState<string | null>(null);
   const [dismissedBatchFlyout, setDismissedBatchFlyout] = useState<boolean>(false);
+  const [showModalExportClearConfirm, setShowModalExportClearConfirm] = useState<boolean>(false);
 
   const clearLastScannedItem = () => {
     if (recentScans.length === 0) return;
@@ -2231,35 +2232,57 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   </span>
                   <div className="min-w-0">
                     <p className="font-extrabold text-amber-300 truncate">
-                      Antrean Batch Mencukupi ({recentScans.length} Item)
+                      {showModalExportClearConfirm ? "Anda Yakin?" : `Antrean Batch Mencukupi (${recentScans.length} Item)`}
                     </p>
                     <p className="text-[10px] text-slate-300 truncate">
-                      Siap diekspor ke CSV & dibersihkan untuk efisiensi kelas besar.
+                      {showModalExportClearConfirm ? "Proses ini akan mengunduh CSV & mengosongkan antrean." : "Siap diekspor ke CSV & dibersihkan untuk efisiensi kelas besar."}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      exportHistoryToCSV();
-                      clearRecentScans();
-                      setDismissedBatchFlyout(true);
-                      setUndoToast(`Batch ${recentScans.length} item berhasil diekspor ke CSV & antrean dibersihkan.`);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[10px] flex items-center gap-1.5 shadow-md cursor-pointer transition"
-                  >
-                    <Download size={12} />
-                    <span>Ekspor & Bersihkan</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDismissedBatchFlyout(true)}
-                    className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-                    title="Abaikan & lanjut scan"
-                  >
-                    <X size={14} />
-                  </button>
+                  {!showModalExportClearConfirm ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowModalExportClearConfirm(true)}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[10px] flex items-center gap-1.5 shadow-md cursor-pointer transition"
+                    >
+                      <Download size={12} />
+                      <span>Ekspor & Bersihkan</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          exportHistoryToCSV();
+                          clearRecentScans();
+                          setShowModalExportClearConfirm(false);
+                          setDismissedBatchFlyout(true);
+                          setUndoToast(`Batch ${recentScans.length} item berhasil diekspor ke CSV & antrean dibersihkan.`);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]"
+                      >
+                        Ya, Ekspor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowModalExportClearConfirm(false)}
+                        className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px]"
+                      >
+                        Batal
+                      </button>
+                    </>
+                  )}
+                  {!showModalExportClearConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => setDismissedBatchFlyout(true)}
+                      className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                      title="Abaikan & lanjut scan"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}
