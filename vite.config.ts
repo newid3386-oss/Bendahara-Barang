@@ -9,7 +9,12 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'react': path.resolve(__dirname, './node_modules/react'),
+        'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       },
+    },
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'recharts'],
     },
     server: {
       host: true,
@@ -21,17 +26,6 @@ export default defineConfig(() => {
     },
     build: {
       chunkSizeWarningLimit: 2000,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom'],
-            charts: ['recharts', 'd3'],
-            icons: ['lucide-react'],
-            utils: ['jspdf', 'xlsx', 'jszip', 'qrcode'],
-            ui: ['motion', 'react-markdown'],
-          },
-        },
-      },
     },
   };
 });

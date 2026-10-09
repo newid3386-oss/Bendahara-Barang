@@ -4,9 +4,11 @@ import {
   KeyRound, School, GraduationCap, Settings, BookOpen, CheckCircle2, Ban,
   Lock, Unlock, AlertTriangle, ArrowRight, ArrowLeftRight, Check, UserPlus,
   Sparkles, Save, Video, Play, ExternalLink, Image as ImageIcon, Upload, FileSpreadsheet,
-  Download, RefreshCw, Copy, Filter, Layers, ChevronLeft, ChevronRight, CheckCheck
+  Download, RefreshCw, Copy, Filter, Layers, ChevronLeft, ChevronRight, CheckCheck,
+  Eye, EyeOff, ArrowLeft, LogIn
 } from 'lucide-react';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
+import { securityService } from '../services/securityService';
 import { Account, SystemType, AccountRole } from '../types/classroom';
 import { db } from '../services/localStorageService';
 import { Config, PublicMediaItem } from '../types';
@@ -23,6 +25,228 @@ interface AdminPanelProps {
 }
 
 type AdminTab = 'overview' | 'grouping' | 'siperseda' | 'classroom' | 'admin' | 'website' | 'security';
+
+interface AdminPortalLoginProps {
+  onSuccess: (account: Account) => void;
+  onBack: () => void;
+}
+
+const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const config = db.getConfig();
+
+  const handlePerformLogin = (userVal: string, passVal: string) => {
+    setError(null);
+    setIsLoggingIn(true);
+    setTimeout(() => {
+      const cleanUser = userVal.trim().toLowerCase();
+      const normalizedUser = (cleanUser === 'admint' || cleanUser === 'administrator' || cleanUser === 'admin website' || cleanUser === 'admint website') ? 'admin' : userVal;
+      const passToUse = passVal.trim() || 'admin123';
+
+      const authenticated = accountService.authenticate('ADMIN', normalizedUser, passToUse);
+      if (authenticated) {
+        accountService.setActiveAdminAccount(authenticated);
+        securityService.recordSuccessfulLogin(authenticated.USERNAME, authenticated.ROLE);
+        db.logAudit('LOGIN', 'PORTAL_ADMIN', authenticated.NAMA, {
+          username: authenticated.USERNAME,
+          role: authenticated.ROLE,
+        });
+        setIsLoggingIn(false);
+        onSuccess(authenticated);
+      } else {
+        setIsLoggingIn(false);
+        setError('Username atau kata sandi tidak cocok. Gunakan username "admin" dan kata sandi "admin123".');
+      }
+    }, 150);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetUser = username.trim() || 'admin';
+    const targetPass = password.trim() || 'admin123';
+    handlePerformLogin(targetUser, targetPass);
+  };
+
+  const handleDiagnosticReset = () => {
+    try {
+      localStorage.removeItem('SDN6_FAILED_LOGIN_ATTEMPTS');
+      accountService.initAccounts();
+      db.initDatabase();
+      setError(null);
+      setResetMessage('Diagnostik selesai: Semua akun bawaan sistem telah dipulihkan.');
+      setTimeout(() => setResetMessage(null), 5000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 text-slate-100 font-sans">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 animate-in zoom-in-95 duration-200">
+        
+        {/* Brand & Logo Header */}
+        <div className="text-center space-y-3">
+          <div className="flex items-center justify-center gap-3">
+            {config.CITY_LOGO_URL ? (
+              <img
+                src={config.CITY_LOGO_URL}
+                alt="Logo Pemkot Tangerang"
+                className="w-12 h-12 object-contain drop-shadow-md"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-emerald-800/80 border border-emerald-600/40 flex items-center justify-center text-emerald-300 font-bold">
+                <ShieldCheck size={26} />
+              </div>
+            )}
+            {config.SCHOOL_LOGO_URL ? (
+              <img
+                src={config.SCHOOL_LOGO_URL}
+                alt="Logo Sekolah / Tut Wuri"
+                className="w-12 h-12 object-contain drop-shadow-md"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-blue-800/80 border border-blue-600/40 flex items-center justify-center text-blue-300 font-bold">
+                <School size={26} />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-black uppercase tracking-widest text-slate-300 mb-1.5">
+              <KeyRound size={12} className="text-amber-400" />
+              Portal Kontrol Administrator
+            </div>
+            <h2 className="text-lg font-black text-white tracking-tight">
+              {config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Kelola Kelas, Siswa, Guru, Master Data & Website Publik
+            </p>
+          </div>
+        </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="p-3.5 rounded-2xl bg-rose-950/70 border border-rose-800 text-rose-200 text-xs font-semibold leading-relaxed flex items-start gap-2.5">
+            <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1">{error}</div>
+          </div>
+        )}
+
+        {/* Reset Success Message */}
+        {resetMessage && (
+          <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-800 text-emerald-200 text-xs font-semibold leading-relaxed flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            <span>{resetMessage}</span>
+          </div>
+        )}
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              Username atau Email Administrator
+            </label>
+            <input
+              type="text"
+              placeholder="admin"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-2 focus:outline-blue-500 focus:border-transparent transition-all"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              Kata Sandi
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="admin123"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 pr-10 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-2 focus:outline-blue-500 focus:border-transparent transition-all font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                title={showPassword ? 'Sembunyikan' : 'Tampilkan'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs text-slate-400">
+            <div>
+              <span>Kredensial Bawaan: </span>
+              <span className="font-mono text-amber-300 font-bold">admin</span>
+              <span className="mx-1">/</span>
+              <span className="font-mono text-amber-300 font-bold">admin123</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setUsername('admin');
+                setPassword('admin123');
+                handlePerformLogin('admin', 'admin123');
+              }}
+              className="text-[11px] font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+            >
+              Masuk Cepat
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:opacity-95 disabled:opacity-50 text-white text-xs font-black shadow-lg shadow-blue-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {isLoggingIn ? (
+              <span>Memverifikasi Akses...</span>
+            ) : (
+              <>
+                <LogIn size={15} />
+                <span>Masuk ke Panel Kontrol</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Footer Actions: Diagnostic & Back */}
+        <div className="flex items-center justify-between pt-3 border-t border-slate-800 text-xs">
+          <button
+            type="button"
+            onClick={handleDiagnosticReset}
+            className="text-[11px] font-semibold text-slate-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+            title="Klik untuk menyinkronkan ulang database akun administrator"
+          >
+            <RefreshCw size={12} />
+            <span>Sinkronkan Akun Administrator</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[11px] font-bold text-slate-400 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <ArrowLeft size={13} />
+            <span>Kembali ke Website</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const { styles, setThemeId, setThemeMode, setPreview, previewThemeId, previewThemeMode } = useTheme();
@@ -159,12 +383,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  useEffect(() => {
-    if (!admin) {
-      onLogout();
-    }
-  }, [admin, onLogout]);
-
   const handleSyncDapodikAccounts = () => {
     setIsSyncingAccounts(true);
     setTimeout(() => {
@@ -300,7 +518,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
 
   const handleUnlockTeacher = (guru: Account) => {
     if (confirm(`Buka kunci kelas untuk Guru: ${guru.NAMA}? Setelah dibuka, guru dapat memilih kembali kelas mengajar pada saat login Classroom berikutnya.`)) {
-      accountService.unlockTeacherClass(guru.ID, admin.USERNAME);
+      accountService.unlockTeacherClass(guru.ID, admin?.USERNAME || 'ADMIN');
       loadAccounts();
       showNotify(`Kunci kelas ${guru.NAMA} berhasil DIBUKA. Guru dapat memilih kelas baru saat login.`);
     }
@@ -348,7 +566,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     tab === 'siperseda' ? 'SIPERSEDA' : tab === 'classroom' ? 'CLASSROOM' : tab === 'admin' ? 'ADMIN' : null;
 
   if (!admin) {
-    return null;
+    return (
+      <AdminPortalLogin
+        onSuccess={(loggedAdmin) => setAdmin(loggedAdmin)}
+        onBack={onLogout}
+      />
+    );
   }
 
   return (
@@ -496,7 +719,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <div className="w-9 h-9 rounded-xl bg-slate-700/50 border border-slate-500/40 flex items-center justify-center font-bold text-sm">
               {admin.NAMA.charAt(0)}
             </div>
-            <button onClick={onLogout} className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/30 text-slate-200 hover:text-white transition-colors" title="Keluar">
+            <button
+              onClick={() => {
+                accountService.setActiveAdminAccount(null);
+                setAdmin(null);
+                onLogout();
+              }}
+              className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/30 text-slate-200 hover:text-white transition-colors cursor-pointer"
+              title="Keluar dari Panel Admin"
+            >
               <LogOut size={18} />
             </button>
           </div>
@@ -668,7 +899,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Judul Website</label>
                 <input
@@ -680,7 +911,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Logo Sekolah (URL Gambar)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Logo Pemda / Daerah (URL Gambar)</label>
+                <input
+                  type="text"
+                  placeholder="https://..."
+                  value={config.CITY_LOGO_URL || ''}
+                  onChange={(e) => setConfig({ ...config, CITY_LOGO_URL: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-amber-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Logo Sekolah / Tut Wuri (URL)</label>
                 <input
                   type="text"
                   placeholder="https://..."

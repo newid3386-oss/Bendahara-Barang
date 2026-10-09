@@ -77,6 +77,10 @@ export default function App() {
         setViewMode('website');
       } else if (viewParam === 'app' || viewParam === 'dashboard') {
         setViewMode('app');
+      } else if (viewParam === 'admin') {
+        setViewMode('admin');
+      } else if (viewParam === 'classroom') {
+        setViewMode('classroom');
       }
 
       if (pageParam) {

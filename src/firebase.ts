@@ -8,6 +8,7 @@ import {
   persistentLocalCache,
   persistentSingleTabManager,
   memoryLocalCache,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfigRaw from '../firebase-applet-config.json';
 
@@ -15,6 +16,13 @@ const firebaseConfig = firebaseConfigRaw as any;
 
 // Initialize Firebase App
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+// Suppress Firestore verbose warnings/logs such as offline/connection notices
+try {
+  setLogLevel('silent');
+} catch (e) {
+  // Ignore
+}
 
 // Initialize Firestore with robust local persistent cache
 export const firestore: Firestore = (() => {
@@ -70,9 +78,5 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
-// Execute connection check asynchronously on browser load
-if (typeof window !== 'undefined') {
-  testConnection();
-}
-
+// Connection check is available on demand when sync is invoked
 export default app;

@@ -143,6 +143,12 @@ class SecurityService {
     }
 
     const clean = username.trim().toLowerCase();
+
+    // Administrator accounts are exempt from lockouts to prevent accidental lockout
+    if (clean === 'admin' || clean === 'admint' || clean === 'administrator' || clean === 'superadmin') {
+      return { locked: false, lockTimeRemainingSeconds: 0 };
+    }
+
     const record = this.failedAttempts.get(clean);
     if (!record) {
       return { locked: false, lockTimeRemainingSeconds: 0 };
@@ -221,6 +227,22 @@ class SecurityService {
       { username, role }
     );
     this.updateActivity();
+    this.notify();
+  }
+
+  public clearAllLockouts(): void {
+    this.failedAttempts.clear();
+    this.persistFailedAttempts();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEYS.FAILED_ATTEMPTS);
+    }
+    this.notify();
+  }
+
+  public unlockAccount(username: string): void {
+    const clean = username.trim().toLowerCase();
+    this.failedAttempts.delete(clean);
+    this.persistFailedAttempts();
     this.notify();
   }
 

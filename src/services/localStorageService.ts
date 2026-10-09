@@ -127,6 +127,10 @@ const DEFAULT_PUBLIC_MEDIA: PublicMediaItem[] = [
 class LocalStorageService {
   private cache: Record<string, any> = {};
 
+  constructor() {
+    this.initDatabase();
+  }
+
   private getItem<T>(key: string, defaultValue: T): T {
     if (this.cache[key] !== undefined) {
       return this.cache[key] as T;
@@ -259,8 +263,20 @@ class LocalStorageService {
   // --- Config ---
   public getConfig(): Config {
     const cfg = this.getItem<Config>(STORAGE_KEYS.CONFIG, DEFAULT_CONFIG);
+    let changed = false;
     if (!cfg.SCHOOL_NPSN || cfg.SCHOOL_NPSN === '20606016' || cfg.SCHOOL_NPSN === '20606621') {
       cfg.SCHOOL_NPSN = '20606498';
+      changed = true;
+    }
+    if (!cfg.CITY_LOGO_URL) {
+      cfg.CITY_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/8/83/Lambang_Daerah_Kota_Tangerang.png';
+      changed = true;
+    }
+    if (!cfg.SCHOOL_LOGO_URL) {
+      cfg.SCHOOL_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Logo-Tut-Wuri-Handayani-PNG-Warna.png';
+      changed = true;
+    }
+    if (changed) {
       this.setItem(STORAGE_KEYS.CONFIG, cfg);
     }
     return cfg;

@@ -140,52 +140,48 @@ export const PersediaanView: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-bold">
-                <th className="py-3 px-4">Kode Barang</th>
-                <th className="py-3 px-4">Nama Barang</th>
-                <th className="py-3 px-4 text-center">Satuan</th>
-                <th className="py-3 px-4 text-center text-emerald-900">Total Masuk</th>
-                <th className="py-3 px-4 text-center text-amber-900">Total Keluar</th>
-                <th className="py-3 px-4 text-center text-blue-900">Penyesuaian</th>
-                <th className="py-3 px-4 text-center font-black">Saldo Akhir</th>
-                <th className="py-3 px-4 text-center">Batas Min</th>
-                <th className="py-3 px-4 text-center">Status</th>
+              <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                <th className="py-3.5 px-4 whitespace-nowrap">Kode Barang</th>
+                <th className="py-3.5 px-4">Nama Barang</th>
+                <th className="py-3.5 px-4 text-center whitespace-nowrap">Satuan</th>
+                <th className="py-3.5 px-4 text-center text-emerald-900 whitespace-nowrap">Total Masuk</th>
+                <th className="py-3.5 px-4 text-center text-amber-900 whitespace-nowrap">Total Keluar</th>
+                <th className="py-3.5 px-4 text-center text-blue-900 whitespace-nowrap">Penyesuaian</th>
+                <th className="py-3.5 px-4 text-center text-slate-900 whitespace-nowrap">Saldo Akhir</th>
+                <th className="py-3.5 px-4 text-center whitespace-nowrap">Batas Min</th>
+                <th className="py-3.5 px-4 text-center whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {filtered.length > 0 ? (
                 filtered.map((item) => (
                   <tr key={item.KODE_BARANG} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800">{item.KODE_BARANG}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-slate-500 whitespace-nowrap tracking-wider">{item.KODE_BARANG}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{item.NAMA_BARANG}</td>
-                    <td className="py-3 px-4 text-center">{item.JENIS_SATUAN}</td>
-                    <td className="py-3 px-4 text-center text-emerald-800 font-semibold">+{item.TOTAL_MASUK}</td>
-                    <td className="py-3 px-4 text-center text-amber-800 font-semibold">-{item.TOTAL_KELUAR}</td>
-                    <td className="py-3 px-4 text-center text-blue-800">
+                    <td className="py-3 px-4 text-center whitespace-nowrap text-slate-600">{item.JENIS_SATUAN}</td>
+                    <td className="py-3 px-4 text-center text-emerald-700 font-semibold font-mono tabular-nums whitespace-nowrap">+{item.TOTAL_MASUK}</td>
+                    <td className="py-3 px-4 text-center text-rose-600 font-semibold font-mono tabular-nums whitespace-nowrap">-{item.TOTAL_KELUAR}</td>
+                    <td className="py-3 px-4 text-center text-blue-600 font-semibold font-mono tabular-nums whitespace-nowrap">
                       {item.TOTAL_ADJUSTMENT !== 0 ? (item.TOTAL_ADJUSTMENT > 0 ? `+${item.TOTAL_ADJUSTMENT}` : item.TOTAL_ADJUSTMENT) : '0'}
                     </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={`px-3 py-1 rounded-full font-black text-xs ${
-                          item.STATUS === 'MINIMUM'
-                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                            : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
-                        }`}
-                      >
-                        {item.STOK} {item.JENIS_SATUAN}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      <span className={`font-mono tabular-nums font-black text-sm ${item.STATUS === 'MINIMUM' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        {item.STOK}
                       </span>
+                      <span className="text-slate-400 font-semibold ml-1 text-[11px]">{item.JENIS_SATUAN}</span>
                     </td>
-                    <td className="py-3 px-4 text-center text-slate-500">
-                      {item.BATAS_MINIMUM} {item.JENIS_SATUAN}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      <span className="font-mono tabular-nums font-bold text-slate-700">{item.BATAS_MINIMUM}</span>
+                      <span className="text-slate-400 font-medium ml-1 text-[11px]">{item.JENIS_SATUAN}</span>
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
                       {item.STATUS === 'MINIMUM' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-100 text-rose-800">
-                          <AlertTriangle size={11} /> Minimum
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-100">
+                          <AlertTriangle size={11} className="text-rose-500" /> MINIMUM
                         </span>
                       ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                          Aman
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100/60">
+                          <span className="w-1 h-1 rounded-full bg-emerald-600"></span> AMAN
                         </span>
                       )}
                     </td>

@@ -30,6 +30,8 @@ export const OFFICIAL_CONFIG: Config = {
   AUTO_SYNC_INTERVAL_MINUTES: 15,
   SCHOOL_EMAIL: 'sdnegeritangerang6@gmail.com',
   SCHOOL_WEBSITE: 'http://www.sdtng6.com',
+  CITY_LOGO_URL: 'https://upload.wikimedia.org/wikipedia/commons/8/83/Lambang_Daerah_Kota_Tangerang.png',
+  SCHOOL_LOGO_URL: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Logo-Tut-Wuri-Handayani-PNG-Warna.png',
   BA_DEFAULT_CITY: 'Tangerang',
   BA_SHOW_DOCUMENTATION: 'YA',
   QR_PROVIDER: 'QUICKCHART',

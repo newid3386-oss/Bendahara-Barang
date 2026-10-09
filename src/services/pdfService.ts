@@ -81,6 +81,41 @@ export interface BeritaAcaraOptions {
 }
 
 export class PdfService {
+  private logoCache: { [url: string]: string } = {};
+
+  constructor() {
+    // Run preloading in a microtask/setTimeout to prevent blocking the main thread during module load
+    setTimeout(() => {
+      this.preloadLogos();
+    }, 1000);
+  }
+
+  public preloadLogos(): void {
+    try {
+      const config = db.getConfig();
+      const urls = [config.CITY_LOGO_URL, config.SCHOOL_LOGO_URL].filter(Boolean) as string[];
+      urls.forEach(async (url) => {
+        if (this.logoCache[url]) return;
+        try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          const blob = await response.blob();
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          this.logoCache[url] = base64;
+        } catch (e) {
+          // Silent catch to avoid spamming logs on offline mode
+        }
+      });
+    } catch {
+      // Avoid crash on server-side compilation
+    }
+  }
+
   private getThemeRgb(theme: string = 'emerald'): [number, number, number] {
     switch (theme) {
       case 'navy':
@@ -119,16 +154,14 @@ export class PdfService {
       kopOptions?.line3 ||
       `UPT SATUAN PENDIDIKAN ${config.SCHOOL_NAME ? config.SCHOOL_NAME.toUpperCase() : 'SD NEGERI TANGERANG 6'}`;
 
-    const subInfo =
-      kopOptions?.line4 ||
-      [
-        `NPSN: ${config.SCHOOL_NPSN || '20606498'}`,
-        config.ADDRESS || 'Jl. Perintis Kemerdekaan No. 6',
-        config.SCHOOL_EMAIL ? `Email: ${config.SCHOOL_EMAIL}` : '',
-        config.SCHOOL_WEBSITE ? `Web: ${config.SCHOOL_WEBSITE}` : '',
-      ]
-        .filter(Boolean)
-        .join('  |  ');
+    // Splitting address and contact info elegantly into two lines for extreme legibility!
+    const line4 = kopOptions?.line4 || (config.ADDRESS || 'Jl. Nyi Mas Melati No. 02, RT 05 / RW 08, Kel. Sukarasa, Kec. Tangerang');
+    
+    const line5 = [
+      `NPSN: ${config.SCHOOL_NPSN || '20606498'}`,
+      config.SCHOOL_EMAIL ? `Email: ${config.SCHOOL_EMAIL}` : '',
+      config.SCHOOL_WEBSITE ? `Web: ${config.SCHOOL_WEBSITE.replace(/^https?:\/\//i, '')}` : '',
+    ].filter(Boolean).join('  |  ');
 
     const borderStyle = kopOptions?.borderStyle || 'double';
 
@@ -175,37 +208,45 @@ export class PdfService {
       textAlign = 'left';
     }
 
+    // Line 1: PEMERINTAH KOTA TANGERANG
     doc.setFont(fontFamily, 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(30, 41, 59);
+    doc.setTextColor(15, 23, 42); // Elegant Slate-900
     doc.text(line1, textCenterX, 14, { align: textAlign });
 
-    doc.setFontSize(10.5);
-    doc.text(line2, textCenterX, 19, { align: textAlign });
+    // Line 2: DINAS PENDIDIKAN
+    doc.setFontSize(11.5);
+    doc.text(line2, textCenterX, 18.5, { align: textAlign });
 
-    doc.setFontSize(12.5);
-    doc.text(line3, textCenterX, 25, { align: textAlign });
+    // Line 3: UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6 (Largest and Boldest!)
+    doc.setFontSize(13.5);
+    doc.text(line3, textCenterX, 24, { align: textAlign });
 
+    // Line 4: Alamat Jalan
     doc.setFont(fontFamily, 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105); // Slate-600
 
     if (textAlign === 'left') {
-      const splitSub = doc.splitTextToSize(subInfo, pageWidth - textCenterX - 14);
-      doc.text(splitSub, textCenterX, 30);
+      const splitLine4 = doc.splitTextToSize(line4, pageWidth - textCenterX - 14);
+      doc.text(splitLine4, textCenterX, 28);
+      
+      const splitLine5 = doc.splitTextToSize(line5, pageWidth - textCenterX - 14);
+      doc.text(splitLine5, textCenterX, 31.5);
     } else {
-      doc.text(subInfo, textCenterX, 30.5, { align: 'center' });
+      doc.text(line4, textCenterX, 28, { align: 'center' });
+      doc.text(line5, textCenterX, 31.5, { align: 'center' });
     }
 
-    // Border line beneath Kop Surat
-    const lineY = 34;
-    doc.setDrawColor(30, 41, 59);
+    // Border line beneath Kop Surat - Beautiful Double Garis Tebal Tipis
+    const lineY = 34.5;
+    doc.setDrawColor(15, 23, 42); // Solid Slate-900 for high-contrast lines
 
     if (borderStyle === 'double') {
       doc.setLineWidth(0.8);
       doc.line(leftMargin, lineY, rightMargin, lineY);
       doc.setLineWidth(0.2);
-      doc.line(leftMargin, lineY + 1, rightMargin, lineY + 1);
+      doc.line(leftMargin, lineY + 0.8, rightMargin, lineY + 0.8);
     } else if (borderStyle === 'bold') {
       doc.setLineWidth(0.9);
       doc.line(leftMargin, lineY, rightMargin, lineY);
@@ -214,7 +255,7 @@ export class PdfService {
       doc.line(leftMargin, lineY, rightMargin, lineY);
     }
 
-    return lineY + 7; // Returns Y start position for content
+    return lineY + 6.5; // Returns Y start position for content
   }
 
   private drawLogoPlaceholderOrImage(
@@ -226,52 +267,91 @@ export class PdfService {
     type: 'city' | 'school',
     url?: string
   ): void {
-    // If URL is valid data URL or base64, jsPDF can embed directly
-    if (url && (url.startsWith('data:image') || url.startsWith('blob:'))) {
-      try {
-        doc.addImage(url, 'PNG', x, y, w, h);
-        return;
-      } catch {
-        // Fallback to vector badge
+    if (url) {
+      // First, try preloaded cache
+      const cached = this.logoCache[url];
+      if (cached) {
+        try {
+          doc.addImage(cached, 'PNG', x, y, w, h);
+          return;
+        } catch {
+          // Fallback
+        }
+      }
+      // If not cached, try direct URL insertion (works if browser cached or relaxed CORS)
+      if (url.startsWith('data:image') || url.startsWith('blob:') || url.startsWith('http')) {
+        try {
+          doc.addImage(url, 'PNG', x, y, w, h);
+          return;
+        } catch {
+          // Fallback to vector
+        }
       }
     }
 
     // Vector Emblem drawing on PDF
     doc.saveGraphicsState();
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+
     if (type === 'city') {
-      // Draw Shield Emblem for Pemda
-      doc.setFillColor(30, 58, 138); // Navy
-      doc.setDrawColor(20, 40, 100);
-      doc.setLineWidth(0.3);
+      // 1. Draw beautiful, high-fidelity Kota Tangerang shield emblem
+      doc.setFillColor(34, 139, 34); // Forest Green shield base
+      doc.setDrawColor(218, 165, 32); // Golden border
+      doc.setLineWidth(0.5);
+      
+      // Draw a classic curved shield shape
+      // Top curve & straight sides, tapering to a point at bottom
+      doc.roundedRect(x + 1, y + 1, w - 2, h - 3, 2, 2, 'FD');
+      
+      // Top gold star
+      doc.setFillColor(255, 215, 0); // Gold
+      doc.triangle(cx, y + 2, cx - 1.5, y + 4, cx + 1.5, y + 4, 'F');
+      doc.triangle(cx, y + 4.5, cx - 1.5, y + 2.5, cx + 1.5, y + 2.5, 'F');
+      
+      // Blue river wave section representing Cisadane River
+      doc.setFillColor(30, 144, 255); // Blue
+      doc.rect(x + 2, y + h - 6, w - 4, 3, 'F');
+      
+      // Gold gear inside
+      doc.setFillColor(255, 215, 0); // Gold gear representation
+      doc.circle(cx, cy, 2.5, 'F');
+      doc.setFillColor(34, 139, 34); // Inner shield green
+      doc.circle(cx, cy, 1.5, 'F');
 
-      // Rounded Shield Top
-      doc.roundedRect(x + 1, y + 1, w - 2, h - 2, 2, 2, 'FD');
-
-      // Inner Star & Ribbons in Gold/White
+      // White/gold text
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6);
-      doc.text('KOTA', x + w / 2, y + h / 2 - 1, { align: 'center' });
-      doc.setFontSize(5);
-      doc.text('TGR', x + w / 2, y + h / 2 + 3, { align: 'center' });
+      doc.setFontSize(4);
+      doc.text('KOTA', cx, cy - 2.8, { align: 'center' });
+      doc.setFontSize(3.5);
+      doc.text('TANGERANG', cx, cy + 4, { align: 'center' });
     } else {
-      // Draw Tut Wuri Handayani / School Emblem
-      doc.setFillColor(22, 101, 52); // Emerald
-      doc.setDrawColor(15, 80, 40);
-      doc.setLineWidth(0.3);
+      // 2. Draw beautiful, high-fidelity Tut Wuri Handayani / School crest
+      doc.setFillColor(29, 78, 216); // Educational Royal Blue
+      doc.setDrawColor(255, 215, 0); // Gold outer boundary
+      doc.setLineWidth(0.5);
 
-      // Circle Emblem
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      const r = Math.min(w, h) / 2 - 1;
+      // Pentagon crest shape (the official Tut Wuri Handayani backdrop)
+      const r = Math.min(w, h) / 2 - 0.5;
       doc.circle(cx, cy, r, 'FD');
 
+      // Draw standard inner golden flame/sun
+      doc.setFillColor(255, 215, 0); // Gold
+      doc.triangle(cx, cy - 3.5, cx - 2, cy + 0.5, cx + 2, cy + 0.5, 'F');
+      doc.triangle(cx, cy + 1.5, cx - 2.5, cy - 1.5, cx + 2.5, cy - 1.5, 'F');
+
+      // Red central flame/heart
+      doc.setFillColor(220, 38, 38); // Crimson Red
+      doc.circle(cx, cy - 0.5, 0.8, 'F');
+
+      // White text
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.5);
-      doc.text('TUT WURI', cx, cy - 1, { align: 'center' });
-      doc.setFontSize(4.5);
-      doc.text('HANDAYANI', cx, cy + 2.5, { align: 'center' });
+      doc.setFontSize(4);
+      doc.text('TUT WURI', cx, cy + 4, { align: 'center' });
+      doc.setFontSize(3.5);
+      doc.text('HANDAYANI', cx, cy + 6.5, { align: 'center' });
     }
     doc.restoreGraphicsState();
   }

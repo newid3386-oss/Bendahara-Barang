@@ -66,6 +66,7 @@ import { ClassroomPeerReviewModal } from './classroom/ClassroomPeerReviewModal';
 import { BulkQRHistoryPrintModal } from './BulkQRHistoryPrintModal';
 import { useRealtimeProgress } from '../services/progressSyncService';
 import { PeerReviewDashboardView } from './classroom/PeerReviewDashboardView';
+import { ClassroomPortalLogin } from './classroom/ClassroomPortalLogin';
 import { SecureMaskedField } from './common/SecureMaskedField';
 import { SecureMaskingBar } from './common/SecureMaskingBar';
 import {
@@ -286,8 +287,15 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   useEffect(() => { refresh(); }, [page]);
 
   if (!account) {
-    onLogout();
-    return null;
+    return (
+      <ClassroomPortalLogin
+        onSuccess={(acc) => {
+          accountService.setActiveClassroomAccount(acc);
+          setAccount(acc);
+        }}
+        onBack={onLogout}
+      />
+    );
   }
 
   const isSiswa = account.ROLE === 'SISWA';

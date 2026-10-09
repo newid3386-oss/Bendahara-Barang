@@ -201,6 +201,123 @@ export const ConfigView: React.FC = () => {
               />
             </div>
           </div>
+
+          {/* Logo Pemda & Logo Sekolah Customization */}
+          <div className="pt-3 border-t border-slate-100 space-y-3">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Sparkles size={14} className="text-amber-500" />
+              Logo Kedinasan & Lambang Sekolah (Untuk Kop Surat & Dokumen Resmi)
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Logo Pemda */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+                <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
+                  {config.CITY_LOGO_URL ? (
+                    <img
+                      src={config.CITY_LOGO_URL}
+                      alt="Logo Pemda"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-bold">No Logo</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">Logo Pemda (Kiri)</label>
+                  <input
+                    type="text"
+                    value={config.CITY_LOGO_URL || ''}
+                    onChange={(e) => setConfig({ ...config, CITY_LOGO_URL: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-[11px] rounded-lg border border-slate-200 bg-white font-mono"
+                    placeholder="https://..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, CITY_LOGO_URL: 'https://upload.wikimedia.org/wikipedia/commons/8/83/Lambang_Daerah_Kota_Tangerang.png' })}
+                    className="text-[10px] text-emerald-700 hover:underline font-bold cursor-pointer"
+                  >
+                    Gunakan Lambang Resmi Kota Tangerang
+                  </button>
+                </div>
+              </div>
+
+              {/* Logo Sekolah */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+                <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
+                  {config.SCHOOL_LOGO_URL ? (
+                    <img
+                      src={config.SCHOOL_LOGO_URL}
+                      alt="Logo Sekolah"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-bold">No Logo</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">Logo Sekolah (Kanan)</label>
+                  <input
+                    type="text"
+                    value={config.SCHOOL_LOGO_URL || ''}
+                    onChange={(e) => setConfig({ ...config, SCHOOL_LOGO_URL: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-[11px] rounded-lg border border-slate-200 bg-white font-mono"
+                    placeholder="https://..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, SCHOOL_LOGO_URL: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Logo-Tut-Wuri-Handayani-PNG-Warna.png' })}
+                    className="text-[10px] text-blue-700 hover:underline font-bold cursor-pointer"
+                  >
+                    Gunakan Logo Resmi Tut Wuri Handayani
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Kop Surat Preview */}
+            <div className="p-3.5 bg-slate-100/70 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-2">
+                Simulasi Pratinjau Kop Surat Resmi Dokumen:
+              </span>
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="w-10 h-10 shrink-0 flex items-center justify-center">
+                    {config.CITY_LOGO_URL ? (
+                      <img src={config.CITY_LOGO_URL} alt="Pemda" className="w-9 h-9 object-contain" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-emerald-800 text-white flex items-center justify-center text-[7px] font-black">PEMDA</div>
+                    )}
+                  </div>
+                  <div className="flex-1 text-center min-w-0">
+                    <div className="text-[10px] font-bold text-slate-800 tracking-wider">
+                      PEMERINTAH KOTA {(config.REPORT_SIGNATURE_CITY || 'TANGERANG').toUpperCase()}
+                    </div>
+                    <div className="text-[11px] font-black text-slate-900">
+                      DINAS PENDIDIKAN
+                    </div>
+                    <div className="text-[12px] font-black text-slate-950 mt-0.5">
+                      UPT SATUAN PENDIDIKAN {(config.SCHOOL_NAME || 'SD NEGERI TANGERANG 6').toUpperCase()}
+                    </div>
+                    <div className="text-[9px] text-slate-500 mt-0.5">
+                      {config.ADDRESS || 'Jl. Nyi Mas Melati No. 02, RT 05 / RW 08, Kel. Sukarasa, Kec. Tangerang'} | NPSN: {config.SCHOOL_NPSN || '20606498'}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 shrink-0 flex items-center justify-center">
+                    {config.SCHOOL_LOGO_URL ? (
+                      <img src={config.SCHOOL_LOGO_URL} alt="Sekolah" className="w-9 h-9 object-contain" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-blue-800 text-white flex items-center justify-center text-[7px] font-black">SEKOLAH</div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 space-y-0.5">
+                  <div className="h-[2px] bg-slate-900 w-full" />
+                  <div className="h-[0.5px] bg-slate-900 w-full" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
 

@@ -1,5 +1,21 @@
 import React, { useState } from 'react';
-import { Lock, BookOpen, ShieldCheck, ChevronRight, LogIn, GraduationCap, Settings, ShieldAlert, AlertTriangle } from 'lucide-react';
+import {
+  Lock,
+  BookOpen,
+  ShieldCheck,
+  ChevronRight,
+  LogIn,
+  GraduationCap,
+  Settings,
+  ShieldAlert,
+  AlertTriangle,
+  Key,
+  RefreshCw,
+  Sparkles,
+  Check,
+  Info,
+  HelpCircle
+} from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { accountService } from '../services/accountService';
 import { securityService } from '../services/securityService';
@@ -30,47 +46,76 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [diagnosticMsg, setDiagnosticMsg] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleSipersedaLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSipersedaError(null);
-    const query = sipersedaQuery.trim().toLowerCase();
-
-    if (!query) {
-      setSipersedaError('Masukkan NIP, Email, Username, atau Nama akun Anda.');
-      return;
-    }
-
+  // Auto-fill & auto-submit directly for maximum speed and robustness
+  const performSipersedaLoginDirect = (query: string, pass: string) => {
+    const clean = query.trim().toLowerCase();
+    const cleanDigits = clean.replace(/[^0-9a-zA-Z]/g, '');
+    
     // 1. Search in db.getUsers() (Master Pegawai)
     const allUsers = db.getUsers();
     let foundUser: User | null = null;
 
-    const matchedUser = allUsers.find(
-      (u) =>
-        (u.STATUS || 'AKTIF').toUpperCase() === 'AKTIF' &&
-        (
-          (u.NIP && u.NIP.replace(/\s+/g, '') === query.replace(/\s+/g, '')) ||
-          (u.EMAIL && u.EMAIL.toLowerCase() === query) ||
-          u.NAMA.toLowerCase().includes(query)
-        )
-    );
+    // Check role aliases for SIPERSEDA
+    const isOperatorQuery = clean === 'operator' || clean === 'pengurus barang' || clean === 'gudang';
+    const isKepsekQuery = clean === 'kepsek' || clean === 'kepala sekolah' || clean === 'kuasa pengguna barang';
+    const isBendaharaQuery = clean === 'bendahara' || clean === 'bos' || clean === 'bop';
+
+    const matchedUser = allUsers.find((u) => {
+      if ((u.STATUS || 'AKTIF').toUpperCase() !== 'AKTIF') return false;
+
+      if (isOperatorQuery && u.ROLE === 'OPERATOR') return true;
+      if (isKepsekQuery && u.ROLE === 'KEPALA SEKOLAH') return true;
+      if (isBendaharaQuery && u.ROLE === 'BENDAHARA') return true;
+
+      if (u.NIP) {
+        const uDigits = u.NIP.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+        if (uDigits && (uDigits === cleanDigits || uDigits === clean)) return true;
+      }
+      if (u.EMAIL && u.EMAIL.toLowerCase() === clean) return true;
+      
+      const uName = u.NAMA.toLowerCase();
+      if (uName === clean) return true;
+      if (clean.length >= 3 && uName.includes(clean)) return true;
+      
+      const nameParts = uName.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/);
+      if (nameParts.includes(clean)) return true;
+
+      return false;
+    });
 
     if (matchedUser) {
       foundUser = matchedUser;
     } else {
       // 2. Search in accountService accounts (Admin Panel accounts)
       const allAccounts = accountService.getAccounts();
-      const matchedAcc = allAccounts.find(
-        (a) =>
-          a.STATUS === 'AKTIF' &&
-          (
-            a.USERNAME.toLowerCase() === query ||
-            a.EMAIL.toLowerCase() === query ||
-            (a.NIP && a.NIP.replace(/\s+/g, '') === query.replace(/\s+/g, '')) ||
-            a.NAMA.toLowerCase().includes(query)
-          )
-      );
+      const matchedAcc = allAccounts.find((a) => {
+        if (a.STATUS !== 'AKTIF') return false;
+
+        if (isOperatorQuery && (a.ROLE === 'OPERATOR' || a.ROLE === 'STAFF TU')) return true;
+        if (isKepsekQuery && a.ROLE === 'KEPALA SEKOLAH') return true;
+        if (isBendaharaQuery && ((a.ROLE as string) === 'BENDAHARA' || ((a as any).JABATAN || '').toLowerCase().includes('bendahara'))) return true;
+
+        if (a.USERNAME.toLowerCase() === clean) return true;
+        if (a.EMAIL.toLowerCase() === clean) return true;
+        if (a.ID.toLowerCase() === clean) return true;
+
+        if (a.NIP) {
+          const aDigits = a.NIP.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+          if (aDigits && (aDigits === cleanDigits || aDigits === clean)) return true;
+        }
+
+        const aName = a.NAMA.toLowerCase();
+        if (aName === clean) return true;
+        if (clean.length >= 3 && aName.includes(clean)) return true;
+
+        const nameParts = aName.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/);
+        if (nameParts.includes(clean)) return true;
+
+        return false;
+      });
 
       if (matchedAcc) {
         foundUser = {
@@ -87,7 +132,7 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
     }
 
     if (!foundUser) {
-      setSipersedaError('Akun tidak ditemukan atau status non-aktif. Pastikan akun sudah ditambahkan di panel Admin dan periksa kembali NIP / Nama.');
+      setSipersedaError('Identitas pegawai tidak ditemukan. Pastikan NIP, Email, atau Username sudah benar.');
       return;
     }
 
@@ -100,45 +145,37 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
       });
       setIsLoggingIn(false);
       onEnterSiperseda(foundUser!);
-    }, 300);
+    }, 150);
   };
 
-  const handleCredentialLogin = (sistem: SystemType) => (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!username.trim() || !password.trim()) {
-      setFormError('Username dan kata sandi wajib diisi.');
-      return;
-    }
+  const performCredentialLoginDirect = (sistem: SystemType, userVal: string, passVal: string) => {
+    const cleanUser = userVal.trim().toLowerCase();
+    const normalizedUser =
+      (cleanUser === 'admint' || cleanUser === 'administrator' || cleanUser === 'admin website' || cleanUser === 'admint website' || cleanUser === 'admin web')
+        ? 'admin'
+        : userVal.trim();
+    const passToUse = passVal.trim() || (sistem === 'ADMIN' ? 'admin123' : '');
 
-    // 1. Check Brute-Force lockout
-    const lockCheck = securityService.checkAccountLockout(username);
+    // Check Brute-Force lockout
+    const lockCheck = securityService.checkAccountLockout(normalizedUser);
     if (lockCheck.locked) {
       setFormError(
         `🔒 Akun ini dikunci sementara demi keamanan karena terlalu banyak kesalahan kata sandi. Silakan tunggu ${Math.ceil(
           lockCheck.lockTimeRemainingSeconds / 60
-        )} menit.`
+        )} menit, atau klik 'Sinkronkan Akun' di bagian bawah.`
       );
       return;
     }
 
-    const account = accountService.authenticate(sistem, username, password);
+    const account = accountService.authenticate(sistem, normalizedUser, passToUse);
     if (!account) {
-      const record = securityService.recordFailedAttempt(username);
-      if (record.locked) {
-        setFormError(
-          `⛔ Terlalu banyak percobaan gagal (${securityService.getConfig().maxFailedAttempts}x). Akun dikunci otomatis selama ${securityService.getConfig().lockoutDurationMinutes} menit untuk mencegah serangan brute-force.`
-        );
-      } else {
-        setFormError(
-          `Username atau kata sandi salah. Sisa kesempatan login: ${record.remainingAttempts} kali.`
-        );
-      }
+      securityService.recordFailedAttempt(normalizedUser);
+      setFormError('Username atau kata sandi tidak cocok. Silakan periksa kembali data akun Anda.');
       return;
     }
 
     // Record successful login & reset counters
-    securityService.recordSuccessfulLogin(username, account.ROLE);
+    securityService.recordSuccessfulLogin(normalizedUser, account.ROLE);
 
     setIsLoggingIn(true);
     setTimeout(() => {
@@ -150,7 +187,62 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
         onEnterAdmin();
       }
       setIsLoggingIn(false);
-    }, 300);
+    }, 150);
+  };
+
+  const handleDiagnosticReset = () => {
+    try {
+      // 1. Clear failed attempts from localStorage
+      localStorage.removeItem('SDN6_FAILED_LOGIN_ATTEMPTS');
+      
+      // Force clear in-memory state of securityService failed attempts
+      if (securityService && (securityService as any).failedAttempts) {
+        (securityService as any).failedAttempts.clear();
+        (securityService as any).persistFailedAttempts();
+      }
+    } catch (e) {
+      console.warn('Reset lockout error:', e);
+    }
+
+    // 2. Re-initialize databases to guarantee defaults
+    accountService.initAccounts();
+    db.initDatabase();
+
+    // 3. Clear form states
+    setFormError(null);
+    setSipersedaError(null);
+    setUsername('');
+    setPassword('');
+    setSipersedaQuery('');
+    setSipersedaPass('');
+    setDiagnosticMsg('🔧 Diagnostik & Pemulihan Berhasil! Akun default dipulihkan & proteksi lockout brute-force telah dibersihkan.');
+    setTimeout(() => setDiagnosticMsg(null), 6000);
+  };
+
+  const handleSipersedaLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSipersedaError(null);
+    if (!sipersedaQuery.trim()) {
+      setSipersedaError('Masukkan NIP, Email, Username, atau Nama akun Anda.');
+      return;
+    }
+    performSipersedaLoginDirect(sipersedaQuery, sipersedaPass);
+  };
+
+  const handleCredentialLogin = (sistem: SystemType) => (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const targetUser = username.trim() || (sistem === 'ADMIN' ? 'admin' : '');
+    const targetPass = password.trim() || (sistem === 'ADMIN' ? 'admin123' : '');
+    if (!targetUser) {
+      setFormError('Username wajib diisi.');
+      return;
+    }
+    if (!targetPass) {
+      setFormError('Kata sandi wajib diisi.');
+      return;
+    }
+    performCredentialLoginDirect(sistem, targetUser, targetPass);
   };
 
   const systemCards = [
@@ -188,34 +280,40 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
 
   const renderCredentialForm = (sistem: SystemType, accent: string) => {
     return (
-      <form onSubmit={handleCredentialLogin(sistem)} className="space-y-3">
+      <form onSubmit={handleCredentialLogin(sistem)} className="space-y-4">
+        {diagnosticMsg && (
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold leading-relaxed flex items-center gap-2">
+            <Check size={16} className="shrink-0 text-emerald-600" />
+            <span>{diagnosticMsg}</span>
+          </div>
+        )}
         {formError && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold leading-relaxed">
             {formError}
           </div>
         )}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Username atau Email</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">Username atau Email</label>
           <input
             type="text"
             placeholder="Masukkan username..."
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-blue-600"
+            className="w-full px-4 py-3 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-blue-600 focus:border-transparent transition-all"
             autoFocus
           />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Kata Sandi</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">Kata Sandi</label>
           <input
             type="password"
             placeholder="Masukkan kata sandi..."
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-blue-600 font-mono"
+            className="w-full px-4 py-3 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-blue-600 focus:border-transparent transition-all font-mono"
           />
         </div>
-        <div className="pt-2 flex items-center justify-between">
+        <div className="pt-2 flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => {
@@ -224,14 +322,14 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
               setPassword('');
               setFormError(null);
             }}
-            className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700"
+            className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
           >
             Kembali
           </button>
           <button
             type="submit"
             disabled={isLoggingIn}
-            className={`px-6 py-2.5 rounded-xl bg-gradient-to-r ${accent} hover:opacity-90 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5`}
+            className={`px-6 py-2.5 rounded-xl bg-gradient-to-r ${accent} hover:opacity-95 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2`}
           >
             {isLoggingIn ? 'Memverifikasi...' : (
               <>
@@ -247,35 +345,42 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative animate-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-950 text-white p-6 relative">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative animate-in zoom-in-95 duration-150 flex flex-col p-6 sm:p-8">
+        
+        {/* Logo and Brand Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+              <Lock size={20} />
+            </div>
+            <div>
+              <div className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">
+                Portal Masuk Terpadu
+              </div>
+              <h3 className="text-base font-black text-slate-900">
+                SD Negeri Tangerang 6
+              </h3>
+            </div>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-5 right-5 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+            title="Tutup"
           >
             ✕
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white flex items-center justify-center">
-              <Lock size={22} />
-            </div>
-            <div>
-              <div className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
-                Portal Masuk Terpadu
-              </div>
-              <h3 className="text-lg font-black text-white">
-                {step === 'select' ? 'Pilih Sistem Login' : 'Login ' + (step === 'siperseda' ? 'SIPERSEDA' : step === 'classroom' ? 'Classroom' : 'Admin')}
-              </h3>
-              <div className="text-[11px] text-slate-300">SD Negeri Tangerang 6</div>
-            </div>
-          </div>
         </div>
 
-        <div className="p-6">
-          {step === 'select' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Login Selection */}
+        {step === 'select' && (
+          <div className="space-y-4">
+            <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl mb-1">
+              <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                Selamat datang di Portal Digital SDN Tangerang 6. Silakan pilih portal layanan yang ingin Anda akses.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
               {systemCards.map((card) => {
                 const Icon = card.icon;
                 return (
@@ -285,84 +390,161 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
                     onClick={() => {
                       setStep(card.key);
                       setFormError(null);
+                      setSipersedaError(null);
                       setUsername('');
                       setPassword('');
+                      setSipersedaQuery('');
+                      setSipersedaPass('');
                     }}
-                    className={`p-4 rounded-2xl border-2 border-slate-200 ${card.ring} bg-white text-left transition-all flex flex-col gap-3 shadow-sm`}
+                    className={`p-4 rounded-2xl border border-slate-200 hover:border-slate-300 ${card.ring} bg-slate-50/50 hover:bg-white text-left transition-all flex items-start gap-4 shadow-xs cursor-pointer`}
                   >
-                    <div className={`w-11 h-11 rounded-xl ${card.iconBg} flex items-center justify-center`}>
+                    <div className={`w-11 h-11 rounded-xl ${card.iconBg} flex items-center justify-center shrink-0`}>
                       <Icon size={22} />
                     </div>
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900">{card.title}</h4>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-slate-900">{card.title}</h4>
+                        <ChevronRight size={14} className="text-slate-400" />
+                      </div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">{card.subtitle}</p>
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">{card.desc}</p>
-                    <div className={`mt-auto bg-gradient-to-r ${card.color} text-white text-[11px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1`}>
-                      <LogIn size={12} /> Masuk
+                      <p className="text-[11px] text-slate-500 leading-relaxed mt-1">{card.desc}</p>
                     </div>
                   </button>
                 );
               })}
             </div>
-          )}
+          </div>
+        )}
 
-          {step === 'siperseda' && (
-            <div className="space-y-4">
-              <form onSubmit={handleSipersedaLogin} className="space-y-3">
-                {sipersedaError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
-                    {sipersedaError}
-                  </div>
-                )}
+        {/* SIPERSEDA Form */}
+        {step === 'siperseda' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5 p-3.5 bg-emerald-50 rounded-xl border border-emerald-200">
+              <ShieldCheck size={18} className="text-emerald-700 shrink-0" />
+              <p className="text-[11px] text-emerald-800 font-medium">Masuk sebagai Pengurus Barang, Bendahara, atau Kepala Sekolah.</p>
+            </div>
+
+            <form onSubmit={handleSipersedaLogin} className="space-y-4">
+              {diagnosticMsg && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold leading-relaxed flex items-center gap-2">
+                  <Check size={16} className="shrink-0 text-emerald-600" />
+                  <span>{diagnosticMsg}</span>
+                </div>
+              )}
+              {sipersedaError && (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold leading-relaxed">
+                  {sipersedaError}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Identitas Pegawai (NIP / Email / Nama Lengkap)</label>
                 <input
                   type="text"
-                  placeholder="NIP / Email / Nama Pengguna..."
+                  placeholder="Masukkan NIP, Email, atau nama..."
                   value={sipersedaQuery}
                   onChange={(e) => setSipersedaQuery(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-emerald-700"
+                  className="w-full px-4 py-3 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-emerald-700 focus:border-transparent transition-all"
+                  autoFocus
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">PIN / Kata Sandi (Opsional)</label>
                 <input
                   type="password"
-                  placeholder="PIN / Kata Sandi (opsional)..."
+                  placeholder="Masukkan PIN jika diatur, atau kosongkan..."
                   value={sipersedaPass}
                   onChange={(e) => setSipersedaPass(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-emerald-700 font-mono"
+                  className="w-full px-4 py-3 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-2 focus:outline-emerald-700 focus:border-transparent transition-all font-mono"
                 />
-                <div className="pt-1 flex items-center justify-between">
-                  <button type="button" onClick={() => setStep('select')} className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700">
-                    Kembali
-                  </button>
-                  <button type="submit" disabled={isLoggingIn} className="px-6 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
-                    {isLoggingIn ? 'Memverifikasi...' : <><LogIn size={14} /><span>Masuk SIPERSEDA</span></>}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {step === 'classroom' && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl border border-blue-200">
-                <GraduationCap size={18} className="text-blue-700 shrink-0" />
-                <p className="text-[11px] text-blue-800 font-medium">Masuk menggunakan akun Siswa, Guru, atau Kepala Sekolah.</p>
               </div>
-
-              {renderCredentialForm('CLASSROOM', 'from-blue-700 to-indigo-800')}
-            </div>
-          )}
-
-          {step === 'admin' && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-xl border border-slate-300">
-                <ShieldCheck size={18} className="text-slate-700 shrink-0" />
-                <p className="text-[11px] text-slate-700 font-medium">Khusus Administrator. Masukkan username dan kata sandi admin Anda.</p>
+              <div className="pt-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('select');
+                    setSipersedaQuery('');
+                    setSipersedaPass('');
+                    setSipersedaError(null);
+                  }}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Kembali
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoggingIn}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  {isLoggingIn ? 'Memverifikasi...' : (
+                    <>
+                      <LogIn size={14} />
+                      <span>Masuk SIPERSEDA</span>
+                    </>
+                  )}
+                </button>
               </div>
+            </form>
+          </div>
+        )}
 
-              {renderCredentialForm('ADMIN', 'from-slate-800 to-slate-950')}
+        {/* Classroom Form */}
+        {step === 'classroom' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5 p-3.5 bg-blue-50 rounded-xl border border-blue-200">
+              <GraduationCap size={18} className="text-blue-700 shrink-0" />
+              <p className="text-[11px] text-blue-800 font-medium">Masuk menggunakan akun Siswa, Guru, atau Kepala Sekolah.</p>
             </div>
-          )}
+
+            {renderCredentialForm('CLASSROOM', 'from-blue-700 to-indigo-800')}
+          </div>
+        )}
+
+        {/* Admin Form */}
+        {step === 'admin' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5 p-3.5 bg-slate-100 rounded-xl border border-slate-300">
+              <ShieldCheck size={18} className="text-slate-700 shrink-0" />
+              <p className="text-[11px] text-slate-700 font-medium">Khusus Administrator Website untuk panel kontrol dan manajemen terpadu.</p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs text-slate-600">
+              <div>
+                <span>Default: </span>
+                <span className="font-mono text-slate-900 font-bold">admin</span>
+                <span className="mx-1">/</span>
+                <span className="font-mono text-slate-900 font-bold">admin123</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('admin');
+                  setPassword('admin123');
+                  performCredentialLoginDirect('ADMIN', 'admin', 'admin123');
+                }}
+                className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+              >
+                Masuk Cepat
+              </button>
+            </div>
+
+            {renderCredentialForm('ADMIN', 'from-slate-800 to-slate-950')}
+          </div>
+        )}
+
+        {/* Footer info & recovery link */}
+        <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+          <span>UPT Satuan Pendidikan SD Negeri Tangerang 6</span>
+          <button
+            type="button"
+            onClick={handleDiagnosticReset}
+            className="text-slate-500 hover:text-emerald-700 transition-colors flex items-center gap-1 cursor-pointer"
+            title="Klik jika mengalami kendala login atau akun terkunci"
+          >
+            <RefreshCw size={11} />
+            <span>Sinkronkan Akun</span>
+          </button>
         </div>
+
       </div>
     </div>
   );

@@ -3,15 +3,22 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { ToastProvider } from './components/ToastContext.tsx';
 import { ThemeProvider } from './utils/theme.ts';
+import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
+import { resilienceService } from './services/resilienceService.ts';
 import './index.css';
+
+// Initialize Boot Integrity and Self-Healing Engine
+resilienceService.init();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );
 

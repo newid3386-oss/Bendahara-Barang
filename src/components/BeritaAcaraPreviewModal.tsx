@@ -67,6 +67,15 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
   const [kopBorderStyle, setKopBorderStyle] = useState<'double' | 'single' | 'bold' | 'none'>(
     options.kopSurat?.borderStyle || 'double'
   );
+  const [logoMode, setLogoMode] = useState<'dual' | 'city' | 'school' | 'none'>(
+    options.kopSurat?.logoMode || (options.kopSurat?.alignment === 'dual_logo' ? 'dual' : 'dual')
+  );
+  const [cityLogoUrl, setCityLogoUrl] = useState<string>(
+    options.kopSurat?.cityLogoUrl || config.CITY_LOGO_URL || 'https://upload.wikimedia.org/wikipedia/commons/8/83/Lambang_Daerah_Kota_Tangerang.png'
+  );
+  const [schoolLogoUrl, setSchoolLogoUrl] = useState<string>(
+    options.kopSurat?.schoolLogoUrl || config.SCHOOL_LOGO_URL || 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Logo-Tut-Wuri-Handayani-PNG-Warna.png'
+  );
   const [line1, setLine1] = useState(
     options.kopSurat?.line1 || `PEMERINTAH KOTA ${(config.BA_DEFAULT_CITY || 'TANGERANG').toUpperCase()}`
   );
@@ -210,6 +219,9 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
             show: showKop,
             alignment: kopAlignment,
             borderStyle: kopBorderStyle,
+            logoMode,
+            cityLogoUrl,
+            schoolLogoUrl,
             line1,
             line2,
             line3,
@@ -312,6 +324,9 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
       show: showKop,
       alignment: kopAlignment,
       borderStyle: kopBorderStyle,
+      logoMode,
+      cityLogoUrl,
+      schoolLogoUrl,
       line1,
       line2,
       line3,
@@ -774,22 +789,208 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
 
                   {showKop && (
                     <>
+                      {/* Live Visual Kop Surat Preview Box */}
+                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                            <Sparkles size={11} className="text-amber-500" /> Pratinjau Visual Kop Surat
+                          </span>
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                            {kopAlignment === 'dual_logo' ? 'Dual Logo' : kopAlignment === 'center' ? 'Tengah' : 'Rata Kiri'}
+                          </span>
+                        </div>
+
+                        {/* Visual Paper Simulation Box */}
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-inner">
+                          <div className="flex items-center justify-between gap-2">
+                            {/* Left Logo */}
+                            {(logoMode === 'dual' || logoMode === 'city') && (
+                              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                                {cityLogoUrl ? (
+                                  <img
+                                    src={cityLogoUrl}
+                                    alt="Logo Pemda"
+                                    className="w-8 h-8 object-contain"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-lg bg-emerald-800 text-white flex items-center justify-center text-[8px] font-black">
+                                    PEMDA
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Center / Left Text */}
+                            <div className={`flex-1 min-w-0 ${kopAlignment === 'left' ? 'text-left' : 'text-center'}`}>
+                              <div className="text-[9px] font-bold text-slate-800 leading-tight tracking-wider uppercase">
+                                {line1}
+                              </div>
+                              <div className="text-[10px] font-extrabold text-slate-900 leading-tight uppercase">
+                                {line2}
+                              </div>
+                              <div className="text-[11px] font-black text-slate-950 leading-tight uppercase mt-0.5">
+                                {line3}
+                              </div>
+                              <div className="text-[8px] text-slate-500 leading-tight mt-0.5 line-clamp-1">
+                                {line4}
+                              </div>
+                            </div>
+
+                            {/* Right Logo */}
+                            {(logoMode === 'dual' || logoMode === 'school') && (
+                              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                                {schoolLogoUrl ? (
+                                  <img
+                                    src={schoolLogoUrl}
+                                    alt="Logo Sekolah"
+                                    className="w-8 h-8 object-contain"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-lg bg-blue-800 text-white flex items-center justify-center text-[8px] font-black">
+                                    SEKOLAH
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Double Border Representation */}
+                          <div className="mt-2 space-y-0.5">
+                            <div className="h-[2px] bg-slate-900 w-full" />
+                            {kopBorderStyle === 'double' && (
+                              <div className="h-[0.5px] bg-slate-900 w-full" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Presets for Official Letterhead */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                        <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
+                          Pilihan Cepat Standar Dinas
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLine1(`PEMERINTAH KOTA ${(config.BA_DEFAULT_CITY || 'TANGERANG').toUpperCase()}`);
+                              setLine2('DINAS PENDIDIKAN');
+                              setLine3(`UPT SATUAN PENDIDIKAN ${config.SCHOOL_NAME ? config.SCHOOL_NAME.toUpperCase() : 'SD NEGERI TANGERANG 6'}`);
+                              setLine4(config.ADDRESS || 'Jl. Nyi Mas Melati No. 02, RT 05 / RW 08, Kel. Sukarasa, Kec. Tangerang');
+                              setKopAlignment('dual_logo');
+                              setLogoMode('dual');
+                              setKopBorderStyle('double');
+                            }}
+                            className="p-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-left transition-all cursor-pointer"
+                          >
+                            <div className="text-[11px] font-black">Resmi Kota Tangerang</div>
+                            <div className="text-[9px] text-emerald-700">Dual Logo + Garis Ganda</div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKopAlignment('center');
+                              setLogoMode('school');
+                              setKopBorderStyle('single');
+                            }}
+                            className="p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-left transition-all cursor-pointer"
+                          >
+                            <div className="text-[11px] font-bold">Logo Sekolah Saja</div>
+                            <div className="text-[9px] text-slate-500">Tengah + Garis Tunggal</div>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mode Logo */}
                       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
-                        <label className="text-xs font-bold text-slate-700">Tata Letak / Alignment Kop</label>
+                        <label className="text-xs font-bold text-slate-700">Konfigurasi Logo Kop Surat</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { id: 'dual', label: 'Logo Ganda', desc: 'Pemda (Kiri) + Sekolah (Kanan)' },
+                            { id: 'city', label: 'Hanya Pemda', desc: 'Lambang Daerah Kota' },
+                            { id: 'school', label: 'Hanya Sekolah', desc: 'Tut Wuri / Lambang Sekolah' },
+                            { id: 'none', label: 'Tanpa Logo', desc: 'Teks Header Saja' },
+                          ].map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => setLogoMode(item.id as any)}
+                              className={`p-2 rounded-lg text-left border transition-all cursor-pointer ${
+                                logoMode === item.id
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold ring-1 ring-emerald-500/20'
+                                  : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="text-[11px] font-bold">{item.label}</div>
+                              <div className="text-[9px] text-slate-500">{item.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Logo URL Customization */}
+                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-600">URL Logo Pemda (Kiri):</span>
+                            <div className="flex gap-1.5 mt-0.5">
+                              <input
+                                type="text"
+                                value={cityLogoUrl}
+                                onChange={(e) => setCityLogoUrl(e.target.value)}
+                                className="w-full text-xs p-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-mono text-[10px]"
+                                placeholder="https://..."
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setCityLogoUrl('https://upload.wikimedia.org/wikipedia/commons/8/83/Lambang_Daerah_Kota_Tangerang.png')}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg shrink-0 cursor-pointer"
+                                title="Kembalikan ke lambang resmi Kota Tangerang"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-600">URL Logo Sekolah / Tut Wuri (Kanan):</span>
+                            <div className="flex gap-1.5 mt-0.5">
+                              <input
+                                type="text"
+                                value={schoolLogoUrl}
+                                onChange={(e) => setSchoolLogoUrl(e.target.value)}
+                                className="w-full text-xs p-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-mono text-[10px]"
+                                placeholder="https://..."
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setSchoolLogoUrl('https://upload.wikimedia.org/wikipedia/commons/e/eb/Logo-Tut-Wuri-Handayani-PNG-Warna.png')}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg shrink-0 cursor-pointer"
+                                title="Kembalikan ke logo resmi Tut Wuri Handayani"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Alignment & Border */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                        <label className="text-xs font-bold text-slate-700">Tata Letak / Alignment Teks</label>
                         <div className="grid grid-cols-3 gap-1.5">
                           {[
-                            { id: 'dual_logo', label: 'Logo Ganda', desc: 'Pemda + Sekolah' },
-                            { id: 'center', label: 'Tengah', desc: 'Logo 1 Kiri' },
+                            { id: 'dual_logo', label: 'Tengah Simetris', desc: 'Dual Logo' },
+                            { id: 'center', label: 'Tengah', desc: 'Rata Tengah' },
                             { id: 'left', label: 'Rata Kiri', desc: 'Modern' },
                           ].map((item) => (
                             <button
                               key={item.id}
                               type="button"
                               onClick={() => setKopAlignment(item.id as any)}
-                              className={`p-2 rounded-lg text-center border transition-all ${
+                              className={`p-2 rounded-lg text-center border transition-all cursor-pointer ${
                                 kopAlignment === item.id
                                   ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold'
-                                  : 'border-slate-200 text-slate-600 bg-white'
+                                  : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
                               }`}
                             >
                               <div className="text-xs font-semibold">{item.label}</div>
@@ -812,10 +1013,10 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
                               key={item.id}
                               type="button"
                               onClick={() => setKopBorderStyle(item.id as any)}
-                              className={`p-2 rounded-lg text-center border text-xs transition-all ${
+                              className={`p-2 rounded-lg text-center border text-xs transition-all cursor-pointer ${
                                 kopBorderStyle === item.id
                                   ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold'
-                                  : 'border-slate-200 text-slate-600 bg-white'
+                                  : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
                               }`}
                             >
                               {item.label}
@@ -824,6 +1025,7 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
                         </div>
                       </div>
 
+                      {/* Header Lines */}
                       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
                         <label className="text-xs font-bold text-slate-700">Teks Header Kop Surat</label>
                         <div>
@@ -832,7 +1034,7 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
                             type="text"
                             value={line1}
                             onChange={(e) => setLine1(e.target.value)}
-                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500"
+                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-bold"
                           />
                         </div>
                         <div>
@@ -841,7 +1043,7 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
                             type="text"
                             value={line2}
                             onChange={(e) => setLine2(e.target.value)}
-                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500"
+                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-bold"
                           />
                         </div>
                         <div>
@@ -850,7 +1052,7 @@ export const BeritaAcaraPreviewModal: React.FC<BeritaAcaraPreviewModalProps> = (
                             type="text"
                             value={line3}
                             onChange={(e) => setLine3(e.target.value)}
-                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-semibold"
+                            className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 font-black text-slate-900"
                           />
                         </div>
                         <div>

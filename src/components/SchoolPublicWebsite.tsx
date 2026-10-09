@@ -1319,14 +1319,27 @@ export const SchoolPublicWebsite: React.FC<SchoolPublicWebsiteProps> = ({
           </div>
 
           <div>
-            <h4 className="text-white font-bold text-xs mb-3">Sistem Informasi</h4>
+            <h4 className="text-white font-bold text-xs mb-3">Sistem Informasi Terpadu</h4>
             <div className="space-y-2 text-[11px]">
-              <p>Sistem Informasi Persediaan & Aset Sekolah (SIPERSEDA).</p>
               <button
                 onClick={() => setIsLoginModalOpen(true)}
-                className="text-blue-400 hover:underline font-bold flex items-center gap-1"
+                className="text-blue-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
               >
-                <span>Masuk Portal Internal</span>
+                <span>Portal Masuk Multi-Sistem</span>
+                <ChevronRight size={12} />
+              </button>
+              <button
+                onClick={onEnterAdmin}
+                className="text-amber-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <span>Portal Admin Website & Master</span>
+                <ChevronRight size={12} />
+              </button>
+              <button
+                onClick={onEnterClassroom}
+                className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <span>Classroom Pembelajaran Online</span>
                 <ChevronRight size={12} />
               </button>
             </div>

@@ -177,18 +177,16 @@ export const MasterBarangView: React.FC = () => {
                           {item.KATEGORI}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">{item.JENIS_SATUAN}</td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-black ${
-                            isLow ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {stock} {item.JENIS_SATUAN}
+                      <td className="py-3 px-4 text-center text-slate-600 whitespace-nowrap">{item.JENIS_SATUAN}</td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <span className={`font-mono tabular-nums font-black text-sm ${isLow ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {stock}
                         </span>
+                        <span className="text-slate-400 font-semibold ml-1 text-[11px]">{item.JENIS_SATUAN}</span>
                       </td>
-                      <td className="py-3 px-4 text-center text-slate-500">
-                        {item.BATAS_MINIMUM} {item.JENIS_SATUAN}
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <span className="font-mono tabular-nums font-bold text-slate-700">{item.BATAS_MINIMUM}</span>
+                        <span className="text-slate-400 font-medium ml-1 text-[11px]">{item.JENIS_SATUAN}</span>
                       </td>
                       <td className="py-3 px-4 text-slate-600">{item.LOKASI_DEFAULT}</td>
                       <td className="py-3 px-4 text-center">
