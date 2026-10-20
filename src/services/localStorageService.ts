@@ -27,6 +27,8 @@ import {
   BATemplate,
   BATemplateVersion,
   PublicMediaItem,
+  DailyScanDeliveryLog,
+  DailyScanScheduleConfig,
 } from '../types';
 import {
   DATASET_VERSION,
@@ -74,6 +76,8 @@ const STORAGE_KEYS = {
   BA_TEMPLATE_VERSIONS: 'BB_BA_TEMPLATE_VERSIONS',
   PUBLIC_MEDIA_ITEMS: 'BB_PUBLIC_MEDIA_ITEMS',
   DATASET_VERSION: 'BB_DATASET_VERSION',
+  DAILY_SCAN_LOGS: 'SDN6_DAILY_SCAN_LOGS',
+  DAILY_SCAN_CONFIG: 'SDN6_DAILY_SCAN_CONFIG',
 };
 
 const DEFAULT_CONFIG: Config = OFFICIAL_CONFIG;
@@ -1202,6 +1206,23 @@ class LocalStorageService {
       n.READ_AT = now;
     });
     this.setItem(STORAGE_KEYS.NOTIFICATIONS, list);
+  }
+
+  public addNotification(notif: { title: string; message: string; type?: 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER'; link?: string }): void {
+    const list = this.getNotifications();
+    const item: NotificationItem = {
+      ID: `NOTIF-${Date.now()}`,
+      TITLE: notif.title,
+      MESSAGE: notif.message,
+      TYPE: notif.type || 'INFO',
+      TIMESTAMP: new Date().toISOString(),
+      STATUS: 'UNREAD',
+      USER_EMAIL: this.getActiveUser()?.EMAIL || 'system@sdntangerang6.sch.id',
+      MODULE: 'SCAN_SCHEDULER',
+      RECORD_ID: notif.link || 'DAILY_SCAN',
+    };
+    list.unshift(item);
+    this.setItem(STORAGE_KEYS.NOTIFICATIONS, list.slice(0, 50));
   }
 
   // --- Today's Tasks ---
@@ -2631,6 +2652,88 @@ class LocalStorageService {
 
     const freedKB = Math.max(0, Math.round((totalBefore - totalAfter) * 10) / 10);
     return { freedKB, cleanedLogs };
+  }
+
+  // =========================================================================
+  // DAILY SCAN AUTO SCHEDULER & EMAIL LOGS
+  // =========================================================================
+  public getDailyScanScheduleConfig(): DailyScanScheduleConfig {
+    const raw = this.getItem<string>(STORAGE_KEYS.DAILY_SCAN_CONFIG, '');
+    const config = this.getConfig();
+    const defaultHeadmasterEmail = config.SCHOOL_EMAIL || 'sdnegeritangerang6@gmail.com';
+    const defaultHeadmasterName = config.HEADMASTER || 'Liestya Kusuma Sari, S.Pd., M.Pd.';
+
+    if (!raw) {
+      return {
+        enabled: true,
+        time: '15:00',
+        targetEmail: defaultHeadmasterEmail,
+        targetName: defaultHeadmasterName,
+        includeStudentAttendance: true,
+        includeAssetScans: true,
+        includeAssignmentScans: true,
+        includeStockOpname: true,
+        autoDriveBackup: true,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: parsed.enabled !== false,
+        time: parsed.time || '15:00',
+        targetEmail: parsed.targetEmail || defaultHeadmasterEmail,
+        targetName: parsed.targetName || defaultHeadmasterName,
+        includeStudentAttendance: parsed.includeStudentAttendance !== false,
+        includeAssetScans: parsed.includeAssetScans !== false,
+        includeAssignmentScans: parsed.includeAssignmentScans !== false,
+        includeStockOpname: parsed.includeStockOpname !== false,
+        autoDriveBackup: parsed.autoDriveBackup !== false,
+        lastSentDate: parsed.lastSentDate,
+        lastSentTimestamp: parsed.lastSentTimestamp,
+      };
+    } catch {
+      return {
+        enabled: true,
+        time: '15:00',
+        targetEmail: defaultHeadmasterEmail,
+        targetName: defaultHeadmasterName,
+        includeStudentAttendance: true,
+        includeAssetScans: true,
+        includeAssignmentScans: true,
+        includeStockOpname: true,
+        autoDriveBackup: true,
+      };
+    }
+  }
+
+  public saveDailyScanScheduleConfig(newConfig: Partial<DailyScanScheduleConfig>): void {
+    const current = this.getDailyScanScheduleConfig();
+    const merged = { ...current, ...newConfig };
+    this.setItem(STORAGE_KEYS.DAILY_SCAN_CONFIG, JSON.stringify(merged));
+  }
+
+  public getDailyScanDeliveryLogs(): DailyScanDeliveryLog[] {
+    const raw = this.getItem<string>(STORAGE_KEYS.DAILY_SCAN_LOGS, '[]');
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public addDailyScanDeliveryLog(log: DailyScanDeliveryLog): void {
+    const logs = this.getDailyScanDeliveryLogs();
+    logs.unshift(log);
+    // Keep last 100 delivery logs
+    const capped = logs.slice(0, 100);
+    this.setItem(STORAGE_KEYS.DAILY_SCAN_LOGS, JSON.stringify(capped));
+  }
+
+  public clearDailyScanDeliveryLogs(): void {
+    this.setItem(STORAGE_KEYS.DAILY_SCAN_LOGS, JSON.stringify([]));
   }
 }
 

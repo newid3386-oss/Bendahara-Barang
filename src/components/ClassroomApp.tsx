@@ -58,6 +58,7 @@ import { LastScanInspectorModal } from './LastScanInspectorModal';
 import { useTheme } from '../utils/theme';
 import { LibraryKioskModal } from './LibraryKioskModal';
 import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
+import { MonthlyManagementReportDashboard } from './classroom/MonthlyManagementReportDashboard';
 import { P5ProjectTrackerWidget } from './classroom/P5ProjectTrackerWidget';
 import { ExportStudentReportModal } from './classroom/ExportStudentReportModal';
 import { ClassroomOverviewWidget } from './classroom/ClassroomOverviewWidget';
@@ -209,7 +210,8 @@ type ClassPage =
   | 'schedule'
   | 'reports'
   | 'analytics'
-  | 'peer_review_dashboard';
+  | 'peer_review_dashboard'
+  | 'management_report';
 
 export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const { styles: activeTheme } = useTheme();
@@ -311,6 +313,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const [showAIRemedialModal, setShowAIRemedialModal] = useState(false);
   const [showParentPortalModal, setShowParentPortalModal] = useState(false);
   const [showExecutiveReportModal, setShowExecutiveReportModal] = useState(false);
+  const [showMonthlyManagementModal, setShowMonthlyManagementModal] = useState(false);
   const [showNFCModal, setShowNFCModal] = useState(false);
   const [showSSOModal, setShowSSOModal] = useState(false);
   const [showRBACModal, setShowRBACModal] = useState(false);
@@ -553,10 +556,10 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
 
   // Active Target Class Code (supports single or multi-rombel combined targets)
   const activeTargetClassCode = useMemo(() => {
-    if (sessionTargetClasses.length > 1) {
-      return sessionTargetClasses.join(' + ');
+    if (sessionTargetClasses && sessionTargetClasses.length > 1) {
+      return sessionTargetClasses.join(', ');
     }
-    if (sessionTargetClasses.length === 1) {
+    if (sessionTargetClasses && sessionTargetClasses.length === 1) {
       return sessionTargetClasses[0];
     }
     if (customTargetClass) {
@@ -1260,7 +1263,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
 
     const classes = forTargetClasses && forTargetClasses.length > 0
       ? forTargetClasses.filter((c) => c && c.trim().length > 0)
-      : (cls.includes('+') ? cls.split('+').map((s) => s.trim()).filter(Boolean) : [cls]);
+      : (cls.includes(',') || cls.includes('+') ? cls.split(/[,+]/).map((s) => s.trim()).filter(Boolean) : [cls]);
 
     const finalClasses = classes.length > 0 ? classes : [cls];
 
@@ -1422,10 +1425,58 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       bgGradient: 'from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500',
       borderClass: 'border-emerald-300/50 text-white shadow-emerald-500/40',
       badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50',
-      angle: 90, // straight UP
+      angle: 80,
       onClick: () => {
         setShowArcMenu(false);
         setQrScannerTargetMode('STUDENT');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+    {
+      id: 'btn-arc-scan-assignment',
+      label: 'Scan Tugas',
+      desc: 'Tugas Siswa',
+      Icon: BookOpen,
+      bgGradient: 'from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500',
+      borderClass: 'border-blue-300/50 text-white shadow-blue-500/40',
+      badgeClass: 'bg-blue-950/90 text-blue-300 border-blue-500/50',
+      angle: 99,
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('ASSIGNMENT');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+    {
+      id: 'btn-arc-scan-asset',
+      label: 'Scan Aset',
+      desc: 'Inventaris & Sarpras',
+      Icon: Package,
+      bgGradient: 'from-amber-600 via-orange-600 to-amber-700 hover:from-amber-500 hover:to-orange-500',
+      borderClass: 'border-amber-300/50 text-white shadow-amber-500/40',
+      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50',
+      angle: 118,
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('ASSET');
+        setShowGlobalQrScanner(true);
+        playFeedback('scan');
+      },
+    },
+    {
+      id: 'btn-arc-full-scanner',
+      label: 'Scanner Penuh',
+      desc: 'Auto Deteksi QR',
+      Icon: Scan,
+      bgGradient: 'from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-500 hover:to-pink-500',
+      borderClass: 'border-purple-300/50 text-white shadow-purple-500/40',
+      badgeClass: 'bg-purple-950/90 text-purple-300 border-purple-500/50',
+      angle: 137,
+      onClick: () => {
+        setShowArcMenu(false);
+        setQrScannerTargetMode('ALL');
         setShowGlobalQrScanner(true);
         playFeedback('scan');
       },
@@ -1435,10 +1486,10 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       label: 'View Last Scan',
       desc: recentFabScans.length > 0 ? (recentFabScans[0].title || recentFabScans[0].code) : 'Riwayat Scan',
       Icon: History,
-      bgGradient: 'from-amber-600 via-orange-600 to-amber-700 hover:from-amber-500 hover:to-orange-500',
-      borderClass: 'border-amber-300/50 text-white shadow-amber-500/40',
-      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50',
-      angle: 112.5,
+      bgGradient: 'from-cyan-600 via-teal-600 to-cyan-700 hover:from-cyan-500 hover:to-teal-500',
+      borderClass: 'border-cyan-300/50 text-white shadow-cyan-500/40',
+      badgeClass: 'bg-cyan-950/90 text-cyan-300 border-cyan-500/50',
+      angle: 156,
       onClick: () => {
         setShowArcMenu(false);
         setShowLastScanModal(true);
@@ -1453,7 +1504,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       bgGradient: 'from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500',
       borderClass: 'border-rose-300/50 text-white shadow-rose-500/40',
       badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50',
-      angle: 135,
+      angle: 175,
       onClick: () => {
         setShowArcMenu(false);
         handlePrintScanHistoryPDF();
@@ -1473,48 +1524,16 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       badgeClass: isFlashlightOn
         ? 'bg-yellow-950/90 text-yellow-300 border-yellow-400/60 font-black'
         : 'bg-slate-900/90 text-slate-300 border-slate-700',
-      angle: 157.5,
+      angle: 194,
       onClick: () => {
         toggleFlashlight();
-      },
-    },
-    {
-      id: 'btn-arc-scan-assignment',
-      label: 'Scan Tugas',
-      desc: 'Tugas Siswa',
-      Icon: BookOpen,
-      bgGradient: 'from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500',
-      borderClass: 'border-blue-300/50 text-white shadow-blue-500/40',
-      badgeClass: 'bg-blue-950/90 text-blue-300 border-blue-500/50',
-      angle: 180, // straight LEFT
-      onClick: () => {
-        setShowArcMenu(false);
-        setQrScannerTargetMode('ASSIGNMENT');
-        setShowGlobalQrScanner(true);
-        playFeedback('scan');
-      },
-    },
-    {
-      id: 'btn-arc-full-scanner',
-      label: 'Scanner Penuh',
-      desc: 'Auto Deteksi QR',
-      Icon: Scan,
-      bgGradient: 'from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-500 hover:to-pink-500',
-      borderClass: 'border-purple-300/50 text-white shadow-purple-500/40',
-      badgeClass: 'bg-purple-950/90 text-purple-300 border-purple-500/50',
-      angle: 202.5,
-      onClick: () => {
-        setShowArcMenu(false);
-        setQrScannerTargetMode('ALL');
-        setShowGlobalQrScanner(true);
-        playFeedback('scan');
       },
     },
   ], [recentFabScans, isFlashlightOn, toggleFlashlight, handlePrintScanHistoryPDF]);
 
   const getArcCoordinates = useCallback((angleDeg: number) => {
     const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 640;
-    const r = isDesktop ? 106 : 94;
+    const r = isDesktop ? 122 : 108;
     const rad = (angleDeg * Math.PI) / 180;
     return {
       x: Math.round(r * Math.cos(rad)),
@@ -1539,6 +1558,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     { id: 'schedule', label: 'Jadwal & Kalender', icon: Calendar },
     ...((isGuru || isKepsek) ? [{ id: 'students' as ClassPage, label: isGuru ? `Data Siswa (${account.KELAS || 'Kelas'})` : 'Data Siswa Semua Kelas', icon: Users }] : []),
     { id: 'reports', label: 'Laporan Guru (Kepsek)', icon: FileText },
+    ...(isKepsek ? [{ id: 'management_report' as ClassPage, label: 'Laporan Manajemen Bulanan', icon: BarChart2 }] : []),
   ];
 
   const handleClassLocked = (updatedAccount: Account) => {
@@ -1712,6 +1732,22 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               </span>
             </button>
 
+            {/* Quick Header Access for Kepala Sekolah: Laporan Manajemen Bulanan */}
+            {isKepsek && (
+              <button
+                onClick={() => setPage('management_report')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-bold text-xs transition cursor-pointer shrink-0 ${
+                  page === 'management_report'
+                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-md ring-2 ring-emerald-300/40'
+                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/40'
+                }`}
+                title="Buka Dashboard Laporan Manajemen Bulanan Kepala Sekolah"
+              >
+                <Award size={14} className="text-emerald-300" />
+                <span className="hidden sm:inline">Laporan Manajemen Bulanan</span>
+              </button>
+            )}
+
             {/* Elegant Dropdown for Integrations / Auxiliary Apps */}
             <div className="relative shrink-0">
               <button
@@ -1843,6 +1879,22 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                             <div>
                               <div className="text-xs font-bold">Laporan Pengawas</div>
                               <div className="text-[9px] text-slate-400 font-normal">Ringkasan eksekutif kepemimpinan</div>
+                            </div>
+                          </button>
+                        )}
+
+                        {/* 7b. Laporan Manajemen Bulanan Kepsek */}
+                        {isKepsek && (
+                          <button
+                            onClick={() => { setShowMonthlyManagementModal(true); setShowPortalApps(false); }}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/10 text-left text-xs font-bold transition text-slate-200 hover:text-white"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                              <BarChart2 size={14} className="text-emerald-300" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold">Laporan Manajemen Bulanan</div>
+                              <div className="text-[9px] text-slate-400 font-normal">Presensi, Nilai & P5 (PDF 1-Klik)</div>
                             </div>
                           </button>
                         )}
@@ -2145,6 +2197,9 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               reports={reports}
               onRefresh={refresh}
             />
+          )}
+          {page === 'management_report' && (
+            <MonthlyManagementReportDashboard isModal={false} />
           )}
         </main>
       </div>
@@ -4007,6 +4062,15 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         isOpen={showExecutiveReportModal}
         onClose={() => setShowExecutiveReportModal(false)}
       />
+
+      {/* DASHBOARD LAPORAN MANAJEMEN BULANAN KEPSEK MODAL */}
+      {showMonthlyManagementModal && (
+        <MonthlyManagementReportDashboard
+          isOpen={showMonthlyManagementModal}
+          onClose={() => setShowMonthlyManagementModal(false)}
+          isModal={true}
+        />
+      )}
 
       {/* KIOS PRESENSI NFC & SMART CARD GERBANG */}
       <NFCGateAttendanceModal
@@ -10793,6 +10857,7 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
   const isKepsek = account.ROLE === 'KEPALA SEKOLAH';
   const [showCreate, setShowCreate] = useState(false);
   const [gradeFor, setGradeFor] = useState<ClassroomReport | null>(null);
+  const [showMonthlyDashboard, setShowMonthlyDashboard] = useState(false);
 
   const pendingReports = reports.filter((r) => r.STATUS === 'DIKIRIM');
 
@@ -10810,6 +10875,16 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {isKepsek && (
+            <button
+              onClick={() => setShowMonthlyDashboard(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02] cursor-pointer"
+              title="Buka Dashboard Laporan Manajemen Bulanan Eksekutif (Presensi, Nilai & P5) dengan opsi unduh PDF 1-klik"
+            >
+              <Award size={14} className="text-amber-300" />
+              <span>Laporan Manajemen Bulanan (PDF 1-Klik)</span>
+            </button>
+          )}
           {reports.length > 0 && (
             <button
               onClick={() =>
@@ -10819,7 +10894,7 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
                   isKepsek ? account.NIP : '198406192009022007'
                 )
               }
-              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-slate-900/20 transition-all hover:scale-[1.02]"
+              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-slate-900/20 transition-all hover:scale-[1.02] cursor-pointer"
               title="Unduh seluruh ringkasan dan rincian laporan guru ke dalam 1 file PDF resmi berkop surat"
             >
               <Download size={14} className="text-emerald-400" />
@@ -10829,7 +10904,7 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
           {isGuru && (
             <button
               onClick={() => setShowCreate(true)}
-              className="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-700/20"
+              className="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-700/20 cursor-pointer"
             >
               <Plus size={14} /> Buat Laporan
             </button>
@@ -10889,6 +10964,13 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
       )}
       {gradeFor && isKepsek && (
         <GradeReportModal report={gradeFor} kepsek={account} onClose={() => setGradeFor(null)} onSaved={() => { setGradeFor(null); onRefresh(); }} />
+      )}
+      {showMonthlyDashboard && (
+        <MonthlyManagementReportDashboard
+          isOpen={showMonthlyDashboard}
+          onClose={() => setShowMonthlyDashboard(false)}
+          isModal={true}
+        />
       )}
     </div>
   );

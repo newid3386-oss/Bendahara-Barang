@@ -5,10 +5,12 @@ import { ToastProvider } from './components/ToastContext.tsx';
 import { ThemeProvider } from './utils/theme.ts';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { resilienceService } from './services/resilienceService.ts';
+import { dailyScanSchedulerService } from './services/dailyScanSchedulerService.ts';
 import './index.css';
 
-// Initialize Boot Integrity and Self-Healing Engine
+// Initialize Boot Integrity, Self-Healing, and 15:00 Daily Scan Email Scheduler
 resilienceService.init();
+dailyScanSchedulerService.init();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -567,5 +567,36 @@ export type ActivePage =
   | 'config'
   | 'google_sheets_sync';
 
+export interface DailyScanDeliveryLog {
+  id: string;
+  timestamp: string;
+  date: string;
+  time: string;
+  targetEmail: string;
+  targetName: string;
+  totalScans: number;
+  pdfFileName: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  serviceUsed: 'GMAIL_API' | 'APPS_SCRIPT' | 'SERVER_INTEGRATION' | 'GOOGLE_DRIVE' | 'CLIENT_AUTOMATION';
+  driveFileUrl?: string;
+  messageId?: string;
+  error?: string;
+}
+
+export interface DailyScanScheduleConfig {
+  enabled: boolean;
+  time: string; // e.g. '15:00'
+  targetEmail: string;
+  targetName: string;
+  includeStudentAttendance: boolean;
+  includeAssetScans: boolean;
+  includeAssignmentScans: boolean;
+  includeStockOpname: boolean;
+  autoDriveBackup: boolean;
+  lastSentDate?: string;
+  lastSentTimestamp?: string;
+}
+
+
 
 

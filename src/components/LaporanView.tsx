@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
-import { FileText, Download, Filter, Calendar, BookOpen, Layers, Box, Check, FileSpreadsheet } from 'lucide-react';
+import { FileText, Download, Filter, Calendar, BookOpen, Layers, Box, Check, FileSpreadsheet, Award } from 'lucide-react';
 import { db } from '../services/localStorageService';
 import { pdfService } from '../services/pdfService';
 import { excelService } from '../services/excelService';
+import { monthlyManagementService } from '../services/monthlyManagementService';
+import { MonthlyManagementReportDashboard } from './classroom/MonthlyManagementReportDashboard';
 
 export const LaporanView: React.FC = () => {
   const [reportType, setReportType] = useState<
-    'PERSEDIAAN' | 'PENERIMAAN' | 'PENGELUARAN' | 'ASET_KIR' | 'REKAP_TRIWULAN' | 'KIB_INVENTARIS'
+    'PERSEDIAAN' | 'PENERIMAAN' | 'PENGELUARAN' | 'ASET_KIR' | 'REKAP_TRIWULAN' | 'KIB_INVENTARIS' | 'MANAJEMEN_BULANAN_KEPSEK'
   >('PERSEDIAAN');
 
   const [selectedPeriod, setSelectedPeriod] = useState('Bulan Berjalan');
   const [selectedRoom, setSelectedRoom] = useState('Semua Ruangan');
   const [selectedKib, setSelectedKib] = useState('ALL');
+  const [showKepsekModal, setShowKepsekModal] = useState(false);
 
   const config = db.getConfig();
   const items = db.getItems();
@@ -25,6 +28,12 @@ export const LaporanView: React.FC = () => {
 
   const handleDownloadPDF = () => {
     switch (reportType) {
+      case 'MANAJEMEN_BULANAN_KEPSEK': {
+        const data = monthlyManagementService.getMonthlyReportData();
+        pdfService.generateMonthlyManagementReportPdf(data);
+        break;
+      }
+
       case 'PERSEDIAAN':
         pdfService.generateLaporanPersediaan(stockSummary, selectedPeriod);
         break;
@@ -230,6 +239,12 @@ export const LaporanView: React.FC = () => {
             desc: 'Format resmi pertanggungjawaban BOS & audit Dinas Pendidikan.',
             icon: Calendar,
           },
+          {
+            id: 'MANAJEMEN_BULANAN_KEPSEK',
+            title: 'Laporan Manajemen Bulanan Kepsek',
+            desc: 'Rekapitulasi terpadu: Presensi Siswa, Nilai Tugas, & Progres Projek P5 (PDF 1-Klik).',
+            icon: Award,
+          },
         ].map((item) => {
           const Icon = item.icon;
           const isSelected = reportType === item.id;
@@ -326,24 +341,55 @@ export const LaporanView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={handleDownloadExcel}
-            className="px-5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2"
-            title="Download lembar kerja format Microsoft Excel (.xlsx)"
-          >
-            <FileSpreadsheet size={16} /> Unduh Format Excel (.xlsx)
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadPDF}
-            className="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
-            title="Download dokumen cetak resmi format PDF lengkap dengan Kop & Tanda Tangan"
-          >
-            <Download size={16} /> Unduh Dokumen PDF Resmi
-          </button>
+          {reportType === 'MANAJEMEN_BULANAN_KEPSEK' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowKepsekModal(true)}
+                className="px-5 py-2.5 rounded-xl bg-indigo-900 hover:bg-indigo-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                title="Buka dashboard visual lengkap laporan manajemen bulanan kepala sekolah"
+              >
+                <Award size={16} className="text-amber-300" /> Buka Dashboard Interaktif
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                title="Download dokumen cetak resmi format PDF lengkap dengan Kop & Tanda Tangan Sekali Klik"
+              >
+                <Download size={16} /> Unduh PDF Sekali Klik
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadExcel}
+                className="px-5 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2"
+                title="Download lembar kerja format Microsoft Excel (.xlsx)"
+              >
+                <FileSpreadsheet size={16} /> Unduh Format Excel (.xlsx)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                className="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+                title="Download dokumen cetak resmi format PDF lengkap dengan Kop & Tanda Tangan"
+              >
+                <Download size={16} /> Unduh Dokumen PDF Resmi
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {showKepsekModal && (
+        <MonthlyManagementReportDashboard
+          isOpen={showKepsekModal}
+          onClose={() => setShowKepsekModal(false)}
+          isModal={true}
+        />
+      )}
     </div>
   );
 };

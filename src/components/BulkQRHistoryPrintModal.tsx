@@ -25,12 +25,14 @@ import {
   Copy,
   FileSpreadsheet,
   Calendar,
+  Mail,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RecentScanItem } from './QRScannerModal';
 import { pdfService } from '../services/pdfService';
 import { playFeedback } from '../utils/feedback';
 import { db } from '../services/localStorageService';
+import { dailyScanSchedulerService } from '../services/dailyScanSchedulerService';
 
 export interface BulkQRHistoryPrintModalProps {
   isOpen: boolean;
@@ -1032,6 +1034,27 @@ export const BulkQRHistoryPrintModal: React.FC<BulkQRHistoryPrintModalProps> = (
                   <span className="hidden sm:inline">Ekspor CSV</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setIsGenerating(true);
+                    const result = await dailyScanSchedulerService.executeScheduledJob(true);
+                    alert(`Laporan scan (${result.totalScans} item) berhasil dikirimkan ke email Kepala Sekolah (${result.targetEmail})!`);
+                  } catch (e: any) {
+                    alert('Gagal mengirim email: ' + (e.message || 'Kesalahan sistem'));
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+                disabled={isGenerating}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                title="Kirim dokumen rekapitulasi ke email Kepala Sekolah sekarang (Jadwal Otomatis 15:00)"
+              >
+                <Mail size={13} className="text-teal-700" />
+                <span className="hidden sm:inline">Kirim ke Kepsek (15:00)</span>
+              </button>
 
               <button
                 type="button"

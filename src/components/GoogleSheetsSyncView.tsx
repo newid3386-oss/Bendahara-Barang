@@ -29,6 +29,7 @@ import {
 import { db } from '../services/localStorageService';
 import { googleWorkspace } from '../services/googleWorkspace';
 import { offlineSyncManager } from '../services/offlineSyncManager';
+import { DailyScanScheduleManager } from './DailyScanScheduleManager';
 
 interface GoogleSheetsSyncViewProps {
   onOpenModal: () => void;
@@ -39,7 +40,7 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({ onOp
   const [accessToken, setAccessToken] = useState<string | null>(db.getGoogleAccessToken());
   const [sheetId, setSheetId] = useState<string | null>(db.getConnectedGoogleSheetId());
   const [appsScriptUrl, setAppsScriptUrl] = useState<string | null>(db.getAppsScriptUrl());
-  const [activeHubTab, setActiveHubTab] = useState<'SHEETS' | 'DOCS' | 'CALENDAR' | 'SLIDES' | 'PICKER'>('SHEETS');
+  const [activeHubTab, setActiveHubTab] = useState<'SHEETS' | 'DOCS' | 'CALENDAR' | 'SLIDES' | 'PICKER' | 'DAILY_SCAN'>('SHEETS');
 
   // Existing states
   const [isSyncing, setIsSyncing] = useState(false);
@@ -575,6 +576,17 @@ Mengetahui: ${docRecord.MENGETAHUI || '-'}
         >
           <Search size={15} />
           Google Picker API
+        </button>
+        <button
+          onClick={() => setActiveHubTab('DAILY_SCAN')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+            activeHubTab === 'DAILY_SCAN'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100'
+          }`}
+        >
+          <Clock size={15} />
+          Jadwal Log Scan PDF (15:00)
         </button>
       </div>
 
@@ -1336,6 +1348,10 @@ Mengetahui: ${docRecord.MENGETAHUI || '-'}
             </div>
           </div>
         </div>
+      )}
+
+      {activeHubTab === 'DAILY_SCAN' && (
+        <DailyScanScheduleManager />
       )}
     </div>
   );
