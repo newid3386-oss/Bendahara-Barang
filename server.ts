@@ -6,11 +6,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 const app = express();
 const PORT = 3000;
 
-// Increase payload limit for base64 receipt scans
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Standard default body limit (2MB) for general API endpoints to prevent memory exhaustion / DoS
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// ─── ENTERPRISE SECURITY HEADERS MIDDLEWARE ───
+// Elevated body limit middleware (50MB) specifically for heavy document/image scan endpoints
+const heavyPayloadParser = express.json({ limit: '50mb' });
+
+// ─── ENTERPRISE SECURITY HEADERS & CONTENT SECURITY POLICY (CSP) ───
 app.use((req, res, next) => {
   // Prevent MIME type sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -20,6 +23,22 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   // Feature policies for camera & mic (used for CBT/Scanner) and geolocation (for Google Maps Grounding)
   res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(self), camera=(self)');
+  // Content Security Policy (CSP) mitigating XSS while supporting necessary school assets and preview iframe
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com https://www.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https: https://*.googleusercontent.com https://images.unsplash.com",
+      "connect-src 'self' https: wss: https://*.googleapis.com https://*.firebaseio.com https://*.run.app",
+      "frame-src 'self' https://accounts.google.com https://*.firebaseapp.com https://drive.google.com https://docs.google.com",
+      "media-src 'self' data: blob: https:",
+      "object-src 'none'",
+      "base-uri 'self'",
+    ].join('; ')
+  );
   next();
 });
 
@@ -159,8 +178,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Endpoint: AI OCR Receipt & Invoice Scanner
-app.post('/api/ai/scan-receipt', async (req, res) => {
+// Endpoint: AI OCR Receipt & Invoice Scanner (elevated 50MB payload parser)
+app.post('/api/ai/scan-receipt', heavyPayloadParser, async (req, res) => {
   const { imageBase64, mimeType = 'image/jpeg' } = req.body;
 
   if (!imageBase64) {
@@ -1092,7 +1111,7 @@ Instruksi Menjawab:
 });
 
 // Endpoint: AI Berita Acara Auto-Drafter (Structured Generation)
-app.post('/api/ai/draft-berita-acara', async (req, res) => {
+app.post('/api/ai/draft-berita-acara', heavyPayloadParser, async (req, res) => {
   const { docType, transactionData, parties } = req.body;
   const year = new Date().getFullYear();
 
@@ -1525,7 +1544,7 @@ Tolong hasilkan saran umpan balik peer review yang terstruktur dalam format JSON
 });
 
 // ─── ENDPOINT: PENJADWALAN OTOMATIS & PENGIRIMAN LOG SCAN HARIAN KE KEPALA SEKOLAH ───
-app.post('/api/reports/send-daily-scan-report', async (req, res) => {
+app.post('/api/reports/send-daily-scan-report', heavyPayloadParser, async (req, res) => {
   try {
     const {
       to,

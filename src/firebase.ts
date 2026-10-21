@@ -1,13 +1,10 @@
+import 'firebase/firestore';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
-  initializeFirestore,
   getFirestore,
   Firestore,
   doc,
   getDoc,
-  persistentLocalCache,
-  persistentSingleTabManager,
-  memoryLocalCache,
   setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfigRaw from '../firebase-applet-config.json';
@@ -24,32 +21,22 @@ try {
   // Ignore
 }
 
-// Initialize Firestore with robust local persistent cache
+// Initialize Firestore matching the official AI Studio Firebase skill directive
 export const firestore: Firestore = (() => {
   const databaseId = firebaseConfig.firestoreDatabaseId;
   try {
-    return initializeFirestore(
-      app,
-      {
-        localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-        ignoreUndefinedProperties: true,
-        experimentalForceLongPolling: true,
-      },
-      databaseId || undefined
-    );
-  } catch {
+    return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  } catch (err) {
+    console.warn('[Firebase] Primary getFirestore failed, attempting fallback:', err);
     try {
-      return initializeFirestore(
+      return getFirestore(app);
+    } catch (finalErr) {
+      console.warn('[Firebase] Firestore service unavailable in current browser environment, local storage will be used:', finalErr);
+      return {
+        type: 'firestore',
         app,
-        {
-          localCache: memoryLocalCache(),
-          ignoreUndefinedProperties: true,
-          experimentalForceLongPolling: true,
-        },
-        databaseId || undefined
-      );
-    } catch {
-      return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+        toJSON: () => ({}),
+      } as unknown as Firestore;
     }
   }
 })();

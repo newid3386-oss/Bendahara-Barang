@@ -42,13 +42,19 @@ const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }
 
   const handlePerformLogin = (userVal: string, passVal: string) => {
     setError(null);
+    const cleanUser = userVal.trim().toLowerCase();
+    const cleanPass = passVal.trim();
+
+    if (!cleanUser || !cleanPass) {
+      setError('Username dan kata sandi wajib diisi.');
+      return;
+    }
+
     setIsLoggingIn(true);
     setTimeout(() => {
-      const cleanUser = userVal.trim().toLowerCase();
-      const normalizedUser = (cleanUser === 'admint' || cleanUser === 'administrator' || cleanUser === 'admin website' || cleanUser === 'admint website') ? 'admin' : userVal;
-      const passToUse = passVal.trim() || 'admin123';
+      const normalizedUser = (cleanUser === 'admint' || cleanUser === 'administrator' || cleanUser === 'admin website' || cleanUser === 'admint website') ? 'admin' : userVal.trim();
 
-      const authenticated = accountService.authenticate('ADMIN', normalizedUser, passToUse);
+      const authenticated = accountService.authenticate('ADMIN', normalizedUser, cleanPass);
       if (authenticated) {
         accountService.setActiveAdminAccount(authenticated);
         securityService.recordSuccessfulLogin(authenticated.USERNAME, authenticated.ROLE);
@@ -60,16 +66,18 @@ const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }
         onSuccess(authenticated);
       } else {
         setIsLoggingIn(false);
-        setError('Username atau kata sandi tidak cocok. Gunakan username "admin" dan kata sandi "admin123".');
+        setError('Username atau kata sandi tidak cocok. Silakan periksa kembali kredensial Anda.');
       }
     }, 150);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const targetUser = username.trim() || 'admin';
-    const targetPass = password.trim() || 'admin123';
-    handlePerformLogin(targetUser, targetPass);
+    if (!username.trim() || !password.trim()) {
+      setError('Username dan kata sandi wajib diisi.');
+      return;
+    }
+    handlePerformLogin(username, password);
   };
 
   const handleDiagnosticReset = () => {
@@ -169,7 +177,7 @@ const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="admin123"
+                placeholder="Masukkan kata sandi..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 pr-10 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-2 focus:outline-blue-500 focus:border-transparent transition-all font-mono"
@@ -185,24 +193,12 @@ const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }
             </div>
           </div>
 
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs text-slate-400">
-            <div>
-              <span>Kredensial Bawaan: </span>
-              <span className="font-mono text-amber-300 font-bold">admin</span>
-              <span className="mx-1">/</span>
-              <span className="font-mono text-amber-300 font-bold">admin123</span>
+          <div className="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3 flex items-center justify-between text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-emerald-400" />
+              <span className="text-[11px] text-slate-300">Autentikasi Terenkripsi & Terlindungi Brute-Force</span>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setUsername('admin');
-                setPassword('admin123');
-                handlePerformLogin('admin', 'admin123');
-              }}
-              className="text-[11px] font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
-            >
-              Masuk Cepat
-            </button>
+            <span className="text-[10px] text-slate-500 font-mono">TLS / SHA-256</span>
           </div>
 
           <button

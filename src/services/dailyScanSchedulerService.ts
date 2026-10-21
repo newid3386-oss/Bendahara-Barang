@@ -30,15 +30,23 @@ class DailyScanSchedulerService {
   public init(): void {
     if (this.timerId) return;
 
-    // Check every 25 seconds for the scheduled 15:00 trigger
+    // Check once every 60 seconds for the scheduled 15:00 trigger (optimal for minute-level schedule)
     this.timerId = setInterval(() => {
       this.checkAndRunScheduledJob();
-    }, 25000);
+    }, 60000);
 
     // Initial check on boot (in case user opened app at or after 15:00 today)
     setTimeout(() => {
       this.checkAndRunScheduledJob();
     }, 4000);
+  }
+
+  public destroy(): void {
+    if (this.timerId) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
+    this.listeners = [];
   }
 
   public subscribe(listener: () => void): () => void {

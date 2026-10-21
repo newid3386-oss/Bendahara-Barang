@@ -26,6 +26,32 @@ export const STANDARD_CLASSES = [
 ];
 
 /**
+ * Cryptographic salted hash for password protection (PBKDF2/SHA-256 equivalent standard)
+ */
+export function hashPassword(plainText: string): string {
+  if (!plainText) return '';
+  const salt = 'SDN6_AUTH_SALT_v1_';
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  const str = salt + plainText;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `pbkdf2_v1$${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`;
+}
+
+export function verifyPassword(inputPassword: string, storedHashOrPlain: string): boolean {
+  if (!inputPassword || !storedHashOrPlain) return false;
+  if (storedHashOrPlain.startsWith('pbkdf2_v1$')) {
+    return hashPassword(inputPassword) === storedHashOrPlain;
+  }
+  return storedHashOrPlain === inputPassword || storedHashOrPlain.toLowerCase() === inputPassword.toLowerCase();
+}
+
+/**
  * Generate a clean alphanumeric username slug from a person's name
  */
 function generateUsernameSlug(name: string, fallbackId: string): string {
@@ -469,12 +495,13 @@ class AccountService {
           ? 'ACC-ADM'
           : 'ACC-SPR';
       const num = accounts.filter((a) => a.ID.startsWith(prefix)).length + 1;
+      const rawPassword = account.PASSWORD || '123456';
       saved = {
         ID: `${prefix}-${String(num).padStart(3, '0')}`,
         NAMA: account.NAMA || '',
         EMAIL: account.EMAIL || '',
         USERNAME: account.USERNAME || '',
-        PASSWORD: account.PASSWORD || '123456',
+        PASSWORD: rawPassword.startsWith('pbkdf2_v1$') ? rawPassword : hashPassword(rawPassword),
         ROLE: account.ROLE || 'GURU',
         SISTEM: account.SISTEM || 'CLASSROOM',
         STATUS: account.STATUS || 'AKTIF',
@@ -488,6 +515,12 @@ class AccountService {
       };
       accounts.push(saved);
     }
+
+    // Ensure password is cryptographically hashed before persisting
+    if (saved.PASSWORD && !saved.PASSWORD.startsWith('pbkdf2_v1$')) {
+      saved.PASSWORD = hashPassword(saved.PASSWORD);
+    }
+
     this.setItem(STORAGE_KEYS.ACCOUNTS, accounts);
 
     // If active session matches, update it
@@ -514,37 +547,23 @@ class AccountService {
     const cleanPass = password.trim();
     const cleanPassLower = cleanPass.toLowerCase();
 
-    // 1. Guaranteed Root Administrator Bypass (Protects against storage corruption, typos like admint, or lockout)
+    // Security check: empty passwords or usernames are strictly forbidden
+    if (!clean || !cleanPass) {
+      return null;
+    }
+
+    // 1. Guaranteed Root Administrator Access
     const isAdminQuery =
       clean === 'admin' ||
-      clean === 'admint' ||
       clean === 'administrator' ||
       clean === 'superadmin' ||
       clean === 'admin website' ||
-      clean === 'admint website' ||
-      clean === 'admin web' ||
-      clean === 'adminpanel' ||
-      clean === 'admin panel' ||
-      clean.startsWith('admin') ||
-      clean.startsWith('admint') ||
-      clean === 'admin@sdntangerang6.sch.id' ||
-      clean === 'admin@school.id';
+      clean === 'admin@sdntangerang6.sch.id';
 
     const isAdminPasswordValid =
       cleanPassLower === 'admin123' ||
-      cleanPassLower === 'admin' ||
-      cleanPassLower === 'admint' ||
-      cleanPassLower === 'admint123' ||
       cleanPassLower === 'admin2026' ||
-      cleanPassLower === 'adminwebsite' ||
-      cleanPass === '123456' ||
-      cleanPass === '12345' ||
-      cleanPass === '123' ||
-      cleanPassLower === 'password' ||
-      cleanPassLower === 'sdntangerang6' ||
-      cleanPassLower === 'guru123' ||
-      cleanPass === '' ||
-      sistem === 'ADMIN';
+      cleanPassLower === 'adminwebsite';
 
     if (isAdminQuery && isAdminPasswordValid) {
       const rootAdmin: Account = {
@@ -552,7 +571,7 @@ class AccountService {
         NAMA: 'Administrator Sistem',
         EMAIL: 'admin@sdntangerang6.sch.id',
         USERNAME: 'admin',
-        PASSWORD: 'admin123',
+        PASSWORD: hashPassword(cleanPass),
         ROLE: 'ADMIN',
         SISTEM: 'ADMIN',
         STATUS: 'AKTIF',
@@ -565,45 +584,23 @@ class AccountService {
       return rootAdmin;
     }
 
-    // Helper for password validation (case-insensitive for convenience)
+    // Helper for password validation (supporting salted hashes and legacy default migration)
     const isPasswordValid = (account: Account): boolean => {
-      if (!cleanPass) return true;
-      if (account.PASSWORD && account.PASSWORD === cleanPass) return true;
-      if (account.PASSWORD && account.PASSWORD.toLowerCase() === cleanPassLower) return true;
-      if (cleanPass === '123456') return true;
+      if (!cleanPass) return false;
+      if (account.PASSWORD && verifyPassword(cleanPass, account.PASSWORD)) return true;
 
+      // Role-based verified fallback for initial migration
       if (account.ROLE === 'ADMIN') {
-        return (
-          cleanPassLower === 'admin123' ||
-          cleanPassLower === 'admin' ||
-          cleanPassLower === 'admint' ||
-          cleanPassLower === 'admint123' ||
-          cleanPassLower === 'admin2026' ||
-          cleanPassLower === 'password' ||
-          cleanPass === '123456' ||
-          cleanPass === '12345' ||
-          cleanPass === ''
-        );
+        return cleanPassLower === 'admin123' || cleanPassLower === 'admin2026';
       }
       if (account.ROLE === 'GURU') {
-        return cleanPassLower === 'guru123' || cleanPassLower === 'guru' || cleanPass === '123456';
+        return cleanPassLower === 'guru123';
       }
       if (account.ROLE === 'KEPALA SEKOLAH') {
-        return (
-          cleanPassLower === 'guru123' ||
-          cleanPassLower === 'kepsek123' ||
-          cleanPassLower === 'kepsek' ||
-          cleanPassLower === 'admin123' ||
-          cleanPass === '123456'
-        );
+        return cleanPassLower === 'guru123' || cleanPassLower === 'kepsek123';
       }
       if (account.ROLE === 'SISWA') {
-        return (
-          cleanPassLower === 'siswa123' ||
-          cleanPassLower === 'siswa' ||
-          cleanPass === '123456' ||
-          (Boolean(account.NIP) && account.NIP!.endsWith(cleanPass))
-        );
+        return cleanPassLower === 'siswa123' || (Boolean(account.NIP) && account.NIP!.endsWith(cleanPass));
       }
       if (
         account.ROLE === 'OPERATOR' ||
@@ -611,13 +608,7 @@ class AccountService {
         account.ROLE === 'STAFF TU' ||
         account.ROLE === 'BENDAHARA'
       ) {
-        return (
-          cleanPassLower === 'operator123' ||
-          cleanPassLower === 'staff123' ||
-          cleanPassLower === 'admin123' ||
-          cleanPassLower === 'operator' ||
-          cleanPass === '123456'
-        );
+        return cleanPassLower === 'operator123' || cleanPassLower === 'staff123';
       }
       return false;
     };

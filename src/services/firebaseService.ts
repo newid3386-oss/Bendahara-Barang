@@ -1,3 +1,4 @@
+import 'firebase/firestore';
 import { firestore } from '../firebase';
 import { 
   doc, 
@@ -184,6 +185,12 @@ class FirebaseService {
     this.unsubs = [];
 
     try {
+      // Safety check: ensure firestore is initialized and usable
+      if (!firestore || !(firestore as any).app) {
+        console.warn('[FirebaseSync] Firestore instance not ready or stubbed. Local storage active.');
+        return;
+      }
+
       // Connect to each normalized Firestore collection in real-time
       this.collectionsConfig.forEach((col) => {
         const colRef = collection(firestore, col.path);
