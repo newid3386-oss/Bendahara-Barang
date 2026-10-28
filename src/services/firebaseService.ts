@@ -549,6 +549,54 @@ class FirebaseService {
       }
     });
   }
+
+  /**
+   * Sync single account directly to Cloud Firestore
+   */
+  public async syncSingleAccountToCloud(account: any): Promise<boolean> {
+    if (!account || !account.ID) return false;
+    try {
+      if (!firestore || !(firestore as any).app) return false;
+      await setDoc(doc(firestore, 'accounts', account.ID), account, { merge: true });
+      return true;
+    } catch (e) {
+      console.warn('[FirebaseSync] Notice: could not persist account to cloud:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Specifically sync all accounts to Cloud Firestore
+   */
+  public async syncAccountsToCloud(): Promise<boolean> {
+    try {
+      if (!firestore || !(firestore as any).app) return false;
+      const rawAccounts = localStorage.getItem('BB_ACCOUNTS') || '[]';
+      const accounts: any[] = JSON.parse(rawAccounts);
+      for (const acc of accounts) {
+        if (!acc.ID) continue;
+        await setDoc(doc(firestore, 'accounts', acc.ID), acc, { merge: true });
+      }
+      return true;
+    } catch (e) {
+      console.warn('[FirebaseSync] Notice: could not batch sync accounts to cloud:', e);
+      return false;
+    }
+  }
+  /**
+   * Delete single account directly from Cloud Firestore
+   */
+  public async deleteSingleAccountFromCloud(accountId: string): Promise<boolean> {
+    if (!accountId) return false;
+    try {
+      if (!firestore || !(firestore as any).app) return false;
+      await deleteDoc(doc(firestore, 'accounts', accountId));
+      return true;
+    } catch (e) {
+      console.warn('[FirebaseSync] Notice: could not delete account from cloud:', e);
+      return false;
+    }
+  }
 }
 
 export const firebaseService = new FirebaseService();

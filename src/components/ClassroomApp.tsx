@@ -14,6 +14,7 @@ import {
   Upload, FileSpreadsheet, Layers, ListPlus, Loader2
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import { ResponsiveContainer, BarChart, AreaChart, LineChart, RadarChart, ComposedChart, PieChart, Area, Line, Bar, Radar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell, Pie } from 'recharts';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { classroomService } from '../services/classroomService';
 import { pdfService } from '../services/pdfService';
@@ -22,6 +23,8 @@ import { FirebaseCloudSyncModal } from './FirebaseCloudSyncModal';
 import { OfflineSyncIndicator } from './OfflineSyncIndicator';
 import { ClassroomAIAssistantModal } from './classroom/ClassroomAIAssistantModal';
 import { ClassroomAIChat } from './classroom/ClassroomAIChat';
+import { P5ProjectAnalyticsWidget } from './classroom/P5ProjectAnalyticsWidget';
+import { AutomatedGradeTrendAnalyticsWidget } from './classroom/AutomatedGradeTrendAnalyticsWidget';
 import { Account, StatusKelulusan, KebutuhanKhusus } from '../types/classroom';
 import { ClassroomCourse, ClassroomAssignment, ClassroomSubmission, ClassroomReport } from '../types/classroom';
 import { ClassroomForumView } from './classroom/ClassroomForumView';
@@ -70,22 +73,7 @@ import { PeerReviewDashboardView } from './classroom/PeerReviewDashboardView';
 import { ClassroomPortalLogin } from './classroom/ClassroomPortalLogin';
 import { SecureMaskedField } from './common/SecureMaskedField';
 import { SecureMaskingBar } from './common/SecureMaskingBar';
-import {
-  ResponsiveContainer,
-  ComposedChart,
-  LineChart,
-  Area,
-  Line,
-  BarChart,
-  Bar,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ReferenceLine,
-} from 'recharts';
+
 
 // ==========================================
 // EXPORT STUDENTS DATA TO CSV UTILITY
@@ -5509,6 +5497,14 @@ const DashboardView: React.FC<{
 
       {/* P5 PROJECT PROGRESS TRACKER WIDGET FOR SISWA, GURU & KEPSEK */}
       <P5ProjectTrackerWidget account={account} />
+
+      {/* P5 PROJECT CHARACTER ANALYTICS WIDGET */}
+      <P5ProjectAnalyticsWidget />
+
+      {/* AUTOMATED GRADE TREND & WEEKLY PERFORMANCE ANALYTICS WIDGET */}
+      <AutomatedGradeTrendAnalyticsWidget
+        onNavigateToClassroom={() => onNavigate('gradebook')}
+      />
 
       {/* ─── D3.JS CLASSROOM OVERVIEW WIDGET ───────────────────── */}
       <ClassroomOverviewWidget selectedClass={account.KELAS || 'Semua Kelas'} />

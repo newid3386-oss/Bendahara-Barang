@@ -18,6 +18,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "recharts": [
+        "./src/components/RechartsShim.tsx"
       ]
     },
     "allowImportingTsExtensions": true,

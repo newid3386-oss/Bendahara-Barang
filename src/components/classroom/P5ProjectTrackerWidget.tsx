@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Compass,
@@ -17,10 +17,12 @@ import {
   Bot,
   User,
   Trash2,
+  BookOpen,
 } from 'lucide-react';
 import { Account, P5Project, P5ProjectStage } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
 import { STANDARD_CLASSES } from '../../services/accountService';
+import { P5DailyLogModal } from './P5DailyLogModal';
 
 interface P5ProjectTrackerWidgetProps {
   account: Account;
@@ -36,6 +38,13 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
   const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 4');
   const [project, setProject] = useState<P5Project>(() => classroomService.getP5ProjectForClass(selectedKelas));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showDailyLogModal, setShowDailyLogModal] = useState(false);
+
+  const dailyLogsCount = useMemo(() => {
+    return isSiswa
+      ? classroomService.getP5DailyLogs(selectedKelas, account.ID).length
+      : classroomService.getP5DailyLogs(selectedKelas).length;
+  }, [selectedKelas, isSiswa, account.ID, showDailyLogModal]);
 
   // P5 AI Mentor Bot States
   const [showP5Bot, setShowP5Bot] = useState(false);
@@ -179,6 +188,22 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
 
         {/* Actions Header container */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {/* Daily Activity Log Button */}
+          <button
+            type="button"
+            onClick={() => setShowDailyLogModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black shadow-2xs border border-purple-600 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white transition-all cursor-pointer select-none"
+            title="Buka jurnal refleksi dan log kegiatan harian proyek P5"
+          >
+            <BookOpen size={13} />
+            <span>Jurnal Log Harian P5</span>
+            {dailyLogsCount > 0 && (
+              <span className="bg-white/25 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
+                {dailyLogsCount}
+              </span>
+            )}
+          </button>
+
           {/* P5 AI Mentor Bot Trigger Button */}
           <button
             type="button"
@@ -461,6 +486,15 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
           })}
         </div>
       </div>
+
+      {/* P5 Daily Activity Log & Teacher Feedback Modal */}
+      <P5DailyLogModal
+        isOpen={showDailyLogModal}
+        onClose={() => setShowDailyLogModal(false)}
+        account={account}
+        initialKelas={selectedKelas}
+        project={project}
+      />
     </div>
   );
 };

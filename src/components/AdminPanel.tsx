@@ -244,7 +244,7 @@ const AdminPortalLogin: React.FC<AdminPortalLoginProps> = ({ onSuccess, onBack }
   );
 };
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
+export default function AdminPanel({ onLogout }: AdminPanelProps) {
   const { styles, setThemeId, setThemeMode, setPreview, previewThemeId, previewThemeMode } = useTheme();
   const [admin, setAdmin] = useState<Account | null>(accountService.getActiveAdminAccount());
   const [tab, setTab] = useState<AdminTab>('overview');
@@ -1872,3 +1872,5 @@ const AccountFormModal: React.FC<{ sistem: SystemType; account: Account | null; 
     </div>
   );
 };
+
+export { AdminPanel };

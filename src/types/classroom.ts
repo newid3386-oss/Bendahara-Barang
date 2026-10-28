@@ -336,3 +336,26 @@ export interface P5Project {
   UPDATED_BY: string;
 }
 
+// 12. P5 Daily Activity Log & Teacher Feedback Journal
+export interface P5ProjectDailyLog {
+  ID: string;
+  PROJECT_ID: string;
+  PROJECT_TITLE: string;
+  KELAS: string;
+  SISWA_ID: string;
+  SISWA_NAMA: string;
+  TANGGAL: string; // YYYY-MM-DD
+  TAHAP_ID?: string;
+  TAHAP_NAMA?: string;
+  AKTIVITAS: string; // Deskripsi apa yang dikerjakan hari ini
+  REFLEKSI?: string; // Hal baru yang dipelajari atau kendala
+  DIMENSI_TERLATIH?: string[]; // Dimensi Profil Pancasila yang dipraktikkan
+  DOKUMENTASI_URL?: string; // Foto kegiatan atau link karya
+  FEEDBACK_GURU?: string; // Catatan umpan balik guru
+  GURU_NAMA?: string;
+  FEEDBACK_AT?: string;
+  STATUS: 'DRAFT' | 'SUBMITTED' | 'REVIEWED';
+  CREATED_AT: string;
+  UPDATED_AT: string;
+}
+

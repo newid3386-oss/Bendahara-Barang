@@ -29,7 +29,9 @@ import {
 import { db } from '../services/localStorageService';
 import { googleWorkspace } from '../services/googleWorkspace';
 import { offlineSyncManager } from '../services/offlineSyncManager';
+import { archiveBackupService, SyncQueueStatus } from '../services/archiveBackupService';
 import { DailyScanScheduleManager } from './DailyScanScheduleManager';
+import { Download, Database, Layers } from 'lucide-react';
 
 interface GoogleSheetsSyncViewProps {
   onOpenModal: () => void;
@@ -103,12 +105,77 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({ onOp
     setTimeout(() => setRealtimeToggling(false), 400);
   };
 
+  const [queueStatus, setQueueStatus] = useState<SyncQueueStatus>(() => archiveBackupService.getSyncQueueStatus());
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isSyncingAccounts, setIsSyncingAccounts] = useState(false);
+
   useEffect(() => {
     setAccessToken(db.getGoogleAccessToken());
     setSheetId(db.getConnectedGoogleSheetId());
     setAppsScriptUrl(db.getAppsScriptUrl());
     setDocuments(db.getDocuments());
+
+    const unsub = archiveBackupService.subscribe(() => {
+      setQueueStatus(archiveBackupService.getSyncQueueStatus());
+    });
+    return unsub;
   }, []);
+
+  const handleDownloadExcelArchive = () => {
+    setIsExportingExcel(true);
+    try {
+      const res = archiveBackupService.downloadLargeDataExcel();
+      setStatusMsg({
+        type: 'success',
+        text: `Arsip Multi-Sheet Excel (${res.totalRecords} rekod data besar) berhasil diunduh: "${res.fileName}"`,
+      });
+    } catch (err: any) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Gagal membuat arsip Excel: ' + (err?.message || String(err)),
+      });
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleSyncAccountsOnly = async () => {
+    setIsSyncingAccounts(true);
+    setStatusMsg({ type: 'info', text: 'Menyinkronkan akun pengguna ke Cloud Firestore...' });
+    try {
+      const res = await archiveBackupService.syncAccountsToCloudOnly();
+      setStatusMsg({
+        type: res.success ? 'success' : 'error',
+        text: res.message,
+      });
+    } catch (err: any) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Gagal sinkronisasi akun: ' + (err?.message || String(err)),
+      });
+    } finally {
+      setIsSyncingAccounts(false);
+    }
+  };
+
+  const handleSyncLargeDataToSheets = async () => {
+    setIsSyncing(true);
+    setStatusMsg({ type: 'info', text: 'Mengirim dan memperbarui data besar ke Google Spreadsheet...' });
+    try {
+      const res = await archiveBackupService.syncLargeDataToGoogleSheets(appsScriptUrl || undefined);
+      setStatusMsg({
+        type: res.success ? 'success' : 'error',
+        text: res.message,
+      });
+    } catch (err: any) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Gagal sinkronisasi data besar: ' + (err?.message || String(err)),
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
@@ -517,6 +584,98 @@ Mengetahui: ${docRecord.MENGETAHUI || '-'}
           >
             <FolderOpen size={15} /> Akun &amp; Client ID
           </button>
+        </div>
+      </div>
+
+      {/* Tiered Storage Architecture: Cloud (Accounts) & Google Sheets / Drive (Large Data) */}
+      <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-indigo-950 text-white p-5 rounded-2xl border border-slate-800 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+              <Database size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                Arsitektur Penyimpanan Hybrid Sekolah
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  Optimal &amp; Efisien
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Pemisahan cerdas: Akun di Cloud Firestore, dan Data Operasional Besar di Google Spreadsheet &amp; Google Drive.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold ${queueStatus.isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${queueStatus.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              {queueStatus.isOnline ? 'Online Ready' : 'Mode Offline'}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Cloud Tier (Accounts) */}
+          <div className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                <ShieldCheck size={15} className="text-blue-400" />
+                <span>Akun Pengguna (Cloud Firestore)</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Tersimpan di Cloud Database terenkripsi dengan respon instan untuk autentikasi guru, siswa, dan admin.
+              </p>
+              <div className="text-[11px] font-mono text-blue-300 font-semibold pt-1">
+                {queueStatus.cloudAccountsCount} Akun Terdaftar
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isSyncingAccounts}
+              onClick={handleSyncAccountsOnly}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[11px] font-bold shrink-0 transition-colors cursor-pointer shadow-xs"
+            >
+              {isSyncingAccounts ? 'Menyinkronkan...' : 'Sinkronkan Akun'}
+            </button>
+          </div>
+
+          {/* Large Data Tier (Spreadsheet & Drive) */}
+          <div className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                <FileSpreadsheet size={15} className="text-emerald-400" />
+                <span>Data Besar (Spreadsheet &amp; Drive)</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Stok barang, aset KIB, transaksi SPJ BKU, dan foto kwitansi diarsip rapi siap cetak untuk pelaporan dinas.
+              </p>
+              <div className="text-[11px] font-mono text-emerald-300 font-semibold pt-1">
+                {queueStatus.largeDataTotalRecords} Total Baris Data Aktif
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5 shrink-0">
+              <button
+                type="button"
+                disabled={isExportingExcel}
+                onClick={handleDownloadExcelArchive}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                title="Unduh seluruh tabel data dalam format multi-sheet Excel (.xlsx)"
+              >
+                <Download size={13} />
+                <span>Unduh Excel</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSyncing}
+                onClick={handleSyncLargeDataToSheets}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Kirim pembaruan data ke Google Sheets yang terhubung"
+              >
+                <CloudUpload size={13} />
+                <span>Kirim Sheets</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

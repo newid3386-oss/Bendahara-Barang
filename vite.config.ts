@@ -19,10 +19,11 @@ export default defineConfig(() => {
       ],
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'recharts': path.resolve(__dirname, 'src/components/RechartsShim.tsx'),
       },
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'recharts', 'firebase/app', 'firebase/firestore'],
+      include: ['react', 'react-dom', 'firebase/app', 'firebase/firestore'],
     },
     server: {
       host: true,
@@ -38,6 +39,7 @@ export default defineConfig(() => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
+              if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'vendor-react';
               if (id.includes('firebase')) return 'vendor-firebase';
               if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('jspdf-autotable')) return 'vendor-pdf';
               if (id.includes('xlsx')) return 'vendor-xlsx';

@@ -21,6 +21,7 @@ import {
   PortfolioComment,
   P5Project,
   P5ProjectStage,
+  P5ProjectDailyLog,
 } from '../types/classroom';
 import { offlineSyncManager } from './offlineSyncManager';
 import { progressSyncService } from './progressSyncService';
@@ -43,6 +44,7 @@ const STORAGE_KEYS = {
   GRADE_WEIGHTS: 'BB_CLASSROOM_GRADE_WEIGHTS_V1',
   PORTFOLIO: 'BB_CLASSROOM_PORTFOLIO_V1',
   P5_PROJECTS: 'BB_CLASSROOM_P5_PROJECTS_V1',
+  P5_DAILY_LOGS: 'BB_CLASSROOM_P5_DAILY_LOGS_V1',
   SEEDED: 'BB_CLASSROOM_SEEDED_V4',
 };
 
@@ -152,6 +154,69 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
     UPDATED_BY: 'GURU_SYS'
   }
 ];
+
+const DEFAULT_P5_DAILY_LOGS: P5ProjectDailyLog[] = [
+  {
+    ID: 'P5-LOG-001',
+    PROJECT_ID: 'P5-PRJ-KLS4',
+    PROJECT_TITLE: 'Gaya Hidup Berkelanjutan: Pengelolaan Sampah Organik Menjadi Kompos',
+    KELAS: 'Kelas 4',
+    SISWA_ID: 'SISWA-001',
+    SISWA_NAMA: 'Ahmad Fauzan',
+    TANGGAL: '2026-10-24',
+    TAHAP_ID: 'STG-2',
+    TAHAP_NAMA: 'Tahap 2: Pengumpulan & Pencacahan Bahan Organik',
+    AKTIVITAS: 'Bersama kelompok mengumpulkan daun kering di halaman sekolah dan sisa sayur dari kantin. Kemudian kami mencacah bahan menjadi ukuran 2-3 cm agar cepat terurai.',
+    REFLEKSI: 'Awalnya bau sisa sayur agak menyengat, tetapi setelah ditaburi EM4 dan dedak, aromanya berubah menjadi fermentasi manis. Saya belajar bekerja sama dan sabar.',
+    DIMENSI_TERLATIH: ['Gotong Royong', 'Bernalar Kritis', 'Mandiri'],
+    DOKUMENTASI_URL: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=600&auto=format&fit=crop&q=80',
+    FEEDBACK_GURU: 'Bagus sekali Ahmad dan tim kelompok! Pencacahan daun sudah sesuai takaran. Jangan lupa cek kelembapan komposter setiap 2 hari ya.',
+    GURU_NAMA: 'Siti Rahmawati, S.Pd.',
+    FEEDBACK_AT: '2026-10-24T14:30:00.000Z',
+    STATUS: 'REVIEWED',
+    CREATED_AT: '2026-10-24T10:15:00.000Z',
+    UPDATED_AT: '2026-10-24T14:30:00.000Z',
+  },
+  {
+    ID: 'P5-LOG-002',
+    PROJECT_ID: 'P5-PRJ-KLS4',
+    PROJECT_TITLE: 'Gaya Hidup Berkelanjutan: Pengelolaan Sampah Organik Menjadi Kompos',
+    KELAS: 'Kelas 4',
+    SISWA_ID: 'SISWA-002',
+    SISWA_NAMA: 'Siti Aisyah Putri',
+    TANGGAL: '2026-10-25',
+    TAHAP_ID: 'STG-2',
+    TAHAP_NAMA: 'Tahap 2: Pengumpulan & Pencacahan Bahan Organik',
+    AKTIVITAS: 'Mencatat suhu dan kelembapan wadah komposter drum putar. Suhu tercatat 42°C, menandakan bakteri aerob bekerja aktif.',
+    REFLEKSI: 'Saya sangat takjub melihat mikroorganisme bisa menaikkan suhu tumpukan daun secara alami tanpa listrik.',
+    DIMENSI_TERLATIH: ['Bernalar Kritis', 'Kreatif'],
+    DOKUMENTASI_URL: 'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80',
+    FEEDBACK_GURU: 'Pencatatan data sains yang sangat rapi Aisyah! Teruskan observasi kenaikan suhunya.',
+    GURU_NAMA: 'Siti Rahmawati, S.Pd.',
+    FEEDBACK_AT: '2026-10-25T16:00:00.000Z',
+    STATUS: 'REVIEWED',
+    CREATED_AT: '2026-10-25T11:20:00.000Z',
+    UPDATED_AT: '2026-10-25T16:00:00.000Z',
+  },
+  {
+    ID: 'P5-LOG-003',
+    PROJECT_ID: 'P5-PRJ-KLS4',
+    PROJECT_TITLE: 'Gaya Hidup Berkelanjutan: Pengelolaan Sampah Organik Menjadi Kompos',
+    KELAS: 'Kelas 4',
+    SISWA_ID: 'SISWA-003',
+    SISWA_NAMA: 'Rian Pratama',
+    TANGGAL: '2026-10-26',
+    TAHAP_ID: 'STG-3',
+    TAHAP_NAMA: 'Tahap 3: Pembuatan Desain Kemasan & Label Pupuk',
+    AKTIVITAS: 'Mendesain stiker label botol pupuk organik cair (POC) dengan logo SDN Tangerang 6 menggunakan spidol warna dan kertas daur ulang.',
+    REFLEKSI: 'Menemukan kombinasi warna hijau dan cokelat yang melambangkan kelestarian bumi.',
+    DIMENSI_TERLATIH: ['Kreatif', 'Mandiri'],
+    STATUS: 'SUBMITTED',
+    CREATED_AT: '2026-10-26T08:30:00.000Z',
+    UPDATED_AT: '2026-10-26T08:30:00.000Z',
+  }
+];
+
 const ts = () => nowISO().replace('T', ' ').substring(0, 19);
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
@@ -2348,6 +2413,110 @@ class ClassroomService {
 
     this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
     return updatedProject;
+  }
+
+  // --- P5 Daily Activity Logs & Teacher Feedback ---
+  public getP5DailyLogs(kelas?: string, siswaId?: string, projectId?: string): P5ProjectDailyLog[] {
+    this.initClassroom();
+    let logs = this.getItem<P5ProjectDailyLog[]>(STORAGE_KEYS.P5_DAILY_LOGS, DEFAULT_P5_DAILY_LOGS);
+    if (!logs || logs.length === 0) {
+      logs = DEFAULT_P5_DAILY_LOGS;
+      this.setItem(STORAGE_KEYS.P5_DAILY_LOGS, logs);
+    }
+
+    return logs.filter((log) => {
+      if (kelas && log.KELAS.toLowerCase() !== kelas.toLowerCase()) return false;
+      if (siswaId && log.SISWA_ID !== siswaId) return false;
+      if (projectId && log.PROJECT_ID !== projectId) return false;
+      return true;
+    }).sort((a, b) => new Date(b.CREATED_AT).getTime() - new Date(a.CREATED_AT).getTime());
+  }
+
+  public saveP5DailyLog(
+    logData: Partial<P5ProjectDailyLog> & {
+      SISWA_ID: string;
+      SISWA_NAMA: string;
+      KELAS: string;
+      AKTIVITAS: string;
+    }
+  ): P5ProjectDailyLog {
+    const logs = this.getItem<P5ProjectDailyLog[]>(STORAGE_KEYS.P5_DAILY_LOGS, DEFAULT_P5_DAILY_LOGS);
+    const now = nowISO();
+
+    if (logData.ID) {
+      const idx = logs.findIndex((l) => l.ID === logData.ID);
+      if (idx >= 0) {
+        const existing = logs[idx];
+        const updated: P5ProjectDailyLog = {
+          ...existing,
+          ...logData,
+          UPDATED_AT: now,
+        };
+        logs[idx] = updated;
+        this.setItem(STORAGE_KEYS.P5_DAILY_LOGS, logs);
+        return updated;
+      }
+    }
+
+    const defaultProject = this.getP5ProjectForClass(logData.KELAS);
+    const newLog: P5ProjectDailyLog = {
+      ID: 'P5-LOG-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      PROJECT_ID: logData.PROJECT_ID || defaultProject.ID,
+      PROJECT_TITLE: logData.PROJECT_TITLE || defaultProject.JUDUL,
+      KELAS: logData.KELAS,
+      SISWA_ID: logData.SISWA_ID,
+      SISWA_NAMA: logData.SISWA_NAMA,
+      TANGGAL: logData.TANGGAL || todayDate(),
+      TAHAP_ID: logData.TAHAP_ID || defaultProject.STAGES[0]?.ID,
+      TAHAP_NAMA: logData.TAHAP_NAMA || defaultProject.STAGES[0]?.NAME,
+      AKTIVITAS: logData.AKTIVITAS,
+      REFLEKSI: logData.REFLEKSI || '',
+      DIMENSI_TERLATIH: logData.DIMENSI_TERLATIH || ['Gotong Royong', 'Kreatif'],
+      DOKUMENTASI_URL: logData.DOKUMENTASI_URL || '',
+      FEEDBACK_GURU: logData.FEEDBACK_GURU,
+      GURU_NAMA: logData.GURU_NAMA,
+      FEEDBACK_AT: logData.FEEDBACK_AT,
+      STATUS: logData.STATUS || 'SUBMITTED',
+      CREATED_AT: now,
+      UPDATED_AT: now,
+    };
+
+    logs.unshift(newLog);
+    this.setItem(STORAGE_KEYS.P5_DAILY_LOGS, logs);
+    return newLog;
+  }
+
+  public giveP5DailyLogFeedback(
+    logId: string,
+    feedback: string,
+    guruNama: string
+  ): P5ProjectDailyLog | null {
+    const logs = this.getItem<P5ProjectDailyLog[]>(STORAGE_KEYS.P5_DAILY_LOGS, DEFAULT_P5_DAILY_LOGS);
+    const idx = logs.findIndex((l) => l.ID === logId);
+    if (idx < 0) return null;
+
+    const updated: P5ProjectDailyLog = {
+      ...logs[idx],
+      FEEDBACK_GURU: feedback,
+      GURU_NAMA: guruNama,
+      FEEDBACK_AT: nowISO(),
+      STATUS: 'REVIEWED',
+      UPDATED_AT: nowISO(),
+    };
+
+    logs[idx] = updated;
+    this.setItem(STORAGE_KEYS.P5_DAILY_LOGS, logs);
+    return updated;
+  }
+
+  public deleteP5DailyLog(logId: string): boolean {
+    const logs = this.getItem<P5ProjectDailyLog[]>(STORAGE_KEYS.P5_DAILY_LOGS, DEFAULT_P5_DAILY_LOGS);
+    const filtered = logs.filter((l) => l.ID !== logId);
+    if (filtered.length !== logs.length) {
+      this.setItem(STORAGE_KEYS.P5_DAILY_LOGS, filtered);
+      return true;
+    }
+    return false;
   }
 }
 
