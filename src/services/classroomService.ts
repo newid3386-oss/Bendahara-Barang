@@ -1283,6 +1283,23 @@ class ClassroomService {
     this.setItem(STORAGE_KEYS.SUBMISSIONS, this.getSubmissions().filter((s) => !idSet.has(s.ASSIGNMENT_ID)));
   }
 
+  public bulkUpdateAssignments(ids: string[], updates: Partial<ClassroomAssignment>): void {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const list = this.getAssignments();
+    let updated = false;
+    const newList = list.map((a) => {
+      if (idSet.has(a.ID)) {
+        updated = true;
+        return { ...a, ...updates };
+      }
+      return a;
+    });
+    if (updated) {
+      this.setItem(STORAGE_KEYS.ASSIGNMENTS, newList);
+    }
+  }
+
   // --- Submissions ---
   public getSubmissions(assignmentId?: string, siswaId?: string): ClassroomSubmission[] {
     this.initClassroom();

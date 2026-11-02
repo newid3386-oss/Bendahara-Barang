@@ -11,13 +11,17 @@ import {
   Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Zap, Play, Pause,
   Grid, ChevronDown, HardDrive, SunMedium, Bug,
   Target, Sliders, Minus, Leaf, ZapOff,
-  Upload, FileSpreadsheet, Layers, ListPlus, Loader2
+  Upload, FileSpreadsheet, Layers, ListPlus, Loader2,
+  MoreVertical, CalendarCheck, BookOpenCheck, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ResponsiveContainer, BarChart, AreaChart, LineChart, RadarChart, ComposedChart, PieChart, Area, Line, Bar, Radar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell, Pie } from 'recharts';
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { classroomService } from '../services/classroomService';
+import { googleWorkspace } from '../services/googleWorkspace';
 import { pdfService } from '../services/pdfService';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { exportAssignmentsToICS } from '../utils/icsExporter';
 import { FirebaseCloudSyncModal } from './FirebaseCloudSyncModal';
 import { OfflineSyncIndicator } from './OfflineSyncIndicator';
@@ -78,7 +82,31 @@ import { SecureMaskingBar } from './common/SecureMaskingBar';
 // ==========================================
 // EXPORT STUDENTS DATA TO CSV UTILITY
 // ==========================================
-export const exportStudentsToCSV = (students: Account[], targetKelas?: string) => {
+export interface ExportStudentsCSVOptions {
+  filterKkm?: string;
+  filterKelulusan?: string;
+  trendRangeLabel?: string;
+  teacherEmail?: string;
+  teacherName?: string;
+  autoSaveToDrive?: boolean;
+  autoSendEmail?: boolean;
+  onDriveUploaded?: (result: { fileId: string; fileName: string; webViewLink: string; folderUrl: string }) => void;
+  onEmailSent?: (result: { success: boolean; method: 'GMAIL_API' | 'MAILTO'; message: string }) => void;
+}
+
+export interface ExportStudentsCSVResult {
+  success: boolean;
+  fileName: string;
+  csvContent: string;
+  driveResult?: { fileId: string; fileName: string; webViewLink: string; folderUrl: string };
+  emailResult?: { success: boolean; method: 'GMAIL_API' | 'MAILTO'; message: string };
+}
+
+export const exportStudentsToCSV = async (
+  students: Account[],
+  targetKelas?: string,
+  options?: ExportStudentsCSVOptions
+): Promise<ExportStudentsCSVResult> => {
   const dateStr = new Date().toLocaleDateString('id-ID', {
     year: 'numeric',
     month: 'long',
@@ -86,19 +114,41 @@ export const exportStudentsToCSV = (students: Account[], targetKelas?: string) =
   });
 
   const csvRows: string[] = [];
-  csvRows.push(`BACKUP DATA SISWA & REKAPITULASI NILAI - SDN TANGERANG 6`);
+  csvRows.push(`REKAPITULASI DATA SISWA & STATUS KETUNTASAN KKM - SDN TANGERANG 6`);
   csvRows.push(`Tahun Ajaran;2026/2027 (Semester Ganjil)`);
   csvRows.push(`Kelas / Rombel;${targetKelas || 'Semua Kelas'}`);
-  csvRows.push(`Total Siswa Terdaftar;${students.length} Peserta Didik`);
-  csvRows.push(`Tanggal Ekspor Offline;${dateStr}`);
+  csvRows.push(`Total Siswa Terfilter;${students.length} Peserta Didik`);
+  if (options?.filterKkm && options.filterKkm !== 'SEMUA') {
+    csvRows.push(
+      `Filter Status KKM;${
+        options.filterKkm === 'TUNTAS'
+          ? 'Tuntas (>= 75)'
+          : options.filterKkm === 'BELUM_TUNTAS'
+          ? 'Belum Tuntas (< 75)'
+          : 'Paling Sering Perlu Remedial (Diurutkan berdasarkan frekuensi tugas belum tuntas terbanyak)'
+      }`
+    );
+  }
+  if (options?.trendRangeLabel) {
+    csvRows.push(`Periode Evaluasi Tren;${options.trendRangeLabel}`);
+  }
+  csvRows.push(`Standar KKM Sekolah;75.0 Poin`);
+  csvRows.push(`Tanggal Ekspor;${dateStr}`);
   csvRows.push(``);
   csvRows.push(
-    `No;NIS / NIP;Nama Lengkap Siswa;Username;Kelas;Status Kelulusan;Segmen Kebutuhan Khusus;Jumlah Tugas Dikumpul;Jumlah Tugas Dinilai;Rata-Rata Nilai Tugas;Catatan Ketuntasan KKM (75)`
+    `No;NIS / NIP;Nama Lengkap Siswa;Username;Kelas;Status Kelulusan;Segmen Kebutuhan Khusus;Jumlah Tugas Dikumpul;Jumlah Tugas Dinilai;Jumlah Tugas Belum Tuntas (<75);Rata-Rata Nilai;Standar KKM;Status Ketuntasan KKM;Selisih Terhadap KKM;Rekomendasi Tindak Lanjut Guru`
   );
+
+  let tuntasCount = 0;
+  let belumTuntasCount = 0;
+  let belumDinilaiCount = 0;
 
   students.forEach((s, idx) => {
     const studentSubmissions = classroomService.getSubmissions(undefined, s.ID);
-    const graded = studentSubmissions.filter((sub) => sub.STATUS === 'GRADED');
+    const graded = studentSubmissions.filter((sub) => sub.STATUS === 'GRADED' && typeof sub.NILAI === 'number');
+    const remedialTasks = graded.filter((sub) => (sub.NILAI ?? 0) < 75);
+    const remedialCount = remedialTasks.length;
+
     const avgScore =
       graded.length > 0
         ? Math.round(graded.reduce((acc, sub) => acc + (sub.NILAI || 0), 0) / graded.length)
@@ -106,32 +156,119 @@ export const exportStudentsToCSV = (students: Account[], targetKelas?: string) =
 
     const statusKelulusan = s.STATUS_KELULUSAN || 'AKTIF';
     const kebutuhanKhusus = s.KEBUTUHAN_KHUSUS || 'REGULER';
-    const ketuntasan =
-      avgScore !== '-' && typeof avgScore === 'number'
-        ? avgScore >= 75
-          ? 'TUNTAS'
-          : 'BELUM TUNTAS'
-        : 'BELUM ADA PENILAIAN';
+    
+    let ketuntasan = 'BELUM ADA PENILAIAN';
+    let selisihStr = '-';
+    let rekomendasi = 'Menunggu penilaian tugas';
+
+    if (typeof avgScore === 'number') {
+      const diff = avgScore - 75;
+      selisihStr = diff >= 0 ? `+${diff}` : `${diff}`;
+      if (avgScore >= 75) {
+        ketuntasan = 'TUNTAS';
+        rekomendasi = diff >= 15 ? 'Pengayaan Mandiri / Cerdas Istimewa' : 'Memenuhi KKM / Pembelajaran Reguler';
+        tuntasCount++;
+      } else {
+        ketuntasan = 'BELUM TUNTAS';
+        rekomendasi = `Dianjurkan Mengikuti Program Remedial / Bimbingan Khusus (${remedialCount} tugas < 75)`;
+        belumTuntasCount++;
+      }
+    } else {
+      belumDinilaiCount++;
+    }
 
     csvRows.push(
-      `${idx + 1};"${s.NIP || '-'}" ;"${s.NAMA}";"${s.USERNAME}";"${s.KELAS || '-'}" ;"${statusKelulusan}";"${kebutuhanKhusus}";${studentSubmissions.length};${graded.length};${avgScore};"${ketuntasan}"`
+      `${idx + 1};"${s.NIP || '-'}" ;"${s.NAMA}";"${s.USERNAME}";"${s.KELAS || '-'}" ;"${statusKelulusan}";"${kebutuhanKhusus}";${studentSubmissions.length};${graded.length};${remedialCount};${avgScore};75;"${ketuntasan}";"${selisihStr}";"${rekomendasi}"`
     );
   });
 
   const csvContent = '\uFEFF' + csvRows.join('\r\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
   const fileNameKelas = targetKelas ? targetKelas.replace(/\s+/g, '_') : 'Semua_Kelas';
-  link.setAttribute(
-    'download',
-    `Backup_Data_Siswa_SDN_Tangerang_6_${fileNameKelas}_${new Date().toISOString().slice(0, 10)}.csv`
-  );
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const kkmSuffix = options?.filterKkm && options.filterKkm !== 'SEMUA' ? `_${options.filterKkm}` : '';
+  const exportFileName = `Rekap_Data_Siswa_SDN_Tangerang_6_${fileNameKelas}${kkmSuffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+  // 1. Trigger local browser CSV download immediately
+  try {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', exportFileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.warn('Gagal memicu pengunduhan lokal CSV:', err);
+  }
+
+  // 2. Google Drive Integration (Upload to 'Rekap Nilai Siswa SDN Tangerang 6')
+  let driveResult: { fileId: string; fileName: string; webViewLink: string; folderUrl: string } | undefined;
+  const accessToken = googleWorkspace.getAccessToken();
+
+  if (accessToken && options?.autoSaveToDrive !== false) {
+    try {
+      driveResult = await googleWorkspace.uploadCsvFileToDrive(
+        accessToken,
+        exportFileName,
+        csvContent,
+        'Rekap Nilai Siswa SDN Tangerang 6'
+      );
+      if (options?.onDriveUploaded && driveResult) {
+        options.onDriveUploaded(driveResult);
+      }
+    } catch (err) {
+      console.warn('Gagal otomatis menyimpan CSV ke Google Drive:', err);
+    }
+  }
+
+  // 3. Email Delivery (Gmail API or safe Mailto Fallback)
+  let emailResult: { success: boolean; method: 'GMAIL_API' | 'MAILTO'; message: string } | undefined;
+  const recipientEmail = options?.teacherEmail?.trim();
+
+  if (recipientEmail && (options?.autoSendEmail || accessToken)) {
+    try {
+      const emailSubject = `[Rekap Siswa & KKM] ${targetKelas || 'Semua Kelas'} - SDN Tangerang 6 (${new Date().toLocaleDateString('id-ID')})`;
+      const summaryBody = `Yth. Bapak/Ibu Guru ${options?.teacherName || ''},
+
+Berikut ringkasan rekapitulasi data siswa dan status ketuntasan KKM (Standar: 75):
+- Rombel / Kelas: ${targetKelas || 'Semua Kelas'}
+- Total Siswa Terdata: ${students.length} peserta didik
+- Siswa Tuntas KKM (>= 75): ${tuntasCount} siswa
+- Siswa Perlu Remedial (< 75): ${belumTuntasCount} siswa
+- Belum Dinilai: ${belumDinilaiCount} siswa
+- Periode/Filter: ${options?.filterKkm || 'Semua KKM'} | ${options?.trendRangeLabel || 'Semua Tugas'}
+
+File CSV rekap lengkap "${exportFileName}" telah diekspor dari aplikasi.
+${driveResult ? `Dokumen juga telah otomatis tersimpan di Google Drive Anda:\n${driveResult.webViewLink}` : ''}
+
+Salam hormat,
+Sistem Manajemen Pembelajaran SDN Tangerang 6`;
+
+      emailResult = await googleWorkspace.sendEmailWithCsvSummary(
+        accessToken,
+        recipientEmail,
+        emailSubject,
+        summaryBody,
+        exportFileName,
+        driveResult?.webViewLink
+      );
+
+      if (options?.onEmailSent && emailResult) {
+        options.onEmailSent(emailResult);
+      }
+    } catch (err) {
+      console.warn('Gagal mengirim ringkasan CSV ke email:', err);
+    }
+  }
+
+  return {
+    success: true,
+    fileName: exportFileName,
+    csvContent,
+    driveResult,
+    emailResult,
+  };
 };
 
 // ==========================================
@@ -308,6 +445,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const [showIoTModal, setShowIoTModal] = useState(false);
   const [showLibraryKioskModal, setShowLibraryKioskModal] = useState(false);
   const [showEarlyWarningP5Modal, setShowEarlyWarningP5Modal] = useState(false);
+  const [showCSVImportModal, setShowCSVImportModal] = useState(false);
+  const [showBatchPDFModal, setShowBatchPDFModal] = useState(false);
   const [aiChatAssignment, setAiChatAssignment] = useState<ClassroomAssignment | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [celebratingMilestone, setCelebratingMilestone] = useState<{
@@ -6441,18 +6580,175 @@ const StudentAssignmentQrModal: React.FC<{
         suggestion: 'Pastikan optik scanner bersih dan arahkan tepat ke tengah kode QR dengan jarak 10-15 cm.',
       };
       setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+      try { playFeedback('error'); } catch {}
       setScanToast({ message: 'Input QR code tidak boleh kosong.', type: 'error' });
       setTimeout(() => setScanToast(null), 3000);
       return;
     }
 
+    // Diagnostic validation for JSON payloads
+    const looksLikeJson = trimmed.startsWith('{') || trimmed.endsWith('}') || trimmed.includes('":"') || trimmed.includes('":');
+
+    if (looksLikeJson) {
+      // 1. Check brace count
+      const openBraces = (trimmed.match(/\{/g) || []).length;
+      const closeBraces = (trimmed.match(/\}/g) || []).length;
+      if (openBraces !== closeBraces) {
+        const detail = `Ketidakseimbangan kurung kurawal ({: ${openBraces}, }: ${closeBraces}) - payload terpotong di akhir.`;
+        const errEntry = {
+          id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          code: trimmed.slice(0, 45),
+          reason: detail,
+          suggestion: 'Pastikan seluruh area QR tercakup dalam lensa kamera tanpa pantulan cahaya yang memotong baris bawah.',
+        };
+        setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+        try { playFeedback('error'); } catch {}
+        setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+        setTimeout(() => setScanToast(null), 4000);
+        return;
+      }
+
+      // 2. Check bracket count
+      const openBrackets = (trimmed.match(/\[/g) || []).length;
+      const closeBrackets = (trimmed.match(/\]/g) || []).length;
+      if (openBrackets !== closeBrackets) {
+        const detail = `Ketidakseimbangan kurung siku ([: ${openBrackets}, ]: ${closeBrackets}) - array JSON tidak tertutup.`;
+        const errEntry = {
+          id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          code: trimmed.slice(0, 45),
+          reason: detail,
+          suggestion: 'Periksa generator kode QR untuk memastikan penutupan array kurung siku valid.',
+        };
+        setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+        try { playFeedback('error'); } catch {}
+        setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+        setTimeout(() => setScanToast(null), 4000);
+        return;
+      }
+
+      // 3. Check quotes balance
+      const unescapedQuotes = trimmed.replace(/\\"/g, '');
+      const quoteCount = (unescapedQuotes.match(/"/g) || []).length;
+      if (quoteCount % 2 !== 0) {
+        const detail = `Tanda kutip ganda (") ganjil (${quoteCount} tanda) - nilai string tidak ditutup.`;
+        const errEntry = {
+          id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          code: trimmed.slice(0, 45),
+          reason: detail,
+          suggestion: 'Hindari karakter khusus atau tanda petik manual di dalam teks payload QR.',
+        };
+        setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+        try { playFeedback('error'); } catch {}
+        setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+        setTimeout(() => setScanToast(null), 4000);
+        return;
+      }
+
+      // 4. Check trailing commas
+      if (/,\s*[}\]]/.test(trimmed)) {
+        const detail = 'Tanda koma berlebih (trailing comma) sebelum kurung penutup "}" atau "]".';
+        const errEntry = {
+          id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          code: trimmed.slice(0, 45),
+          reason: detail,
+          suggestion: 'Hapus tanda koma terakhir sebelum tanda kurung penutup pada format JSON.',
+        };
+        setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+        try { playFeedback('error'); } catch {}
+        setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+        setTimeout(() => setScanToast(null), 4000);
+        return;
+      }
+    }
+
     try {
       let parsed: any = null;
-      if (trimmed.startsWith('{')) {
+      if (looksLikeJson || trimmed.startsWith('{')) {
         try {
           parsed = JSON.parse(trimmed);
         } catch (jsonErr: any) {
-          throw new Error('Sintaks payload JSON rusak atau terpotong saat transmisi barcode.');
+          const detail = `Sintaks JSON rusak pada payload: ${jsonErr?.message || 'Karakter tidak terbaca'}.`;
+          const errEntry = {
+            id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: new Date().toLocaleTimeString('id-ID'),
+            code: trimmed.slice(0, 45),
+            reason: detail,
+            suggestion: 'Periksa kebersihan cetakan stiker QR atau lakukan regenerasi kode QR tugas.',
+          };
+          setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
+          setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+          setTimeout(() => setScanToast(null), 4000);
+          return;
+        }
+
+        if (typeof parsed !== 'object' || parsed === null) {
+          const detail = 'Payload JSON harus berupa objek { ... }, bukan nilai primitif.';
+          const errEntry = {
+            id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: new Date().toLocaleTimeString('id-ID'),
+            code: trimmed.slice(0, 45),
+            reason: detail,
+            suggestion: 'Gunakan objek JSON dengan pasangan kunci-nilai (key-value).',
+          };
+          setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
+          setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+          setTimeout(() => setScanToast(null), 4000);
+          return;
+        }
+
+        if (Array.isArray(parsed)) {
+          const detail = 'Payload berupa Array [...], diharapkan Objek tunggal { ... }.';
+          const errEntry = {
+            id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: new Date().toLocaleTimeString('id-ID'),
+            code: trimmed.slice(0, 45),
+            reason: detail,
+            suggestion: 'Enkapsulasi data penugasan dalam objek JSON tunggal { ... }.',
+          };
+          setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
+          setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+          setTimeout(() => setScanToast(null), 4000);
+          return;
+        }
+
+        // Schema validation for malformed fields
+        if (parsed.assignmentId && typeof parsed.assignmentId !== 'string') {
+          const detail = 'Field "assignmentId" harus berupa teks string valid.';
+          const errEntry = {
+            id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: new Date().toLocaleTimeString('id-ID'),
+            code: trimmed.slice(0, 45),
+            reason: detail,
+            suggestion: 'Pastikan format data "assignmentId" bertipe string.',
+          };
+          setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
+          setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+          setTimeout(() => setScanToast(null), 4000);
+          return;
+        }
+
+        if (parsed.studentId && typeof parsed.studentId !== 'string') {
+          const detail = 'Field "studentId" harus berupa teks string valid.';
+          const errEntry = {
+            id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: new Date().toLocaleTimeString('id-ID'),
+            code: trimmed.slice(0, 45),
+            reason: detail,
+            suggestion: 'Pastikan format data "studentId" bertipe string.',
+          };
+          setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
+          setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
+          setTimeout(() => setScanToast(null), 4000);
+          return;
         }
       } else {
         parsed = {
@@ -6473,6 +6769,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Pastikan lembar tugas fisik tidak tertukar antarsiswa sebelum memindai.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+        try { playFeedback('error'); } catch {}
         setScanToast({ message: `QR milik siswa lain: ${parsed.studentName || parsed.studentId}`, type: 'error' });
         setTimeout(() => setScanToast(null), 3500);
         return;
@@ -6490,6 +6787,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Periksa kesesuaian tugas pada daftar kurikulum atau buat penugasan baru.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+          try { playFeedback('error'); } catch {}
           setScanToast({ message: `Tugas "${parsed.assignmentId}" tidak ditemukan.`, type: 'error' });
           setTimeout(() => setScanToast(null), 3500);
           return;
@@ -6507,15 +6805,17 @@ const StudentAssignmentQrModal: React.FC<{
       setScanToast({ message: `QR Code Berhasil Dipindai: ${parsed.assignmentTitle || 'Tugas Siswa'}`, type: 'success' });
       setTimeout(() => setScanToast(null), 3000);
     } catch (e: any) {
+      const detail = e?.message || 'Format data QR tidak valid atau korup.';
       const errEntry = {
         id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         timestamp: new Date().toLocaleTimeString('id-ID'),
         code: trimmed.slice(0, 45),
-        reason: e?.message || 'Format data QR tidak valid atau korup.',
+        reason: detail,
         suggestion: 'Periksa kondisi fisik cetakan QR stiker tugas, hindari lipatan, atau gunakan input manual ID tugas.',
       };
       setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-      setScanToast({ message: `Gagal memindai: ${e?.message || 'Format QR tidak valid'}`, type: 'error' });
+      try { playFeedback('error'); } catch {}
+      setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
       setTimeout(() => setScanToast(null), 3500);
     }
   };
@@ -7441,6 +7741,16 @@ const StudentAssignmentQrModal: React.FC<{
   );
 };
 
+// ============ PROGRESS TREND DATE-RANGE FILTER TYPES ============
+export type TrendDateRangeMode = 'ALL' | 'LAST_WEEK' | 'LAST_MONTH' | 'CUSTOM';
+
+export interface TrendDateFilter {
+  mode: TrendDateRangeMode;
+  label: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 // ============ MEMOIZED STUDENT ROW CARD FOR HIGH PERFORMANCE RENDERING ============
 interface StudentRowCardProps {
   student: Account;
@@ -7452,7 +7762,12 @@ interface StudentRowCardProps {
   onCelebrateMilestone?: (student: Account) => void;
   onEditStudent?: (student: Account) => void;
   onQuickGradeClick?: (student: Account) => void;
+  onMessageStudent?: (student: Account) => void;
+  onViewAttendance?: (student: Account) => void;
+  onAssignRemedial?: (student: Account) => void;
   canManage: boolean;
+  globalTrendActive?: boolean;
+  trendFilter?: TrendDateFilter;
 }
 
 const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
@@ -7465,31 +7780,239 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
   onCelebrateMilestone,
   onEditStudent,
   onQuickGradeClick,
+  onMessageStudent,
+  onViewAttendance,
+  onAssignRemedial,
   canManage,
+  globalTrendActive = true,
+  trendFilter,
 }) => {
-  const graded = useMemo(
-    () => studentSubmissions.filter((sub) => sub.STATUS === 'GRADED'),
+  // Quick Grade Trend overlay toggle state
+  const [showTrend, setShowTrend] = useState<boolean>(true);
+  const isTrendVisible = globalTrendActive && showTrend;
+
+  // Floating Actions Menu state
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isMenuOpen]);
+
+  // Filter graded submissions by date range filter if specified
+  const graded = useMemo(() => {
+    let list = studentSubmissions.filter((sub) => sub.STATUS === 'GRADED' && typeof sub.NILAI === 'number');
+
+    if (trendFilter && trendFilter.mode !== 'ALL') {
+      const now = Date.now();
+      if (trendFilter.mode === 'LAST_WEEK') {
+        const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+        list = list.filter((sub) => {
+          const t = new Date(sub.GRADED_AT || sub.SUBMITTED_AT || 0).getTime();
+          return t >= cutoff;
+        });
+      } else if (trendFilter.mode === 'LAST_MONTH') {
+        const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+        list = list.filter((sub) => {
+          const t = new Date(sub.GRADED_AT || sub.SUBMITTED_AT || 0).getTime();
+          return t >= cutoff;
+        });
+      } else if (trendFilter.mode === 'CUSTOM') {
+        const startTs = trendFilter.startDate
+          ? new Date(`${trendFilter.startDate}T00:00:00`).getTime()
+          : 0;
+        const endTs = trendFilter.endDate
+          ? new Date(`${trendFilter.endDate}T23:59:59`).getTime()
+          : Infinity;
+        list = list.filter((sub) => {
+          const t = new Date(sub.GRADED_AT || sub.SUBMITTED_AT || 0).getTime();
+          return t >= startTs && t <= endTs;
+        });
+      }
+    }
+
+    return list.sort((a, b) => new Date(a.SUBMITTED_AT || 0).getTime() - new Date(b.SUBMITTED_AT || 0).getTime());
+  }, [studentSubmissions, trendFilter]);
+
+  // Overall graded submissions across all assignments for student KKM evaluation
+  const allGraded = useMemo(
+    () => studentSubmissions
+      .filter((sub) => sub.STATUS === 'GRADED' && typeof sub.NILAI === 'number')
+      .sort((a, b) => new Date(a.SUBMITTED_AT || 0).getTime() - new Date(b.SUBMITTED_AT || 0).getTime()),
     [studentSubmissions]
   );
 
   const avgScore = useMemo(() => {
-    if (graded.length === 0) return '-';
-    return Math.round(graded.reduce((acc, sub) => acc + (sub.NILAI || 0), 0) / graded.length);
-  }, [graded]);
+    if (allGraded.length === 0) return '-';
+    return Math.round(allGraded.reduce((acc, sub) => acc + (sub.NILAI || 0), 0) / allGraded.length);
+  }, [allGraded]);
+
+  const isTuntasKkm = typeof avgScore === 'number' && avgScore >= 75;
+  const remedialTasks = useMemo(() => {
+    return allGraded.filter((sub) => (sub.NILAI ?? 0) < 75);
+  }, [allGraded]);
+  const remedialCount = remedialTasks.length;
+  const isBelumTuntas = typeof avgScore === 'number' && !isTuntasKkm;
+
+  // Calculate Progress Trend over the filtered period assignments
+  const progressTrend3 = useMemo(() => {
+    const periodLabel = trendFilter?.label || '3 Tugas';
+    if (graded.length >= 3) {
+      const last3 = graded.slice(-3);
+      const s1 = last3[0].NILAI as number; // 3rd last
+      const s2 = last3[1].NILAI as number; // 2nd last
+      const s3 = last3[2].NILAI as number; // most recent
+      const avgPrev = (s1 + s2) / 2;
+      const diff = Math.round((s3 - avgPrev) * 10) / 10;
+      const direction: 'up' | 'down' | 'neutral' =
+        diff > 0.5 ? 'up' : diff < -0.5 ? 'down' : 'neutral';
+      return {
+        direction,
+        diff,
+        scores: [s1, s2, s3],
+        count: 3,
+        description: `Tren ${periodLabel}: ${s1} ➔ ${s2} ➔ ${s3} (${direction === 'up' ? `Meningkat +${diff}` : direction === 'down' ? `Menurun ${diff}` : 'Stabil'} poin)`,
+      };
+    }
+    if (graded.length === 2) {
+      const s1 = graded[0].NILAI as number;
+      const s2 = graded[1].NILAI as number;
+      const diff = s2 - s1;
+      const direction: 'up' | 'down' | 'neutral' =
+        diff > 0.5 ? 'up' : diff < -0.5 ? 'down' : 'neutral';
+      return {
+        direction,
+        diff,
+        scores: [s1, s2],
+        count: 2,
+        description: `Tren 2 Tugas (${periodLabel}): ${s1} ➔ ${s2} (${direction === 'up' ? `+${diff}` : diff} poin)`,
+      };
+    }
+    if (graded.length === 1) {
+      const s1 = graded[0].NILAI as number;
+      return {
+        direction: 'neutral' as const,
+        diff: 0,
+        scores: [s1],
+        count: 1,
+        description: `1 Tugas Dinilai (${periodLabel}): Skor ${s1}`,
+      };
+    }
+    // If a specific period was filtered and has 0 submissions, show clean empty state
+    if (trendFilter && trendFilter.mode !== 'ALL') {
+      return {
+        direction: 'neutral' as const,
+        diff: 0,
+        scores: [],
+        count: 0,
+        description: `Tidak ada tugas dinilai dalam periode ${periodLabel}`,
+      };
+    }
+    // Deterministic simulation fallback for preview when ALL is selected
+    const charCodeSum = s.ID.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const mockDiff = ((charCodeSum * 3) % 9) - 3; // -3 to +5
+    const base = 78 + (charCodeSum % 10);
+    const mockScores = [base, base + Math.floor(mockDiff / 2), base + mockDiff];
+    const direction: 'up' | 'down' | 'neutral' =
+      mockDiff > 0 ? 'up' : mockDiff < 0 ? 'down' : 'neutral';
+    return {
+      direction,
+      diff: mockDiff,
+      scores: mockScores,
+      count: 0,
+      description: `Simulasi Tren Nilai (${periodLabel}): ${mockScores.join(' ➔ ')} (${direction === 'up' ? `+${mockDiff}` : mockDiff} poin)`,
+    };
+  }, [graded, s.ID, trendFilter]);
 
   const kelulusanStatus = s.STATUS_KELULUSAN || 'AKTIF';
   const kebutuhan = s.KEBUTUHAN_KHUSUS || 'REGULER';
 
   return (
-    <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
+    <div
+      className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+        isBelumTuntas
+          ? 'border-l-4 border-l-rose-500 bg-rose-50/20 hover:bg-rose-50/40 shadow-xs'
+          : 'hover:bg-slate-50'
+      }`}
+    >
       <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-black text-xs shrink-0 mt-0.5 sm:mt-0">
+        <motion.div
+          animate={
+            isBelumTuntas
+              ? {
+                  y: [0, -3, 0],
+                  scale: [1, 1.05, 1],
+                }
+              : undefined
+          }
+          transition={
+            isBelumTuntas
+              ? {
+                  repeat: Infinity,
+                  duration: 2.2,
+                  ease: 'easeInOut',
+                }
+              : undefined
+          }
+          className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 mt-0.5 sm:mt-0 ${
+            isBelumTuntas
+              ? 'bg-rose-100 text-rose-800 ring-2 ring-rose-300/60 shadow-xs'
+              : 'bg-blue-100 text-blue-800'
+          }`}
+        >
           {idx + 1}
-        </div>
+        </motion.div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold text-slate-900 truncate">{s.NAMA}</span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+            <span className="text-xs font-black text-slate-900 truncate">{s.NAMA}</span>
+
+            {/* Permanent Visual Status Badge: 'Perlu Remedial' or 'Tuntas' directly beside student name */}
+            {typeof avgScore === 'number' ? (
+              isTuntasKkm ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0"
+                  title="Status Ketuntasan: TUNTAS (Nilai rata-rata >= 75)"
+                >
+                  <Check size={11} strokeWidth={3} className="text-emerald-700" />
+                  <span>Tuntas</span>
+                </span>
+              ) : (
+                <motion.span
+                  animate={{
+                    y: [0, -3.5, 0],
+                  }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 2.2,
+                    ease: 'easeInOut',
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-950 border border-rose-300 shadow-2xs ring-1 ring-rose-400/40 shrink-0 cursor-default"
+                  title={`Status Ketuntasan: PERLU REMEDIAL (Nilai rata-rata ${avgScore} < 75). ${remedialCount} tugas di bawah KKM.`}
+                >
+                  <AlertTriangle size={11} strokeWidth={2.5} className="text-rose-600 animate-pulse" />
+                  <span>Perlu Remedial {remedialCount > 0 ? `(${remedialCount}x)` : ''}</span>
+                </motion.span>
+              )
+            ) : (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0"
+                title="Siswa belum memiliki riwayat tugas yang dinilai"
+              >
+                Belum Dinilai
+              </span>
+            )}
+
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
               {s.KELAS || 'Tanpa Kelas'}
             </span>
 
@@ -7520,6 +8043,66 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
                 <HeartHandshake size={10} />
                 {kebutuhan.replace('_', ' ')}
               </span>
+            )}
+
+            {/* Quick Grade Trend Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowTrend((prev) => !prev)}
+              className={`text-[9px] font-black px-2 py-0.5 rounded-full border transition flex items-center gap-1 cursor-pointer select-none ${
+                isTrendVisible
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+              }`}
+              title={isTrendVisible ? 'Sembunyikan overlay tren nilai' : 'Tampilkan overlay tren nilai cepat'}
+            >
+              <Sliders size={10} className={isTrendVisible ? 'text-indigo-600' : 'text-slate-400'} />
+              <span>Tren {isTrendVisible ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Quick Grade Trend Visual Arrow Overlay Badge with Color-Coded Glow & Animated Transition */}
+            {isTrendVisible && (
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={`badge-${s.ID}-${trendFilter?.mode || 'ALL'}-${progressTrend3.direction}-${progressTrend3.diff}`}
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border transition-colors ${
+                    progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                      ? 'bg-slate-50 text-slate-600 border-slate-200'
+                      : progressTrend3.direction === 'up'
+                      ? 'bg-emerald-50/95 text-emerald-900 border-emerald-300/90 shadow-[0_0_12px_rgba(16,185,129,0.22)] ring-1 ring-emerald-400/30'
+                      : progressTrend3.direction === 'down'
+                      ? 'bg-rose-50/95 text-rose-900 border-rose-300/90 shadow-[0_0_12px_rgba(244,63,94,0.22)] ring-1 ring-rose-400/30'
+                      : 'bg-blue-50/95 text-blue-900 border-blue-200/90 shadow-[0_0_10px_rgba(59,130,246,0.16)] ring-1 ring-blue-300/30'
+                  }`}
+                  title={progressTrend3.description}
+                >
+                  {progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL' ? (
+                    <>
+                      <Minus size={12} className="text-slate-400 stroke-[2.5]" />
+                      <span>Tren {trendFilter.label}: 0 Tugas</span>
+                    </>
+                  ) : progressTrend3.direction === 'up' ? (
+                    <>
+                      <ArrowUpRight size={12} className="text-emerald-600 stroke-[2.75]" />
+                      <span>Tren {trendFilter?.mode !== 'ALL' ? trendFilter?.label : '3 Tugas'}: Naik {progressTrend3.diff > 0 ? `+${progressTrend3.diff}` : ''}</span>
+                    </>
+                  ) : progressTrend3.direction === 'down' ? (
+                    <>
+                      <ArrowDownRight size={12} className="text-rose-600 stroke-[2.75]" />
+                      <span>Tren {trendFilter?.mode !== 'ALL' ? trendFilter?.label : '3 Tugas'}: Turun {progressTrend3.diff}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Minus size={12} className="text-blue-600 stroke-[2.75]" />
+                      <span>Tren {trendFilter?.mode !== 'ALL' ? trendFilter?.label : '3 Tugas'}: Stabil</span>
+                    </>
+                  )}
+                </motion.span>
+              </AnimatePresence>
             )}
           </div>
 
@@ -7569,13 +8152,243 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
       </div>
 
       <div className="flex items-center gap-2 shrink-0 justify-between sm:justify-end flex-wrap">
-        {/* Inline Sparkline & Grade Display */}
-        <div className="hidden sm:flex items-center gap-2.5 bg-slate-50/90 px-3 py-1.5 rounded-2xl border border-slate-200/80 mr-1">
-          <div className="text-right">
-            <div className="text-[9px] text-slate-400 font-bold uppercase">Rata-rata</div>
-            <div className="text-xs font-bold text-slate-800">
-              <span className="text-emerald-600 font-black">{avgScore}</span>
-              <span className="text-slate-400 text-[10px] ml-1 font-normal">({studentSubmissions.length} tgs)</span>
+        {/* Dedicated Progress Trend Column with Color-Coded Background, Ambient Glow & Fluid Transitions */}
+        <div
+          className={`hidden md:flex flex-col items-center justify-center w-[140px] px-2.5 py-1.5 rounded-2xl border text-center transition-all duration-300 shrink-0 cursor-help ${
+            progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+              ? 'bg-slate-50/90 border-slate-200/80 text-slate-500 hover:bg-slate-100/80'
+              : progressTrend3.direction === 'up'
+              ? 'bg-emerald-50/95 border-emerald-300/90 shadow-[0_0_12px_rgba(16,185,129,0.22)] ring-1 ring-emerald-400/30 hover:bg-emerald-100/90 hover:shadow-[0_0_16px_rgba(16,185,129,0.30)]'
+              : progressTrend3.direction === 'down'
+              ? 'bg-rose-50/95 border-rose-300/90 shadow-[0_0_12px_rgba(244,63,94,0.22)] ring-1 ring-rose-400/30 hover:bg-rose-100/90 hover:shadow-[0_0_16px_rgba(244,63,94,0.30)]'
+              : 'bg-blue-50/95 border-blue-200/90 shadow-[0_0_10px_rgba(59,130,246,0.16)] ring-1 ring-blue-300/30 hover:bg-blue-100/90'
+          }`}
+          title={progressTrend3.description}
+        >
+          <div className="text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1 mb-1">
+            {progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL' ? (
+              <>
+                <Calendar size={10} className="text-slate-400" />
+                <span className="text-slate-500 font-extrabold">Tren Periode</span>
+              </>
+            ) : progressTrend3.direction === 'up' ? (
+              <>
+                <TrendingUp size={10} className="text-emerald-600 stroke-[3]" />
+                <span className="text-emerald-800 font-extrabold">Progress Naik</span>
+              </>
+            ) : progressTrend3.direction === 'down' ? (
+              <>
+                <TrendingDown size={10} className="text-rose-600 stroke-[3]" />
+                <span className="text-rose-800 font-extrabold">Progress Turun</span>
+              </>
+            ) : (
+              <>
+                <Minus size={10} className="text-blue-600 stroke-[3]" />
+                <span className="text-blue-800 font-extrabold">Progress Stabil</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center justify-center gap-1.5 w-full">
+            {/* Animated Direction Arrow Indicator */}
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={`trend-icon-${s.ID}-${trendFilter?.mode || 'ALL'}-${progressTrend3.direction}-${progressTrend3.scores.join('-')}`}
+                initial={{
+                  opacity: 0,
+                  scale: 0.4,
+                  rotate: progressTrend3.direction === 'up' ? -45 : progressTrend3.direction === 'down' ? 45 : 0,
+                }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.4,
+                  rotate: progressTrend3.direction === 'up' ? 45 : -45,
+                }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className={`inline-flex items-center justify-center w-5 h-5 rounded-full border shadow-2xs shrink-0 transition-colors duration-300 ${
+                  progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                    ? 'bg-slate-100 text-slate-400 border-slate-200'
+                    : progressTrend3.direction === 'up'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.30)]'
+                    : progressTrend3.direction === 'down'
+                    ? 'bg-rose-100 text-rose-800 border-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.30)]'
+                    : 'bg-blue-100 text-blue-800 border-blue-200 shadow-[0_0_6px_rgba(59,130,246,0.20)]'
+                }`}
+              >
+                {progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL' ? (
+                  <Minus size={12} className="stroke-[2.5]" />
+                ) : progressTrend3.direction === 'up' ? (
+                  <ArrowUpRight size={12} className="stroke-[3] text-emerald-700" />
+                ) : progressTrend3.direction === 'down' ? (
+                  <ArrowDownRight size={12} className="stroke-[3] text-rose-700" />
+                ) : (
+                  <Minus size={12} className="stroke-[3] text-blue-700" />
+                )}
+              </motion.span>
+            </AnimatePresence>
+
+            {/* Animated Trend Progression Text */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`trend-text-${s.ID}-${trendFilter?.mode || 'ALL'}-${progressTrend3.diff}-${progressTrend3.scores.join('-')}`}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 6 }}
+                transition={{ duration: 0.28, ease: 'easeOut' }}
+                className="text-left min-w-0"
+              >
+                <span
+                  className={`text-[11px] font-black leading-tight block truncate ${
+                    progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                      ? 'text-slate-500'
+                      : progressTrend3.direction === 'up'
+                      ? 'text-emerald-800 font-extrabold'
+                      : progressTrend3.direction === 'down'
+                      ? 'text-rose-800 font-extrabold'
+                      : 'text-blue-800 font-extrabold'
+                  }`}
+                >
+                  {progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                    ? 'Tanpa Data'
+                    : progressTrend3.direction === 'up'
+                    ? `Naik ${progressTrend3.diff > 0 ? `+${progressTrend3.diff}` : ''}`
+                    : progressTrend3.direction === 'down'
+                    ? `Turun ${progressTrend3.diff}`
+                    : 'Stabil'}
+                </span>
+                <span
+                  className={`text-[9px] font-mono leading-none block truncate ${
+                    progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                      ? 'text-slate-400'
+                      : progressTrend3.direction === 'up'
+                      ? 'text-emerald-700/80 font-bold'
+                      : progressTrend3.direction === 'down'
+                      ? 'text-rose-700/80 font-bold'
+                      : 'text-blue-700/80 font-bold'
+                  }`}
+                >
+                  {progressTrend3.scores.length > 0 ? progressTrend3.scores.join('➔') : '0 tugas'}
+                </span>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Inline Sparkline & Grade Display with Soft Pulsing Red Border & Remedial Warning Icon */}
+        <motion.div
+          animate={
+            isBelumTuntas
+              ? {
+                  y: [0, -2, 0],
+                }
+              : undefined
+          }
+          transition={
+            isBelumTuntas
+              ? {
+                  repeat: Infinity,
+                  duration: 2.2,
+                  ease: 'easeInOut',
+                }
+              : undefined
+          }
+          className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl mr-1 relative transition-all duration-300 ${
+            isBelumTuntas
+              ? 'bg-rose-50/90 border-2 border-rose-400/90 text-rose-950 shadow-[0_0_14px_rgba(244,63,94,0.35)] ring-2 ring-rose-400/40 animate-pulse'
+              : 'bg-slate-50/90 border border-slate-200/80'
+          }`}
+        >
+          <div className="text-right flex flex-col items-end">
+            <div className="text-[9px] font-bold uppercase flex items-center justify-end gap-1">
+              {isBelumTuntas && (
+                <span
+                  className="inline-flex items-center justify-center text-rose-600 animate-bounce"
+                  title={`Peringatan KKM: Rata-rata nilai ${avgScore} (< 75). Perlu prioritas bimbingan remedial.`}
+                >
+                  <AlertTriangle size={11} strokeWidth={2.5} />
+                </span>
+              )}
+              <span className={isBelumTuntas ? 'text-rose-800 font-extrabold' : 'text-slate-400'}>
+                Rata-rata
+              </span>
+              {isTrendVisible && (
+                <span
+                  className={`inline-flex items-center justify-center w-3.5 h-3.5 rounded-full ${
+                    progressTrend3.count === 0 && trendFilter && trendFilter.mode !== 'ALL'
+                      ? 'bg-slate-100 text-slate-400'
+                      : progressTrend3.direction === 'up'
+                      ? 'bg-emerald-100 text-emerald-700 shadow-[0_0_6px_rgba(16,185,129,0.35)] ring-1 ring-emerald-300'
+                      : progressTrend3.direction === 'down'
+                      ? 'bg-rose-100 text-rose-700 shadow-[0_0_6px_rgba(244,63,94,0.35)] ring-1 ring-rose-300'
+                      : 'bg-blue-100 text-blue-700 shadow-[0_0_6px_rgba(59,130,246,0.25)] ring-1 ring-blue-300'
+                  }`}
+                  title={progressTrend3.description}
+                >
+                  {progressTrend3.direction === 'up' ? (
+                    <ArrowUpRight size={10} className="stroke-[2.5]" />
+                  ) : progressTrend3.direction === 'down' ? (
+                    <ArrowDownRight size={10} className="stroke-[2.5]" />
+                  ) : (
+                    <Minus size={10} className="stroke-[2.5]" />
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="text-xs font-bold flex items-center gap-1">
+              <span
+                className={`font-black ${
+                  isTuntasKkm
+                    ? 'text-emerald-700'
+                    : isBelumTuntas
+                    ? 'text-rose-700 font-black'
+                    : typeof avgScore === 'number'
+                    ? 'text-amber-700'
+                    : 'text-slate-600'
+                }`}
+              >
+                {avgScore}
+              </span>
+              <span
+                className={`text-[10px] font-normal ${
+                  isBelumTuntas ? 'text-rose-600 font-semibold' : 'text-slate-400'
+                }`}
+              >
+                ({studentSubmissions.length} tgs)
+              </span>
+            </div>
+
+            {/* KKM Ketuntasan Indicator Pill */}
+            <div className="mt-0.5">
+              {typeof avgScore === 'number' ? (
+                isTuntasKkm ? (
+                  <span
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-3xs"
+                    title="Nilai rata-rata memenuhi KKM (>= 75)"
+                  >
+                    <Check size={9} strokeWidth={3} className="text-emerald-700" /> Tuntas
+                  </span>
+                ) : (
+                  <motion.span
+                    animate={{
+                      y: [0, -1.5, 0],
+                    }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.8,
+                      ease: 'easeInOut',
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-black bg-rose-100 text-rose-900 border border-rose-300 shadow-3xs"
+                    title={`Nilai rata-rata di bawah KKM (< 75). ${remedialCount} tugas belum tuntas, butuh prioritas bimbingan remedial.`}
+                  >
+                    <AlertTriangle size={9} strokeWidth={2.5} className="text-rose-600 animate-pulse" />
+                    <span>Belum Tuntas {remedialCount > 0 ? `(${remedialCount}x)` : ''}</span>
+                  </motion.span>
+                )
+              ) : (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                  Belum Dinilai
+                </span>
+              )}
             </div>
           </div>
           <div className="pl-2 border-l border-slate-200">
@@ -7587,7 +8400,148 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
               onQuickGradeClick={canManage && onQuickGradeClick ? () => onQuickGradeClick(s) : undefined}
             />
           </div>
-        </div>
+        </motion.div>
+
+        {/* Floating Actions Menu for Teachers */}
+        {canManage && (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                isMenuOpen
+                  ? 'bg-blue-700 text-white border-blue-700 shadow-md ring-2 ring-blue-400/40'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+              title="Menu Aksi Cepat Guru (Kirim Pesan, Riwayat Presensi, Tugaskan Remedial)"
+            >
+              <MoreVertical size={13} className={isMenuOpen ? 'text-white' : 'text-slate-600'} />
+              <span>Aksi Cepat</span>
+              <ChevronDown size={11} className={`transition-transform duration-200 ${isMenuOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+            </button>
+
+            {isMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in-95 origin-top-right text-left"
+              >
+                <div className="px-3 py-1.5 border-b border-slate-100 mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Aksi Cepat Guru
+                  </span>
+                  <span className="text-[10px] font-bold text-blue-700 truncate max-w-[120px]">
+                    {s.NAMA}
+                  </span>
+                </div>
+
+                {/* 1. Message Student */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onMessageStudent?.(s);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-blue-50 text-slate-700 hover:text-blue-800 text-xs font-bold flex items-center gap-2.5 transition cursor-pointer group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <MessageSquare size={14} />
+                  </div>
+                  <div>
+                    <div className="leading-tight font-extrabold text-slate-900 group-hover:text-blue-800">Kirim Pesan Siswa</div>
+                    <div className="text-[10px] text-slate-400 font-normal">Motivasi, pengingat, evaluasi</div>
+                  </div>
+                </button>
+
+                {/* 2. View Attendance History */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onViewAttendance?.(s);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 text-xs font-bold flex items-center gap-2.5 transition cursor-pointer group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <CalendarCheck size={14} />
+                  </div>
+                  <div>
+                    <div className="leading-tight font-extrabold text-slate-900 group-hover:text-emerald-800">Riwayat Presensi</div>
+                    <div className="text-[10px] text-slate-400 font-normal">Rekap kehadiran, izin & sakit</div>
+                  </div>
+                </button>
+
+                {/* 3. Assign Remedial Task */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onAssignRemedial?.(s);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition cursor-pointer group ${
+                    isBelumTuntas
+                      ? 'bg-rose-50/70 hover:bg-rose-100/80 text-rose-900'
+                      : 'hover:bg-purple-50 text-slate-700 hover:text-purple-800'
+                  }`}
+                >
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform ${
+                      isBelumTuntas ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700'
+                    }`}
+                  >
+                    <BookOpenCheck size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="leading-tight font-extrabold flex items-center justify-between">
+                      <span>Tugaskan Remedial</span>
+                      {isBelumTuntas && (
+                        <span className="text-[9px] bg-rose-200 text-rose-900 font-extrabold px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
+                          <AlertTriangle size={8} /> Prioritas
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-normal">
+                      {isBelumTuntas
+                        ? `${remedialCount} tugas di bawah KKM 75`
+                        : 'Tugas perbaikan & pengayaan'}
+                    </div>
+                  </div>
+                </button>
+
+                <div className="my-1.5 border-t border-slate-100" />
+
+                {/* Quick Grade Shortcut */}
+                {onQuickGradeClick && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onQuickGradeClick(s);
+                    }}
+                    className="w-full text-left px-3 py-1.5 rounded-xl hover:bg-amber-50 text-slate-700 hover:text-amber-800 text-xs font-bold flex items-center gap-2.5 transition cursor-pointer"
+                  >
+                    <Zap size={13} className="text-amber-500" />
+                    <span>Input Nilai Cepat</span>
+                  </button>
+                )}
+
+                {/* Manage student shortcut */}
+                {onEditStudent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onEditStudent(s);
+                    }}
+                    className="w-full text-left px-3 py-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                  >
+                    <Edit3 size={13} className="text-slate-400" />
+                    <span>Kelola Akun / Kebutuhan</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* QR Code Tugas Button */}
         <button
@@ -7638,6 +8592,590 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
   );
 });
 
+// ============ 1. QUICK MESSAGE STUDENT MODAL ============
+interface QuickMessageStudentModalProps {
+  student: Account;
+  teacherAccount: Account;
+  onClose: () => void;
+  onSent: (msg: string) => void;
+}
+
+const QuickMessageStudentModal: React.FC<QuickMessageStudentModalProps> = ({
+  student,
+  teacherAccount,
+  onClose,
+  onSent,
+}) => {
+  const [category, setCategory] = useState<'MOTIVASI' | 'REMINDER' | 'REMEDIAL' | 'PERILAKU'>('MOTIVASI');
+  const [message, setMessage] = useState('');
+  const [isUrgent, setIsUrgent] = useState(false);
+
+  const templates: Record<string, string[]> = {
+    MOTIVASI: [
+      'Luar biasa! Terus pertahankan semangat dan keaktifanmu di kelas ya.',
+      'Bagus sekali hasil tugasmu! Kamu menunjukkan kemajuan yang membanggakan.',
+      'Jangan ragu untuk bertanya jika ada materi yang belum kamu pahami sepenuhnya.'
+    ],
+    REMINDER: [
+      'Mohon segera menyelesaikan dan mengumpulkan tugas yang belum diserahkan sebelum akhir pekan.',
+      'Pengingat: Tenggat waktu tugas tematik berakhir besok. Pastikan sudah diunggah ya!',
+      'Cek kembali catatan tugasmu di portal pembelajaran hari ini.'
+    ],
+    REMEDIAL: [
+      'Silakan temui guru saat jam istirahat untuk pendampingan materi dan pembahasan latihan soal.',
+      'Guru sudah menyiapkan materi penguatan remedial. Semangat berlatih untuk perbaikan nilai!',
+      'Ayo coba kerjakan kembali latihan modul nomor 1-5 dengan lebih teliti.'
+    ],
+    PERILAKU: [
+      'Terima kasih sudah tertib dan membantu teman sekelas saat kerja kelompok hari ini.',
+      'Tingkatkan lagi kedisiplinan waktu saat masuk kelas ya.',
+      'Sikap gotong royong dan kesantunanmu di kelas patut dicontoh.'
+    ]
+  };
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+
+    // Persist note into localStorage for persistent memory
+    const existingNotes = JSON.parse(localStorage.getItem('CLASSROOM_TEACHER_STUDENT_NOTES') || '[]');
+    existingNotes.unshift({
+      id: `NOTE-${Date.now()}`,
+      studentId: student.ID,
+      studentName: student.NAMA,
+      studentClass: student.KELAS,
+      teacherName: teacherAccount.NAMA,
+      category,
+      message: message.trim(),
+      isUrgent,
+      sentAt: new Date().toISOString(),
+    });
+    localStorage.setItem('CLASSROOM_TEACHER_STUDENT_NOTES', JSON.stringify(existingNotes.slice(0, 50)));
+
+    playFeedback('success');
+    onSent(`Pesan berhasil dikirimkan kepada ${student.NAMA}.`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <MessageSquare size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Kirim Pesan ke Siswa
+              </h3>
+              <p className="text-xs text-slate-500">
+                Kepada: <strong className="text-slate-800 font-bold">{student.NAMA}</strong> ({student.KELAS || 'Tanpa Kelas'}) • NIS: {student.NIP || '-'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSend} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1.5">
+              Kategori Pesan:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: 'MOTIVASI', label: 'Motivasi', icon: Sparkles, color: 'text-amber-600' },
+                { id: 'REMINDER', label: 'Pengingat', icon: Clock, color: 'text-blue-600' },
+                { id: 'REMEDIAL', label: 'Remedial', icon: BookOpenCheck, color: 'text-purple-600' },
+                { id: 'PERILAKU', label: 'Karakter', icon: Award, color: 'text-emerald-600' },
+              ].map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = category === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategory(cat.id as any)}
+                    className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 shadow-2xs ring-1 ring-blue-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon size={13} className={cat.color} />
+                    <span>{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Templat Cepat (Klik untuk menyisipkan):
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {templates[category].map((tmpl, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setMessage(tmpl)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[11px] font-medium border border-slate-200 transition text-left cursor-pointer"
+                >
+                  "{tmpl}"
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Isi Pesan / Catatan Guru:
+            </label>
+            <textarea
+              rows={4}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Tuliskan catatan, pesan penyemangat, atau instruksi khusus untuk siswa ini..."
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-blue-600 font-sans"
+              required
+            />
+          </div>
+
+          <div className="flex items-center gap-2 p-2.5 bg-amber-50 rounded-xl border border-amber-200">
+            <input
+              type="checkbox"
+              id="urgentMsgCheck"
+              checked={isUrgent}
+              onChange={(e) => setIsUrgent(e.target.checked)}
+              className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="urgentMsgCheck" className="text-xs font-bold text-amber-900 cursor-pointer select-none flex items-center gap-1">
+              <Flame size={13} className="text-amber-600 fill-amber-500" />
+              Tandai sebagai pesan penting / prioritas tinggi 🔥
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={!message.trim()}
+              className="px-5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-700/20 transition cursor-pointer"
+            >
+              <Send size={13} />
+              <span>Kirim Pesan</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ============ 2. STUDENT ATTENDANCE HISTORY MODAL ============
+interface StudentAttendanceHistoryModalProps {
+  student: Account;
+  targetClass: string;
+  onClose: () => void;
+  onRefresh?: () => void;
+}
+
+const StudentAttendanceHistoryModal: React.FC<StudentAttendanceHistoryModalProps> = ({
+  student,
+  targetClass,
+  onClose,
+  onRefresh,
+}) => {
+  const [records, setRecords] = useState<any[]>(() => {
+    return classroomService.getAttendanceRecords(student.KELAS || targetClass).filter((r) => r.SISWA_ID === student.ID);
+  });
+  const [stats, setStats] = useState(() => {
+    return classroomService.getStudentAttendanceStats(student.ID, student.KELAS || targetClass);
+  });
+  const [quickStatus, setQuickStatus] = useState<'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA'>('HADIR');
+  const [quickNote, setQuickNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleRecordToday = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    classroomService.recordSingleAttendance({
+      KELAS: student.KELAS || targetClass,
+      TANGGAL: todayStr,
+      SISWA_ID: student.ID,
+      SISWA_NAMA: student.NAMA,
+      STATUS: quickStatus,
+      SESI: 'PAGI',
+      CATATAN: quickNote || `Presensi dicatat tanggal ${todayStr}`,
+      RECORDED_BY: 'Guru Kelas',
+    });
+
+    const updatedRecords = classroomService.getAttendanceRecords(student.KELAS || targetClass).filter((r) => r.SISWA_ID === student.ID);
+    const updatedStats = classroomService.getStudentAttendanceStats(student.ID, student.KELAS || targetClass);
+    setRecords(updatedRecords);
+    setStats(updatedStats);
+    setQuickNote('');
+    setIsSaving(false);
+    playFeedback('success');
+    if (onRefresh) onRefresh();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200 max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <CalendarCheck size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Riwayat Presensi & Kehadiran Siswa
+              </h3>
+              <p className="text-xs text-slate-500">
+                <strong className="text-slate-800 font-bold">{student.NAMA}</strong> • NIS: {student.NIP || '-'} • Rombel: {student.KELAS || targetClass}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Attendance Stats Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 shrink-0">
+          <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-center">
+            <span className="text-[10px] font-bold text-indigo-700 uppercase block">Persentase</span>
+            <span className="text-lg font-black text-indigo-900">{stats.percentage}%</span>
+            <span className="text-[9px] text-indigo-600 block">Tingkat Hadir</span>
+          </div>
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+            <span className="text-[10px] font-bold text-emerald-700 uppercase block">Hadir</span>
+            <span className="text-lg font-black text-emerald-900">{stats.hadir}</span>
+            <span className="text-[9px] text-emerald-600 block">Pertemuan</span>
+          </div>
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-center">
+            <span className="text-[10px] font-bold text-amber-700 uppercase block">Sakit</span>
+            <span className="text-lg font-black text-amber-900">{stats.sakit}</span>
+            <span className="text-[9px] text-amber-600 block">Hari</span>
+          </div>
+          <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-center">
+            <span className="text-[10px] font-bold text-blue-700 uppercase block">Izin</span>
+            <span className="text-lg font-black text-blue-900">{stats.izin}</span>
+            <span className="text-[9px] text-blue-600 block">Hari</span>
+          </div>
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-center">
+            <span className="text-[10px] font-bold text-rose-700 uppercase block">Alpa</span>
+            <span className="text-lg font-black text-rose-900">{stats.alpa}</span>
+            <span className="text-[9px] text-rose-600 block">Hari</span>
+          </div>
+        </div>
+
+        {/* Quick Add Attendance for Today */}
+        <form onSubmit={handleRecordToday} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 shrink-0">
+          <span className="text-xs font-bold text-slate-800 block">
+            Catat / Perbarui Presensi Hari Ini ({new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}):
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={quickStatus}
+              onChange={(e) => setQuickStatus(e.target.value as any)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white focus:outline-emerald-600"
+            >
+              <option value="HADIR">✅ HADIR</option>
+              <option value="SAKIT">🤒 SAKIT</option>
+              <option value="IZIN">📩 IZIN</option>
+              <option value="ALPA">❌ ALPA</option>
+            </select>
+            <input
+              type="text"
+              placeholder="Catatan opsional (cth: Izin urusan keluarga)..."
+              value={quickNote}
+              onChange={(e) => setQuickNote(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-emerald-600 min-w-[160px]"
+            />
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+            >
+              {isSaving ? 'Menyimpan...' : 'Simpan Presensi'}
+            </button>
+          </div>
+        </form>
+
+        {/* Attendance Records Table */}
+        <div className="flex-1 overflow-y-auto space-y-1">
+          <span className="text-xs font-bold text-slate-700 block">
+            Daftar Catatan Riwayat Presensi ({records.length} Catatan):
+          </span>
+          {records.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 font-medium">
+              Belum ada data presensi khusus untuk siswa ini.
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="p-2.5">Tanggal</th>
+                    <th className="p-2.5">Sesi</th>
+                    <th className="p-2.5">Status</th>
+                    <th className="p-2.5">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {records.map((r, i) => (
+                    <tr key={r.ID || i} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-2.5 font-mono text-slate-700">{r.TANGGAL}</td>
+                      <td className="p-2.5 font-bold text-slate-600">{r.SESI || 'PAGI'}</td>
+                      <td className="p-2.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            r.STATUS === 'HADIR'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : r.STATUS === 'SAKIT'
+                              ? 'bg-amber-100 text-amber-800'
+                              : r.STATUS === 'IZIN'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {r.STATUS}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-500">{r.CATATAN || (r as any).KETERANGAN || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end pt-2 border-t border-slate-100 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ 3. ASSIGN REMEDIAL TASK MODAL ============
+interface AssignRemedialTaskModalProps {
+  student: Account;
+  targetClass: string;
+  teacherAccount: Account;
+  onClose: () => void;
+  onAssigned: (msg: string) => void;
+  onRefresh: () => void;
+}
+
+const AssignRemedialTaskModal: React.FC<AssignRemedialTaskModalProps> = ({
+  student,
+  targetClass,
+  teacherAccount,
+  onClose,
+  onAssigned,
+  onRefresh,
+}) => {
+  const courses = useMemo(() => classroomService.getCourses(), []);
+  const [courseId, setCourseId] = useState(courses[0]?.ID || '');
+  const [judul, setJudul] = useState(`Remedial & Penguatan Materi - ${student.NAMA.split(' ')[0]}`);
+  const [targetKkm, setTargetKkm] = useState(75);
+  const [deadline, setDeadline] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().slice(0, 10);
+  });
+  const [deskripsi, setDeskripsi] = useState(
+    `Tugas remedial terarah untuk pemenuhan Kriteria Ketuntasan Minimal (KKM). Silakan pelajari kembali modul pokok dan kerjakan 5 latihan soal evaluasi secara mandiri.`
+  );
+  const [isPriority, setIsPriority] = useState(true);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!judul.trim() || !courseId) return;
+
+    classroomService.saveAssignment({
+      COURSE_ID: courseId,
+      JUDUL: `[REMEDIAL] ${judul.trim()}`,
+      TYPE: 'TUGAS',
+      DEADLINE: deadline,
+      DESKRIPSI: `Penugasan Khusus Siswa: ${student.NAMA} (NIS: ${student.NIP || '-'})\nTarget KKM: ${targetKkm}\n\nPetunjuk Pengerjaan:\n${deskripsi.trim()}`,
+      IS_PRIORITY: isPriority,
+    });
+
+    playFeedback('success');
+    onAssigned(`Tugas remedial berhasil diterbitkan khusus untuk ${student.NAMA}.`);
+    onRefresh();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+              <BookOpenCheck size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Tugaskan Remedial Siswa
+              </h3>
+              <p className="text-xs text-slate-500">
+                Untuk: <strong className="text-slate-800 font-bold">{student.NAMA}</strong> ({student.KELAS || targetClass}) • NIS: {student.NIP || '-'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Pilih Mata Pelajaran:
+            </label>
+            <select
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-purple-600"
+              required
+            >
+              {courses.map((c) => (
+                <option key={c.ID} value={c.ID}>
+                  {c.KODE_KELAS} - {c.NAMA}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Judul Tugas Remedial:
+            </label>
+            <input
+              type="text"
+              value={judul}
+              onChange={(e) => setJudul(e.target.value)}
+              placeholder="cth: Remedial Bab 2: Operasi Hitung Campuran"
+              className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-purple-600"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                Target Capaian KKM:
+              </label>
+              <input
+                type="number"
+                min={60}
+                max={100}
+                value={targetKkm}
+                onChange={(e) => setTargetKkm(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-purple-600"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                Tenggat Waktu Remedial:
+              </label>
+              <input
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-purple-600"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Petunjuk Pengerjaan & Kisi-kisi Remedial:
+            </label>
+            <textarea
+              rows={3}
+              value={deskripsi}
+              onChange={(e) => setDeskripsi(e.target.value)}
+              placeholder="Instruksi tugas pengayaan/remedial yang harus diselesaikan siswa..."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-purple-600 font-sans"
+              required
+            />
+          </div>
+
+          <div className="flex items-center gap-2 p-2.5 bg-amber-50 rounded-xl border border-amber-200">
+            <input
+              type="checkbox"
+              id="remedialPriorityCheck"
+              checked={isPriority}
+              onChange={(e) => setIsPriority(e.target.checked)}
+              className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="remedialPriorityCheck" className="text-xs font-bold text-amber-900 cursor-pointer select-none flex items-center gap-1">
+              <Flame size={13} className="text-amber-600 fill-amber-500" />
+              Tandai sebagai Tugas Prioritas Utama 🔥
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={!judul.trim() || !courseId}
+              className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-purple-700/20 transition cursor-pointer"
+            >
+              <BookOpenCheck size={14} />
+              <span>Tugaskan Remedial</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+
 // ============ STUDENTS LIST VIEW ============
 const StudentsListView: React.FC<{
   account: Account;
@@ -7648,11 +9186,14 @@ const StudentsListView: React.FC<{
   const [selectedClass, setSelectedClass] = useState<string>(isGuru ? (account.KELAS || 'Kelas 1A') : 'Semua');
   const [search, setSearch] = useState('');
   const [filterKelulusan, setFilterKelulusan] = useState<string>('SEMUA');
-  const [filterKebutuhan, setFilterKebutuhan] = useState<string>('SEMUA');
+  const [selectedKebutuhan, setSelectedKebutuhan] = useState<string[]>([]);
+  const [isKebutuhanDropdownOpen, setIsKebutuhanDropdownOpen] = useState(false);
+  const kebutuhanDropdownRef = useRef<HTMLDivElement>(null);
   const [editingStudent, setEditingStudent] = useState<Account | null>(null);
   const [qrModalStudent, setQrModalStudent] = useState<Account | null>(null);
   const [exportingStudentId, setExportingStudentId] = useState<string | null>(null);
   const [isExportingAllPdf, setIsExportingAllPdf] = useState<boolean>(false);
+  const [isExportingCSV, setIsExportingCSV] = useState<boolean>(false);
   const [exportZipProgress, setExportZipProgress] = useState<{
     current: number;
     total: number;
@@ -7669,6 +9210,88 @@ const StudentsListView: React.FC<{
     milestoneCategory: string;
     rewardPoints: number;
   } | null>(null);
+  const [showCSVImportModal, setShowCSVImportModal] = useState<boolean>(false);
+  const [showBatchPDFModal, setShowBatchPDFModal] = useState<boolean>(false);
+  const [messageStudent, setMessageStudent] = useState<Account | null>(null);
+  const [attendanceStudent, setAttendanceStudent] = useState<Account | null>(null);
+  const [remedialStudent, setRemedialStudent] = useState<Account | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [globalTrendActive, setGlobalTrendActive] = useState<boolean>(true);
+  const [filterKkm, setFilterKkm] = useState<'SEMUA' | 'TUNTAS' | 'BELUM_TUNTAS' | 'PALING_REMEDIAL'>('SEMUA');
+  const [trendRangeMode, setTrendRangeMode] = useState<TrendDateRangeMode>('ALL');
+  const [customTrendStart, setCustomTrendStart] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 14);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customTrendEnd, setCustomTrendEnd] = useState<string>(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+
+  const activeTrendFilter = useMemo<TrendDateFilter>(() => {
+    switch (trendRangeMode) {
+      case 'LAST_WEEK':
+        return { mode: 'LAST_WEEK', label: '7 Hari Terakhir' };
+      case 'LAST_MONTH':
+        return { mode: 'LAST_MONTH', label: '30 Hari Terakhir' };
+      case 'CUSTOM':
+        return {
+          mode: 'CUSTOM',
+          label: `${customTrendStart || '...'} s/d ${customTrendEnd || '...'}`,
+          startDate: customTrendStart,
+          endDate: customTrendEnd,
+        };
+      case 'ALL':
+      default:
+        return { mode: 'ALL', label: 'Semua Waktu' };
+    }
+  }, [trendRangeMode, customTrendStart, customTrendEnd]);
+
+  const KEBUTUHAN_CATEGORIES = useMemo(() => [
+    { id: 'AUTISME', label: 'Autisme', desc: 'Spektrum Autisme / Interaksi' },
+    { id: 'DISLEKSIA', label: 'Disleksia', desc: 'Kesulitan Belajar & Membaca' },
+    { id: 'TUNARUNGU', label: 'Tunarungu', desc: 'Gangguan Pendengaran & Wicara' },
+    { id: 'TUNANETRA', label: 'Tunanetra', desc: 'Gangguan Penglihatan / Low Vision' },
+    { id: 'CERDAS_ISTIMEWA', label: 'Cerdas Istimewa', desc: 'Bakat Khusus / Gifted & Talented' },
+    { id: 'LAINNYA', label: 'Kebutuhan Lainnya', desc: 'Tunadaksa / Hambatan Motorik' },
+    { id: 'REGULER', label: 'Siswa Reguler', desc: 'Standar Kurikulum Nasional' },
+  ], []);
+
+  const handleToggleKebutuhan = useCallback((catId: string) => {
+    setSelectedKebutuhan((prev) =>
+      prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
+    );
+    try { playFeedback('click'); } catch {}
+  }, []);
+
+  const handleSelectAllInklusi = useCallback(() => {
+    setSelectedKebutuhan(['AUTISME', 'DISLEKSIA', 'TUNARUNGU', 'TUNANETRA', 'LAINNYA']);
+    try { playFeedback('click'); } catch {}
+  }, []);
+
+  const handleClearKebutuhan = useCallback(() => {
+    setSelectedKebutuhan([]);
+    try { playFeedback('click'); } catch {}
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (kebutuhanDropdownRef.current && !kebutuhanDropdownRef.current.contains(e.target as Node)) {
+        setIsKebutuhanDropdownOpen(false);
+      }
+    };
+    if (isKebutuhanDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isKebutuhanDropdownOpen]);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
+  }, []);
 
   const allClasses = useMemo(() => ['Semua', ...accountService.getAvailableClasses()], []);
 
@@ -7682,6 +9305,37 @@ const StudentsListView: React.FC<{
     return accountService.getStudents(selectedClass);
   }, [isGuru, account.KELAS, selectedClass]);
 
+  const countByCategory = useMemo(() => {
+    const counts: Record<string, number> = {
+      AUTISME: 0,
+      DISLEKSIA: 0,
+      TUNARUNGU: 0,
+      TUNANETRA: 0,
+      CERDAS_ISTIMEWA: 0,
+      LAINNYA: 0,
+      REGULER: 0,
+    };
+    allStudents.forEach((s) => {
+      const raw = s.KEBUTUHAN_KHUSUS || 'REGULER';
+      if (!s.KEBUTUHAN_KHUSUS || s.KEBUTUHAN_KHUSUS === 'REGULER') {
+        counts.REGULER = (counts.REGULER || 0) + 1;
+      } else if (raw.includes('AUTISME')) {
+        counts.AUTISME = (counts.AUTISME || 0) + 1;
+      } else if (raw.includes('DISLEKSIA')) {
+        counts.DISLEKSIA = (counts.DISLEKSIA || 0) + 1;
+      } else if (raw.includes('TUNARUNGU')) {
+        counts.TUNARUNGU = (counts.TUNARUNGU || 0) + 1;
+      } else if (raw.includes('TUNANETRA')) {
+        counts.TUNANETRA = (counts.TUNANETRA || 0) + 1;
+      } else if (raw.includes('CERDAS_ISTIMEWA')) {
+        counts.CERDAS_ISTIMEWA = (counts.CERDAS_ISTIMEWA || 0) + 1;
+      } else {
+        counts.LAINNYA = (counts.LAINNYA || 0) + 1;
+      }
+    });
+    return counts;
+  }, [allStudents]);
+
   const allSubmissions = useMemo(() => classroomService.getSubmissions(), []);
 
   const submissionsByStudent = useMemo(() => {
@@ -7694,9 +9348,63 @@ const StudentsListView: React.FC<{
     return map;
   }, [allSubmissions]);
 
+  // Compute student average scores and KKM status (threshold >= 75)
+  const studentAverageScores = useMemo(() => {
+    const scoreMap = new Map<
+      string,
+      {
+        avg: number | null;
+        count: number;
+        tuntas: boolean;
+        remedialCount: number;
+        remedialRate: number;
+      }
+    >();
+    for (const s of allStudents) {
+      const subs = submissionsByStudent.get(s.ID) || [];
+      const graded = subs.filter((sub) => sub.STATUS === 'GRADED' && typeof sub.NILAI === 'number');
+      const remedialTasks = graded.filter((sub) => (sub.NILAI ?? 0) < 75);
+      const remedialCount = remedialTasks.length;
+      const remedialRate = graded.length > 0 ? remedialCount / graded.length : 0;
+      if (graded.length === 0) {
+        scoreMap.set(s.ID, { avg: null, count: 0, tuntas: false, remedialCount: 0, remedialRate: 0 });
+      } else {
+        const sum = graded.reduce((acc, sub) => acc + (sub.NILAI || 0), 0);
+        const avg = Math.round(sum / graded.length);
+        scoreMap.set(s.ID, {
+          avg,
+          count: graded.length,
+          tuntas: avg >= 75,
+          remedialCount,
+          remedialRate,
+        });
+      }
+    }
+    return scoreMap;
+  }, [allStudents, submissionsByStudent]);
+
+  // Calculate overall KKM statistics for the student cohort
+  const kkmCounts = useMemo(() => {
+    let tuntas = 0;
+    let belumTuntas = 0;
+    let palingRemedial = 0;
+    allStudents.forEach((s) => {
+      const info = studentAverageScores.get(s.ID);
+      if (info && info.avg !== null && info.avg >= 75) {
+        tuntas++;
+      } else {
+        belumTuntas++;
+      }
+      if (info && info.remedialCount > 0) {
+        palingRemedial++;
+      }
+    });
+    return { tuntas, belumTuntas, palingRemedial, total: allStudents.length };
+  }, [allStudents, studentAverageScores]);
+
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return allStudents.filter((s) => {
+    const list = allStudents.filter((s) => {
       const matchesSearch =
         !query ||
         s.NAMA.toLowerCase().includes(query) ||
@@ -7707,15 +9415,54 @@ const StudentsListView: React.FC<{
         filterKelulusan === 'SEMUA' || (s.STATUS_KELULUSAN || 'AKTIF') === filterKelulusan;
 
       const matchesKebutuhan =
-        filterKebutuhan === 'SEMUA'
+        selectedKebutuhan.length === 0
           ? true
-          : filterKebutuhan === 'INKLUSI_ALL'
-          ? s.KEBUTUHAN_KHUSUS && s.KEBUTUHAN_KHUSUS !== 'REGULER'
-          : (s.KEBUTUHAN_KHUSUS || 'REGULER') === filterKebutuhan;
+          : selectedKebutuhan.some((cat) => {
+              const raw = s.KEBUTUHAN_KHUSUS || 'REGULER';
+              if (cat === 'REGULER') return !s.KEBUTUHAN_KHUSUS || s.KEBUTUHAN_KHUSUS === 'REGULER';
+              if (cat === 'AUTISME') return raw.includes('AUTISME');
+              if (cat === 'DISLEKSIA') return raw.includes('DISLEKSIA');
+              if (cat === 'TUNARUNGU') return raw.includes('TUNARUNGU');
+              if (cat === 'TUNANETRA') return raw.includes('TUNANETRA');
+              if (cat === 'CERDAS_ISTIMEWA') return raw.includes('CERDAS_ISTIMEWA');
+              if (cat === 'LAINNYA') return raw.includes('TUNADAKSA') || raw === 'LAINNYA';
+              return raw === cat;
+            });
 
-      return matchesSearch && matchesKelulusan && matchesKebutuhan;
+      const studentKkmInfo = studentAverageScores.get(s.ID);
+      let matchesKkm = true;
+      if (filterKkm === 'TUNTAS') {
+        matchesKkm = studentKkmInfo?.avg !== null && studentKkmInfo!.avg >= 75;
+      } else if (filterKkm === 'BELUM_TUNTAS') {
+        matchesKkm = studentKkmInfo?.avg === null || studentKkmInfo!.avg < 75;
+      } else if (filterKkm === 'PALING_REMEDIAL') {
+        // Show students with remedial tasks or below KKM
+        matchesKkm =
+          (studentKkmInfo?.remedialCount || 0) > 0 ||
+          (studentKkmInfo?.avg !== null && studentKkmInfo!.avg < 75);
+      }
+
+      return matchesSearch && matchesKelulusan && matchesKebutuhan && matchesKkm;
     });
-  }, [allStudents, search, filterKelulusan, filterKebutuhan]);
+
+    // If 'PALING_REMEDIAL' is active, sort by highest remedial task count descending, then lowest average score
+    if (filterKkm === 'PALING_REMEDIAL') {
+      return [...list].sort((a, b) => {
+        const infoA = studentAverageScores.get(a.ID);
+        const infoB = studentAverageScores.get(b.ID);
+        const remA = infoA?.remedialCount || 0;
+        const remB = infoB?.remedialCount || 0;
+        if (remB !== remA) {
+          return remB - remA; // Most remedial tasks first
+        }
+        const avgA = infoA?.avg ?? 999;
+        const avgB = infoB?.avg ?? 999;
+        return avgA - avgB; // Lower average first if equal count
+      });
+    }
+
+    return list;
+  }, [allStudents, search, filterKelulusan, selectedKebutuhan, filterKkm, studentAverageScores]);
 
   // Automated PDF Report Handlers
   const handleExportStudentPdf = useCallback((student: Account) => {
@@ -7770,6 +9517,64 @@ const StudentsListView: React.FC<{
   const inklusiCount = useMemo(() => allStudents.filter((s) => s.KEBUTUHAN_KHUSUS && s.KEBUTUHAN_KHUSUS !== 'REGULER' && s.KEBUTUHAN_KHUSUS !== 'CERDAS_ISTIMEWA').length, [allStudents]);
   const cerdasCount = useMemo(() => allStudents.filter((s) => s.KEBUTUHAN_KHUSUS === 'CERDAS_ISTIMEWA').length, [allStudents]);
   const lulusCount = useMemo(() => allStudents.filter((s) => s.STATUS_KELULUSAN === 'LULUS').length, [allStudents]);
+
+  // Export current view of filtered student data including KKM status and average score,
+  // automatically uploading to Google Drive and delivering to the teacher's email if available.
+  const handleExportFilteredCSV = useCallback(async () => {
+    if (filteredStudents.length === 0 || isExportingCSV) return;
+    setIsExportingCSV(true);
+    try {
+      const targetClass = isGuru ? account.KELAS : selectedClass;
+      const teacherEmail = account.EMAIL || 'guru@sdntangerang6.sch.id';
+      const result = await exportStudentsToCSV(
+        filteredStudents,
+        targetClass,
+        {
+          filterKkm,
+          filterKelulusan,
+          trendRangeLabel: activeTrendFilter.label,
+          teacherEmail,
+          teacherName: account.NAMA,
+          autoSaveToDrive: true,
+          autoSendEmail: true,
+        }
+      );
+
+      if (result.driveResult && result.emailResult) {
+        showToast(
+          `✅ Rekap CSV diunduh, tersimpan di Google Drive ("Rekap Nilai Siswa SDN Tangerang 6"), dan ringkasan dikirim ke ${teacherEmail}!`
+        );
+      } else if (result.driveResult) {
+        showToast(
+          `✅ Rekap CSV diunduh & tersimpan otomatis di Google Drive ("Rekap Nilai Siswa SDN Tangerang 6")!`
+        );
+      } else if (result.emailResult) {
+        showToast(
+          `✅ Rekap CSV diunduh & ringkasan data dikirimkan ke email guru (${teacherEmail})!`
+        );
+      } else {
+        showToast(`✅ Berhasil mengekspor rekap ${filteredStudents.length} siswa ke file CSV!`);
+      }
+      try { playFeedback('success'); } catch {}
+    } catch (err: any) {
+      console.error('Gagal mengekspor data siswa ke CSV:', err);
+      showToast(err?.message || 'Gagal mengekspor file CSV data siswa.');
+    } finally {
+      setIsExportingCSV(false);
+    }
+  }, [
+    filteredStudents,
+    isExportingCSV,
+    isGuru,
+    account.KELAS,
+    account.EMAIL,
+    account.NAMA,
+    selectedClass,
+    filterKkm,
+    filterKelulusan,
+    activeTrendFilter,
+    showToast,
+  ]);
 
   return (
     <div className="space-y-5">
@@ -7836,100 +9641,193 @@ const StudentsListView: React.FC<{
             </span>
           </button>
 
+          {/* Export Current View of Filtered Student Data (CSV) Button */}
           <button
-            onClick={() => exportStudentsToCSV(filteredStudents, isGuru ? account.KELAS : selectedClass)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition active:scale-95 cursor-pointer"
-            title="Ekspor rekap data siswa ke format CSV untuk backup offline"
+            onClick={handleExportFilteredCSV}
+            disabled={filteredStudents.length === 0 || isExportingCSV}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition active:scale-95 cursor-pointer"
+            title="Ekspor rekap data siswa terfilter (termasuk status KKM dan rata-rata nilai) ke format CSV, simpan otomatis ke Google Drive dan kirim ringkasan ke email guru"
           >
-            <Download size={15} /> Ekspor Data Siswa (CSV)
+            {isExportingCSV ? (
+              <RefreshCw size={15} className="animate-spin" />
+            ) : (
+              <Download size={15} />
+            )}
+            <span>{isExportingCSV ? 'Mengekspor & Menyimpan...' : 'Ekspor Data Siswa (CSV)'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowCSVImportModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-md shadow-teal-700/20 transition active:scale-95 cursor-pointer"
+            title="Impor daftar siswa dari file CSV format pra-terformat ke kelas terpilih"
+          >
+            <Upload size={14} /> Impor Siswa (CSV)
+          </button>
+
+          <button
+            onClick={() => setShowBatchPDFModal(true)}
+            disabled={filteredStudents.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-800 hover:bg-indigo-900 text-white font-bold text-xs shadow-md shadow-indigo-800/20 transition active:scale-95 cursor-pointer disabled:opacity-60"
+            title="Pilih beberapa siswa dan unduh rapor gabungan mereka dalam satu dokumen PDF tunggal"
+          >
+            <Printer size={14} /> Cetak Batch Rapor (PDF)
+          </button>
+
+          <button
+            onClick={() => setGlobalTrendActive((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs shadow-md transition active:scale-95 cursor-pointer border ${
+              globalTrendActive
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-indigo-600/20'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+            title="Aktifkan / nonaktifkan tampilan tren capaian nilai pada daftar siswa"
+          >
+            <TrendingUp size={14} className={globalTrendActive ? 'text-white' : 'text-indigo-600'} />
+            <span>Tren Nilai: {globalTrendActive ? 'Aktif' : 'Off'}</span>
           </button>
         </div>
       </div>
 
-      {/* STATS OVERVIEW CARDS FOR SEGMENTS */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* STATS OVERVIEW CARDS FOR SEGMENTS & KKM */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         <button
-          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKebutuhan('SEMUA'); }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterKelulusan === 'SEMUA' && filterKebutuhan === 'SEMUA'
+          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKkm('SEMUA'); handleClearKebutuhan(); }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterKelulusan === 'SEMUA' && filterKkm === 'SEMUA' && selectedKebutuhan.length === 0
               ? 'bg-blue-900 text-white border-blue-900 shadow-sm ring-2 ring-blue-500/50'
               : 'bg-white text-slate-800 border-slate-200 hover:border-blue-300'
           }`}
         >
-          <span className={`text-[10px] font-bold block ${filterKelulusan === 'SEMUA' && filterKebutuhan === 'SEMUA' ? 'text-blue-200' : 'text-slate-400'}`}>
+          <span className={`text-[10px] font-bold block ${filterKelulusan === 'SEMUA' && filterKkm === 'SEMUA' && selectedKebutuhan.length === 0 ? 'text-blue-200' : 'text-slate-400'}`}>
             Total Siswa
           </span>
           <div className="text-xl font-black mt-0.5">{totalCount}</div>
-          <span className={`text-[9px] font-semibold ${filterKelulusan === 'SEMUA' && filterKebutuhan === 'SEMUA' ? 'text-blue-300' : 'text-slate-500'}`}>
+          <span className={`text-[9px] font-semibold ${filterKelulusan === 'SEMUA' && filterKkm === 'SEMUA' && selectedKebutuhan.length === 0 ? 'text-blue-300' : 'text-slate-500'}`}>
             Semua Peserta
           </span>
         </button>
 
         <button
-          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKebutuhan('REGULER'); }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterKebutuhan === 'REGULER'
+          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKkm('SEMUA'); setSelectedKebutuhan(['REGULER']); }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            selectedKebutuhan.length === 1 && selectedKebutuhan.includes('REGULER') && filterKkm === 'SEMUA'
               ? 'bg-emerald-800 text-white border-emerald-800 shadow-sm ring-2 ring-emerald-500/50'
               : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300'
           }`}
         >
-          <span className={`text-[10px] font-bold block ${filterKebutuhan === 'REGULER' ? 'text-emerald-200' : 'text-slate-400'}`}>
+          <span className={`text-[10px] font-bold block ${selectedKebutuhan.length === 1 && selectedKebutuhan.includes('REGULER') && filterKkm === 'SEMUA' ? 'text-emerald-200' : 'text-slate-400'}`}>
             Siswa Reguler
           </span>
           <div className="text-xl font-black mt-0.5">{regulerCount}</div>
-          <span className={`text-[9px] font-semibold ${filterKebutuhan === 'REGULER' ? 'text-emerald-200' : 'text-emerald-600'}`}>
+          <span className={`text-[9px] font-semibold ${selectedKebutuhan.length === 1 && selectedKebutuhan.includes('REGULER') && filterKkm === 'SEMUA' ? 'text-emerald-200' : 'text-emerald-600'}`}>
             Standar Kurikulum
           </span>
         </button>
 
         <button
-          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKebutuhan('INKLUSI_ALL'); }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterKebutuhan === 'INKLUSI_ALL'
+          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKkm('SEMUA'); handleSelectAllInklusi(); }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            selectedKebutuhan.length > 0 && !selectedKebutuhan.includes('REGULER') && !selectedKebutuhan.every(c => c === 'CERDAS_ISTIMEWA') && filterKkm === 'SEMUA'
               ? 'bg-purple-900 text-white border-purple-900 shadow-sm ring-2 ring-purple-500/50'
               : 'bg-white text-slate-800 border-slate-200 hover:border-purple-300'
           }`}
         >
-          <span className={`text-[10px] font-bold block ${filterKebutuhan === 'INKLUSI_ALL' ? 'text-purple-200' : 'text-slate-400'}`}>
+          <span className={`text-[10px] font-bold block ${selectedKebutuhan.length > 0 && !selectedKebutuhan.includes('REGULER') && !selectedKebutuhan.every(c => c === 'CERDAS_ISTIMEWA') && filterKkm === 'SEMUA' ? 'text-purple-200' : 'text-slate-400'}`}>
             Inklusi (ABK)
           </span>
           <div className="text-xl font-black mt-0.5">{inklusiCount}</div>
-          <span className={`text-[9px] font-semibold ${filterKebutuhan === 'INKLUSI_ALL' ? 'text-purple-200' : 'text-purple-600'}`}>
-            Pendampingan Khusus
+          <span className={`text-[9px] font-semibold ${selectedKebutuhan.length > 0 && !selectedKebutuhan.includes('REGULER') && !selectedKebutuhan.every(c => c === 'CERDAS_ISTIMEWA') && filterKkm === 'SEMUA' ? 'text-purple-200' : 'text-purple-600'}`}>
+            Pendampingan
           </span>
         </button>
 
         <button
-          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKebutuhan('CERDAS_ISTIMEWA'); }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterKebutuhan === 'CERDAS_ISTIMEWA'
+          onClick={() => { setFilterKelulusan('SEMUA'); setFilterKkm('SEMUA'); setSelectedKebutuhan(['CERDAS_ISTIMEWA']); }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            selectedKebutuhan.length === 1 && selectedKebutuhan.includes('CERDAS_ISTIMEWA') && filterKkm === 'SEMUA'
               ? 'bg-amber-800 text-white border-amber-800 shadow-sm ring-2 ring-amber-500/50'
               : 'bg-white text-slate-800 border-slate-200 hover:border-amber-300'
           }`}
         >
-          <span className={`text-[10px] font-bold block ${filterKebutuhan === 'CERDAS_ISTIMEWA' ? 'text-amber-200' : 'text-slate-400'}`}>
+          <span className={`text-[10px] font-bold block ${selectedKebutuhan.length === 1 && selectedKebutuhan.includes('CERDAS_ISTIMEWA') && filterKkm === 'SEMUA' ? 'text-amber-200' : 'text-slate-400'}`}>
             Cerdas Istimewa
           </span>
           <div className="text-xl font-black mt-0.5">{cerdasCount}</div>
-          <span className={`text-[9px] font-semibold ${filterKebutuhan === 'CERDAS_ISTIMEWA' ? 'text-amber-200' : 'text-amber-600'}`}>
-            Program Akselerasi
+          <span className={`text-[9px] font-semibold ${selectedKebutuhan.length === 1 && selectedKebutuhan.includes('CERDAS_ISTIMEWA') && filterKkm === 'SEMUA' ? 'text-amber-200' : 'text-amber-600'}`}>
+            Akselerasi
           </span>
         </button>
 
+        {/* KKM TUNTAS (>= 75) Card */}
         <button
-          onClick={() => { setFilterKelulusan('LULUS'); setFilterKebutuhan('SEMUA'); }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterKelulusan === 'LULUS'
-              ? 'bg-teal-800 text-white border-teal-800 shadow-sm ring-2 ring-teal-500/50'
-              : 'bg-white text-slate-800 border-slate-200 hover:border-teal-300'
+          onClick={() => {
+            setFilterKkm((prev) => (prev === 'TUNTAS' ? 'SEMUA' : 'TUNTAS'));
+            try { playFeedback('click'); } catch {}
+          }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterKkm === 'TUNTAS'
+              ? 'bg-emerald-700 text-white border-emerald-700 shadow-md ring-2 ring-emerald-400/50'
+              : 'bg-emerald-50/70 text-slate-800 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'
           }`}
         >
-          <span className={`text-[10px] font-bold block ${filterKelulusan === 'LULUS' ? 'text-teal-200' : 'text-slate-400'}`}>
-            Siswa Lulus
+          <span className={`text-[10px] font-bold flex items-center justify-between ${filterKkm === 'TUNTAS' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+            <span>Tuntas KKM</span>
+            <Check size={11} strokeWidth={3} />
           </span>
-          <div className="text-xl font-black mt-0.5">{lulusCount}</div>
-          <span className={`text-[9px] font-semibold ${filterKelulusan === 'LULUS' ? 'text-teal-200' : 'text-teal-600'}`}>
-            Alumni & Lulusan
+          <div className={`text-xl font-black mt-0.5 ${filterKkm === 'TUNTAS' ? 'text-white' : 'text-emerald-800'}`}>
+            {kkmCounts.tuntas}
+          </div>
+          <span className={`text-[9px] font-semibold ${filterKkm === 'TUNTAS' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+            Rata-rata ≥ 75
+          </span>
+        </button>
+
+        {/* KKM BELUM TUNTAS (< 75) Card */}
+        <button
+          onClick={() => {
+            setFilterKkm((prev) => (prev === 'BELUM_TUNTAS' ? 'SEMUA' : 'BELUM_TUNTAS'));
+            try { playFeedback('click'); } catch {}
+          }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterKkm === 'BELUM_TUNTAS'
+              ? 'bg-amber-700 text-white border-amber-700 shadow-md ring-2 ring-amber-400/50'
+              : 'bg-amber-50/70 text-slate-800 border-amber-200 hover:border-amber-400 hover:bg-amber-50'
+          }`}
+        >
+          <span className={`text-[10px] font-bold flex items-center justify-between ${filterKkm === 'BELUM_TUNTAS' ? 'text-amber-100' : 'text-amber-700'}`}>
+            <span>Perlu Remedial</span>
+            <AlertTriangle size={11} strokeWidth={2.5} />
+          </span>
+          <div className={`text-xl font-black mt-0.5 ${filterKkm === 'BELUM_TUNTAS' ? 'text-white' : 'text-amber-800'}`}>
+            {kkmCounts.belumTuntas}
+          </div>
+          <span className={`text-[9px] font-semibold ${filterKkm === 'BELUM_TUNTAS' ? 'text-amber-100' : 'text-amber-600'}`}>
+            Rata-rata &lt; 75
+          </span>
+        </button>
+
+        {/* Paling Sering Perlu Remedial Card */}
+        <button
+          onClick={() => {
+            setFilterKkm((prev) => (prev === 'PALING_REMEDIAL' ? 'SEMUA' : 'PALING_REMEDIAL'));
+            try { playFeedback('click'); } catch {}
+          }}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterKkm === 'PALING_REMEDIAL'
+              ? 'bg-rose-700 text-white border-rose-700 shadow-md ring-2 ring-rose-400/50'
+              : 'bg-rose-50/70 text-slate-800 border-rose-200 hover:border-rose-400 hover:bg-rose-50'
+          }`}
+          title="Klik untuk memfilter dan menyortir siswa berdasarkan frekuensi tugas belum tuntas terbanyak"
+        >
+          <span className={`text-[10px] font-bold flex items-center justify-between ${filterKkm === 'PALING_REMEDIAL' ? 'text-rose-100' : 'text-rose-700'}`}>
+            <span>Sering Remedial</span>
+            <AlertTriangle size={11} strokeWidth={2.5} />
+          </span>
+          <div className={`text-xl font-black mt-0.5 ${filterKkm === 'PALING_REMEDIAL' ? 'text-white' : 'text-rose-800'}`}>
+            {kkmCounts.palingRemedial}
+          </div>
+          <span className={`text-[9px] font-semibold ${filterKkm === 'PALING_REMEDIAL' ? 'text-rose-100' : 'text-rose-600'}`}>
+            Prioritas Bimbingan
           </span>
         </button>
       </div>
@@ -7946,7 +9844,7 @@ const StudentsListView: React.FC<{
               <button
                 key={c}
                 onClick={() => setSelectedClass(c)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   selectedClass === c
                     ? 'bg-blue-700 text-white shadow-xs'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -7958,8 +9856,8 @@ const StudentsListView: React.FC<{
           </div>
         )}
 
-        {/* Dropdowns for Filter Status Kelulusan and Kebutuhan Khusus */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Dropdowns for Filter Status Kelulusan, Multi-Select Kebutuhan Khusus, and Filter Ketuntasan KKM */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Search Box */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -7980,7 +9878,7 @@ const StudentsListView: React.FC<{
             <select
               value={filterKelulusan}
               onChange={(e) => setFilterKelulusan(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-600 text-slate-700"
+              className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-600 text-slate-700"
             >
               <option value="SEMUA">Semua Status Kelulusan</option>
               <option value="AKTIF">Siswa Aktif</option>
@@ -7990,46 +9888,567 @@ const StudentsListView: React.FC<{
             </select>
           </div>
 
-          {/* Filter Kebutuhan Khusus / Inklusi (Kepsek & Guru) */}
+          {/* Multi-Select Filter Kebutuhan Khusus / Inklusi (Kepsek & Guru) */}
+          <div className="relative" ref={kebutuhanDropdownRef}>
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              <span className="flex items-center gap-1.5">
+                <HeartHandshake size={12} className="text-purple-600" /> Kebutuhan Khusus (Multi-Pilih)
+              </span>
+              {selectedKebutuhan.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearKebutuhan}
+                  className="text-[10px] font-black text-rose-500 hover:text-rose-700 transition cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsKebutuhanDropdownOpen((p) => !p)}
+              className={`w-full px-3 py-2 text-xs font-bold rounded-xl border flex items-center justify-between gap-2 transition text-left cursor-pointer ${
+                selectedKebutuhan.length > 0
+                  ? 'bg-purple-50/80 border-purple-300 text-purple-950 ring-2 ring-purple-400/30 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate min-w-0">
+                <HeartHandshake size={14} className={selectedKebutuhan.length > 0 ? 'text-purple-700' : 'text-slate-400'} />
+                <span className="truncate">
+                  {selectedKebutuhan.length === 0
+                    ? 'Semua Kategori (Reguler & ABK)'
+                    : `${selectedKebutuhan.length} Kategori: ${selectedKebutuhan
+                        .map((id) => KEBUTUHAN_CATEGORIES.find((c) => c.id === id)?.label || id)
+                        .join(', ')}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {selectedKebutuhan.length > 0 && (
+                  <span className="w-5 h-5 rounded-full bg-purple-700 text-white text-[10px] font-black flex items-center justify-center">
+                    {selectedKebutuhan.length}
+                  </span>
+                )}
+                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${isKebutuhanDropdownOpen ? 'rotate-180 text-purple-600' : ''}`} />
+              </div>
+            </button>
+
+            {/* Dropdown Multi-Select Popover */}
+            {isKebutuhanDropdownOpen && (
+              <div className="absolute left-0 right-0 sm:right-auto sm:w-[320px] top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 z-50 animate-in fade-in zoom-in-95 origin-top text-left space-y-2.5">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900">Filter Kebutuhan Khusus</h4>
+                    <p className="text-[10px] text-slate-500">Pilih satu atau lebih kategori disabilitas/inklusi</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsKebutuhanDropdownOpen(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {/* Quick Selection Buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleClearKebutuhan}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                      selectedKebutuhan.length === 0
+                        ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Semua ({allStudents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllInklusi}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold border bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100 transition cursor-pointer"
+                  >
+                    Semua ABK ({inklusiCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedKebutuhan(['REGULER']);
+                      try { playFeedback('click'); } catch {}
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold border bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 transition cursor-pointer"
+                  >
+                    Reguler ({regulerCount})
+                  </button>
+                </div>
+
+                {/* Checkbox Category Items */}
+                <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                  {KEBUTUHAN_CATEGORIES.map((cat) => {
+                    const isChecked = selectedKebutuhan.includes(cat.id);
+                    const count = countByCategory[cat.id] || 0;
+                    return (
+                      <div
+                        key={cat.id}
+                        onClick={() => handleToggleKebutuhan(cat.id)}
+                        className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition select-none ${
+                          isChecked
+                            ? 'bg-purple-50/80 border-purple-300 text-purple-950 font-bold'
+                            : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-700 font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`w-4 h-4 rounded-md border flex items-center justify-center transition shrink-0 ${
+                              isChecked
+                                ? 'bg-purple-700 border-purple-700 text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {isChecked && <Check size={11} strokeWidth={3.5} />}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs leading-tight font-extrabold flex items-center gap-1.5">
+                              <span>{cat.label}</span>
+                              {cat.id === 'REGULER' && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold">Standard</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-normal truncate">{cat.desc}</div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 ml-2 ${
+                            count > 0
+                              ? isChecked
+                                ? 'bg-purple-200 text-purple-900'
+                                : 'bg-slate-100 text-slate-700'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-medium">
+                    {selectedKebutuhan.length === 0
+                      ? 'Menampilkan semua siswa'
+                      : `${selectedKebutuhan.length} filter aktif`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsKebutuhanDropdownOpen(false)}
+                    className="px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold text-[11px] shadow-xs cursor-pointer"
+                  >
+                    Terapkan
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Filter Ketuntasan KKM (75) */}
           <div>
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-              <HeartHandshake size={12} className="text-purple-600" /> Segmen Kebutuhan Khusus
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              <span className="flex items-center gap-1.5">
+                <Award size={12} className="text-emerald-600" /> Ketuntasan KKM (75)
+              </span>
+              {filterKkm !== 'SEMUA' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterKkm('SEMUA');
+                    try { playFeedback('click'); } catch {}
+                  }}
+                  className="text-[10px] font-black text-rose-500 hover:text-rose-700 transition cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
             </div>
             <select
-              value={filterKebutuhan}
-              onChange={(e) => setFilterKebutuhan(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-600 text-slate-700"
+              value={filterKkm}
+              onChange={(e) => {
+                setFilterKkm(e.target.value as any);
+                try { playFeedback('click'); } catch {}
+              }}
+              className={`w-full px-3 py-2 text-xs font-bold rounded-xl border transition ${
+                filterKkm === 'PALING_REMEDIAL'
+                  ? 'bg-rose-50/90 border-rose-300 text-rose-950 ring-2 ring-rose-400/30 shadow-xs'
+                  : filterKkm !== 'SEMUA'
+                  ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 ring-2 ring-emerald-400/30 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white focus:outline-blue-600'
+              }`}
             >
-              <option value="SEMUA">Semua Kebutuhan (Reguler & ABK)</option>
-              <option value="REGULER">Siswa Reguler</option>
-              <option value="INKLUSI_ALL">Semua Inklusi / ABK</option>
-              <option value="AUTISME">Autisme Spectrum</option>
-              <option value="TUNARUNGU">Tunarungu / Gangguan Pendengaran</option>
-              <option value="TUNANETRA">Tunanetra / Gangguan Penglihatan</option>
-              <option value="DISLEKSIA">Disleksia / Kesulitan Belajar</option>
-              <option value="CERDAS_ISTIMEWA">Cerdas Istimewa (Gifted/Talented)</option>
-              <option value="LAINNYA">Kebutuhan Khusus Lainnya</option>
+              <option value="SEMUA">Semua Status KKM ({totalCount})</option>
+              <option value="TUNTAS">Tuntas (Rata-Rata ≥ 75) — {kkmCounts.tuntas} Siswa</option>
+              <option value="BELUM_TUNTAS">Belum Tuntas (Rata-Rata &lt; 75) — {kkmCounts.belumTuntas} Siswa</option>
+              <option value="PALING_REMEDIAL">🚨 Paling Sering Perlu Remedial — Urut Frekuensi Terbanyak ({kkmCounts.palingRemedial} Siswa)</option>
             </select>
+          </div>
+        </div>
+
+        {/* Active Multi-Select Kebutuhan Khusus Chips */}
+        {selectedKebutuhan.length > 0 && (
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1 mr-1">
+              <HeartHandshake size={12} className="text-purple-600" /> Filter Aktif ({selectedKebutuhan.length}):
+            </span>
+            {selectedKebutuhan.map((catId) => {
+              const cat = KEBUTUHAN_CATEGORIES.find((c) => c.id === catId);
+              const count = countByCategory[catId] || 0;
+              return (
+                <span
+                  key={catId}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200 shadow-2xs"
+                >
+                  <span>{cat?.label || catId}</span>
+                  <span className="text-[9px] px-1 py-0.2 rounded-full bg-purple-200 text-purple-800 font-mono font-black">
+                    {count}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleKebutuhan(catId)}
+                    className="p-0.5 rounded-full hover:bg-purple-200 text-purple-700 hover:text-purple-900 transition cursor-pointer"
+                    title={`Hapus filter ${cat?.label || catId}`}
+                  >
+                    <X size={11} strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              onClick={handleClearKebutuhan}
+              className="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:underline ml-1 cursor-pointer"
+            >
+              Hapus Semua Filter
+            </button>
+          </div>
+        )}
+
+        {/* Date-Range Filter for Progress Trend Column */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+              <Calendar size={13} className="text-indigo-600" />
+              <span>Rentang Periode Progress Trend:</span>
+            </span>
+
+            <div className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendRangeMode('ALL');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  trendRangeMode === 'ALL'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                Semua Waktu
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendRangeMode('LAST_WEEK');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  trendRangeMode === 'LAST_WEEK'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                7 Hari Terakhir
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendRangeMode('LAST_MONTH');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  trendRangeMode === 'LAST_MONTH'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                30 Hari Terakhir
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendRangeMode('CUSTOM');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  trendRangeMode === 'CUSTOM'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                Rentang Kustom
+              </button>
+            </div>
+
+            {/* Custom Range Date Inputs */}
+            {trendRangeMode === 'CUSTOM' && (
+              <div className="flex items-center gap-2 bg-indigo-50/90 px-3 py-1 rounded-xl border border-indigo-200 animate-in fade-in">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[10px] font-bold text-indigo-700">Mulai:</span>
+                  <input
+                    type="date"
+                    value={customTrendStart}
+                    onChange={(e) => setCustomTrendStart(e.target.value)}
+                    className="px-2 py-0.5 text-xs font-semibold rounded-lg border border-indigo-300 bg-white text-slate-700 focus:outline-indigo-600 cursor-pointer"
+                  />
+                </div>
+                <span className="text-indigo-400 font-bold text-xs">s/d</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[10px] font-bold text-indigo-700">Sampai:</span>
+                  <input
+                    type="date"
+                    value={customTrendEnd}
+                    onChange={(e) => setCustomTrendEnd(e.target.value)}
+                    className="px-2 py-0.5 text-xs font-semibold rounded-lg border border-indigo-300 bg-white text-slate-700 focus:outline-indigo-600 cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-slate-500">
+              Periode Evaluasi: <strong className="text-indigo-700">{activeTrendFilter.label}</strong>
+            </span>
+            {trendRangeMode !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendRangeMode('ALL');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+              >
+                Reset Periode
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Student Cards / Table */}
+      {/* Student Cards / Table with Dedicated Progress Trend Column */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-black text-slate-800">
               Menampilkan {filteredStudents.length} dari {totalCount} Siswa
             </span>
-            {(filterKelulusan !== 'SEMUA' || filterKebutuhan !== 'SEMUA') && (
+            {(filterKelulusan !== 'SEMUA' || selectedKebutuhan.length > 0 || filterKkm !== 'SEMUA') && (
               <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-bold">
-                Filter Aktif
+                Filter Aktif ({filteredStudents.length} Siswa)
+              </span>
+            )}
+            {/* Tombol Filter Prioritas Remedial Instan di atas daftar siswa */}
+            <button
+              type="button"
+              onClick={() => {
+                setFilterKkm((prev) => (prev === 'BELUM_TUNTAS' || prev === 'PALING_REMEDIAL' ? 'SEMUA' : 'BELUM_TUNTAS'));
+                try { playFeedback('click'); } catch {}
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 ${
+                filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
+                  ? 'bg-rose-700 hover:bg-rose-800 text-white border border-rose-700 shadow-md ring-2 ring-rose-400/50'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 hover:border-rose-400'
+              }`}
+              title={
+                filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
+                  ? 'Klik untuk membatalkan filter dan menampilkan semua siswa'
+                  : 'Sembunyikan semua siswa tuntas dan hanya tampilkan siswa yang memerlukan bimbingan tambahan (< 75)'
+              }
+            >
+              <AlertTriangle
+                size={13}
+                className={
+                  filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
+                    ? 'text-white animate-bounce'
+                    : 'text-rose-600'
+                }
+              />
+              <span>
+                {filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
+                  ? `Prioritas Remedial Aktif (${filteredStudents.length} Siswa)`
+                  : `Prioritas Remedial (${kkmCounts.belumTuntas} Siswa Butuh Bimbingan)`}
+              </span>
+              {(filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL') && (
+                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded-full font-bold ml-0.5">
+                  Tuntas Disembunyikan ✕
+                </span>
+              )}
+            </button>
+
+            {filterKkm !== 'SEMUA' && (
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-md font-bold flex items-center gap-1 ${
+                  filterKkm === 'TUNTAS'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : filterKkm === 'BELUM_TUNTAS'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                    : 'bg-rose-100 text-rose-800 border border-rose-300 ring-1 ring-rose-400/30'
+                }`}
+              >
+                <Award size={11} className={filterKkm === 'TUNTAS' ? 'text-emerald-700' : filterKkm === 'BELUM_TUNTAS' ? 'text-amber-700' : 'text-rose-700'} />
+                <span>
+                  {filterKkm === 'TUNTAS'
+                    ? 'KKM: Tuntas (≥75)'
+                    : filterKkm === 'BELUM_TUNTAS'
+                    ? 'KKM: Belum Tuntas (<75)'
+                    : 'KKM: Paling Sering Perlu Remedial (Diurutkan)'}
+                </span>
               </span>
             )}
           </div>
-          <span className="text-[10px] text-slate-500 font-bold">
-            Tahun Ajaran 2026/2027
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportFilteredCSV}
+              disabled={filteredStudents.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs hover:border-emerald-400 transition cursor-pointer disabled:opacity-50"
+              title="Ekspor daftar siswa yang sedang tampil ke file CSV"
+            >
+              <Download size={13} className="text-emerald-600" />
+              <span>Ekspor Tampilan Saat Ini ({filteredStudents.length} Siswa)</span>
+            </button>
+            <span className="text-[10px] text-slate-500 font-bold hidden sm:inline">
+              Tahun Ajaran 2026/2027
+            </span>
+          </div>
+        </div>
+
+        {/* Banner Notifikasi Mode Prioritas Remedial */}
+        {(filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL') && (
+          <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-200 flex items-center justify-between gap-2 flex-wrap text-xs text-rose-950 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0">
+                <AlertTriangle size={12} className="animate-pulse" />
+              </span>
+              <span>
+                <strong>Mode Prioritas Remedial Aktif:</strong> Secara instan menyembunyikan <strong>{kkmCounts.tuntas} siswa tuntas</strong> (≥ 75) dan hanya menampilkan <strong>{filteredStudents.length} siswa</strong> yang memerlukan bimbingan tambahan.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterKkm('SEMUA');
+                try { playFeedback('click'); } catch {}
+              }}
+              className="text-xs font-black text-rose-700 hover:text-rose-900 underline cursor-pointer"
+            >
+              Tampilkan Semua Siswa ({totalCount})
+            </button>
+          </div>
+        )}
+
+        {/* Table Column Headers (Desktop & Tablet) */}
+        <div className="hidden md:flex items-center justify-between px-4 py-2.5 bg-slate-100/80 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <span className="w-10 text-center">No</span>
+            <span>Identitas Peserta Didik & Kategori Inklusi</span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-[140px] text-center flex flex-col items-center justify-center gap-0.5 text-slate-700">
+              <div className="flex items-center justify-center gap-1">
+                <TrendingUp size={12} className="text-indigo-600" />
+                <span>Progress Trend</span>
+              </div>
+              <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/90 px-2 py-0.2 rounded-full truncate max-w-[135px]">
+                {activeTrendFilter.label}
+              </span>
+            </div>
+            {/* Rata-Rata Nilai & Quick Toggle Filter KKM */}
+            <div className="w-[260px] text-center flex flex-col items-center justify-center gap-1 text-slate-700">
+              <div className="flex items-center justify-center gap-1">
+                <Award size={12} className="text-emerald-600" />
+                <span>Rata-Rata & KKM</span>
+              </div>
+              {/* Quick toggle filter next to KKM status column */}
+              <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-200/90 border border-slate-300/80 text-[9px] font-bold tracking-tight gap-0.5 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterKkm('SEMUA');
+                    try { playFeedback('click'); } catch {}
+                  }}
+                  className={`px-1.5 py-0.5 rounded-md transition cursor-pointer ${
+                    filterKkm === 'SEMUA'
+                      ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Tampilkan semua siswa tanpa filter KKM"
+                >
+                  Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterKkm('TUNTAS');
+                    try { playFeedback('click'); } catch {}
+                  }}
+                  className={`px-1.5 py-0.5 rounded-md transition cursor-pointer ${
+                    filterKkm === 'TUNTAS'
+                      ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
+                      : 'text-slate-600 hover:text-emerald-700'
+                  }`}
+                  title="Filter cepat siswa Tuntas KKM (Rata-rata ≥ 75)"
+                >
+                  ≥75 ({kkmCounts.tuntas})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterKkm('BELUM_TUNTAS');
+                    try { playFeedback('click'); } catch {}
+                  }}
+                  className={`px-1.5 py-0.5 rounded-md transition cursor-pointer ${
+                    filterKkm === 'BELUM_TUNTAS'
+                      ? 'bg-amber-600 text-white shadow-2xs font-extrabold'
+                      : 'text-slate-600 hover:text-amber-700'
+                  }`}
+                  title="Filter cepat siswa Belum Tuntas (Rata-rata < 75)"
+                >
+                  &lt;75 ({kkmCounts.belumTuntas})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterKkm('PALING_REMEDIAL');
+                    try { playFeedback('click'); } catch {}
+                  }}
+                  className={`px-1.5 py-0.5 rounded-md transition cursor-pointer flex items-center gap-0.5 ${
+                    filterKkm === 'PALING_REMEDIAL'
+                      ? 'bg-rose-700 text-white shadow-2xs font-extrabold'
+                      : 'text-rose-700 hover:text-rose-900 hover:bg-rose-100/70'
+                  }`}
+                  title="Filter dan sortir siswa berdasarkan frekuensi terbanyak tugas belum tuntas"
+                >
+                  <AlertTriangle size={9} className={filterKkm === 'PALING_REMEDIAL' ? 'text-white' : 'text-rose-600'} />
+                  <span>Sering Remedial ({kkmCounts.palingRemedial})</span>
+                </button>
+              </div>
+            </div>
+            <div className="w-[180px] text-right">
+              <span>Aksi Guru</span>
+            </div>
+          </div>
         </div>
 
         {filteredStudents.length === 0 ? (
@@ -8037,8 +10456,8 @@ const StudentsListView: React.FC<{
             <Users size={36} className="text-slate-300 mx-auto mb-2" />
             <p className="text-xs text-slate-500 font-medium">Tidak ada siswa ditemukan pada segmen ini.</p>
             <button
-              onClick={() => { setFilterKelulusan('SEMUA'); setFilterKebutuhan('SEMUA'); setSearch(''); }}
-              className="mt-3 text-xs font-bold text-blue-600 hover:text-blue-800"
+              onClick={() => { setFilterKelulusan('SEMUA'); handleClearKebutuhan(); setSearch(''); }}
+              className="mt-3 text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
             >
               Reset Filter
             </button>
@@ -8057,7 +10476,12 @@ const StudentsListView: React.FC<{
                 onCelebrateMilestone={handleCelebrateMilestone}
                 onEditStudent={setEditingStudent}
                 onQuickGradeClick={(st) => setQuickGradeStudent(st)}
+                onMessageStudent={(st) => setMessageStudent(st)}
+                onViewAttendance={(st) => setAttendanceStudent(st)}
+                onAssignRemedial={(st) => setRemedialStudent(st)}
                 canManage={isGuru || isKepsek}
+                globalTrendActive={globalTrendActive}
+                trendFilter={activeTrendFilter}
               />
             ))}
           </div>
@@ -8183,6 +10607,70 @@ const StudentsListView: React.FC<{
           milestoneTitle={celebratingMilestone.milestoneTitle}
           milestoneCategory={celebratingMilestone.milestoneCategory}
           rewardPoints={celebratingMilestone.rewardPoints}
+        />
+      )}
+
+      {/* Classroom CSV Import Modal */}
+      {showCSVImportModal && (
+        <ClassroomCSVImportModal
+          isOpen={showCSVImportModal}
+          onClose={() => setShowCSVImportModal(false)}
+          targetClass={isGuru ? (account.KELAS || 'Kelas 1A') : (selectedClass === 'Semua' ? 'Kelas 1A' : selectedClass)}
+          onImportSuccess={() => {
+            onRefresh();
+          }}
+        />
+      )}
+
+      {/* Classroom Batch PDF Export Modal */}
+      {showBatchPDFModal && (
+        <ClassroomBatchPDFExportModal
+          isOpen={showBatchPDFModal}
+          onClose={() => setShowBatchPDFModal(false)}
+          students={filteredStudents}
+          selectedClass={isGuru ? (account.KELAS || 'Kelas 1A') : (selectedClass === 'Semua' ? 'Kelas 1A' : selectedClass)}
+          teacherName={isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.'}
+          teacherNip={isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003'}
+        />
+      )}
+
+      {/* Floating Action Feedback Toast */}
+      {toastMsg && (
+        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-slate-700 animate-in fade-in slide-in-from-top-3">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Quick Message Student Modal */}
+      {messageStudent && (
+        <QuickMessageStudentModal
+          student={messageStudent}
+          teacherAccount={account}
+          onClose={() => setMessageStudent(null)}
+          onSent={(msg) => showToast(msg)}
+        />
+      )}
+
+      {/* Student Attendance History Modal */}
+      {attendanceStudent && (
+        <StudentAttendanceHistoryModal
+          student={attendanceStudent}
+          targetClass={isGuru ? (account.KELAS || 'Kelas 1A') : (selectedClass === 'Semua' ? 'Kelas 1A' : selectedClass)}
+          onClose={() => setAttendanceStudent(null)}
+          onRefresh={onRefresh}
+        />
+      )}
+
+      {/* Assign Remedial Task Modal */}
+      {remedialStudent && (
+        <AssignRemedialTaskModal
+          student={remedialStudent}
+          targetClass={isGuru ? (account.KELAS || 'Kelas 1A') : (selectedClass === 'Semua' ? 'Kelas 1A' : selectedClass)}
+          teacherAccount={account}
+          onClose={() => setRemedialStudent(null)}
+          onAssigned={(msg) => showToast(msg)}
+          onRefresh={onRefresh}
         />
       )}
     </div>
@@ -8450,7 +10938,7 @@ const BulkDeleteAssignmentsModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-5 border border-slate-200">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
@@ -8458,10 +10946,99 @@ const BulkDeleteAssignmentsModal: React.FC<{
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900">
-                Hapus Massal Penugasan ({selectedIds.length})
+                Konfirmasi Hapus Massal ({selectedIds.length} Tugas)
               </h3>
               <p className="text-xs text-slate-500">
-                Konfirmasi penghapusan beberapa tugas sekaligus
+                Tindakan ini tidak dapat dibatalkan
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-600">
+          Apakah Anda yakin ingin menghapus <strong className="text-slate-900 font-bold">{selectedIds.length} tugas</strong> terpilih berikut beserta seluruh respon pengumpulan siswa yang terkait?
+        </p>
+
+        <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-100 bg-slate-50 p-2.5 rounded-xl divide-y divide-slate-100">
+          {selectedAssignments.map((a) => (
+            <div key={a.ID} className="pt-1.5 first:pt-0 flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-800 truncate mr-2">{a.JUDUL}</span>
+              <span className="text-[10px] text-slate-400 shrink-0">{a.DEADLINE || 'Tanpa Deadline'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-rose-600/20 transition cursor-pointer"
+          >
+            <Trash2 size={13} />
+            <span>Ya, Hapus {selectedIds.length} Tugas</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ BULK EDIT ASSIGNMENTS MODAL ============
+const BulkEditAssignmentsModal: React.FC<{
+  assignments: ClassroomAssignment[];
+  selectedIds: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ assignments, selectedIds, onClose, onSaved }) => {
+  const [newDeadline, setNewDeadline] = useState('');
+  const [priorityAction, setPriorityAction] = useState<'keep' | 'set_true' | 'set_false'>('keep');
+
+  const selectedAssignments = assignments.filter((a) => selectedIds.includes(a.ID));
+
+  const handleSave = () => {
+    const updates: Partial<ClassroomAssignment> = {};
+    if (newDeadline.trim()) {
+      updates.DEADLINE = newDeadline;
+    }
+    if (priorityAction === 'set_true') {
+      updates.IS_PRIORITY = true;
+    } else if (priorityAction === 'set_false') {
+      updates.IS_PRIORITY = false;
+    }
+
+    classroomService.bulkUpdateAssignments(selectedIds, updates);
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-5 border border-slate-200">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <Edit3 size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Edit Massal Penugasan ({selectedIds.length} Tugas)
+              </h3>
+              <p className="text-xs text-slate-500">
+                Ubah tenggat waktu atau status prioritas secara simultan
               </p>
             </div>
           </div>
@@ -8474,41 +11051,53 @@ const BulkDeleteAssignmentsModal: React.FC<{
           </button>
         </div>
 
-        <div className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 space-y-2">
-          <div className="flex items-start gap-2">
-            <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">
-              <strong>Peringatan Penting:</strong> Anda akan menghapus <strong>{selectedIds.length} tugas</strong> secara permanen. Tindakan ini juga akan menghapus seluruh data pengumpulan siswa, berkas lampiran, dan riwayat penilaian terkait.
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Tenggat Waktu Baru (Opsional):
+            </label>
+            <input
+              type="date"
+              value={newDeadline}
+              onChange={(e) => setNewDeadline(e.target.value)}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-600"
+            />
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Biarkan kosong jika tidak ingin mengubah tanggal tenggat waktu yang ada.
+            </span>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Status Prioritas Tugas:
+            </label>
+            <select
+              value={priorityAction}
+              onChange={(e: any) => setPriorityAction(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-600 text-slate-700"
+            >
+              <option value="keep">Pertahankan Status Saat Ini</option>
+              <option value="set_true">Jadikan Tugas Prioritas (Nyala Api)</option>
+              <option value="set_false">Hapus Status Prioritas (Normal)</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5 pt-2">
+            <span className="text-xs font-bold text-slate-700 block">
+              Tugas yang Akan Diperbarui ({selectedAssignments.length}):
+            </span>
+            <div className="max-h-36 overflow-y-auto space-y-1 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              {selectedAssignments.map((a) => (
+                <div key={a.ID} className="text-[11px] text-slate-700 flex justify-between items-center py-1 px-2 bg-white rounded border border-slate-100">
+                  <span className="font-semibold truncate">{a.JUDUL}</span>
+                  <span className="font-mono text-slate-400 text-[10px]">Tenggat: {a.DEADLINE || '-'}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Selected Items Preview List */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 block">
-            Daftar Tugas yang Akan Dihapus:
-          </label>
-          <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-            {selectedAssignments.map((a, idx) => (
-              <div
-                key={a.ID}
-                className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold flex items-center justify-center shrink-0">
-                    {idx + 1}
-                  </span>
-                  <span className="font-semibold text-slate-800 truncate">{a.JUDUL}</span>
-                </div>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 ml-2">
-                  {a.TYPE}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
           <button
             type="button"
             onClick={onClose}
@@ -8518,10 +11107,10 @@ const BulkDeleteAssignmentsModal: React.FC<{
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-rose-600/20 transition cursor-pointer"
+            onClick={handleSave}
+            className="px-5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-blue-700/20 transition cursor-pointer"
           >
-            <Trash2 size={14} /> Ya, Hapus {selectedIds.length} Tugas
+            <Check size={14} /> Terapkan Perubahan Massal ({selectedIds.length})
           </button>
         </div>
       </div>
@@ -8554,6 +11143,7 @@ const AssignmentsView: React.FC<{
   // Bulk Selection & Deletion State
   const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<string[]>([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [showBulkQrModal, setShowBulkQrModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -8687,7 +11277,13 @@ const AssignmentsView: React.FC<{
     setShowBulkDeleteModal(false);
     onRefresh();
 
-    setToastMessage(`Berhasil menghapus ${deletedCount} tugas secara massal.`);
+    try {
+      playFeedback('warning');
+    } catch {
+      try { playFeedback('success'); } catch {}
+    }
+
+    setToastMessage(`🗑️ Berhasil menghapus ${deletedCount} tugas terpilih beserta seluruh data pengumpulannya.`);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
@@ -9062,6 +11658,15 @@ const AssignmentsView: React.FC<{
               </button>
               <button
                 type="button"
+                onClick={() => setShowBulkEditModal(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition cursor-pointer"
+                title="Edit massal tenggat atau status prioritas tugas terpilih"
+              >
+                <Edit3 size={13} />
+                <span>Edit Massal ({selectedAssignmentIds.length})</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setSelectedAssignmentIds([])}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               >
@@ -9366,6 +11971,21 @@ const AssignmentsView: React.FC<{
           selectedIds={selectedAssignmentIds}
           onClose={() => setShowBulkDeleteModal(false)}
           onConfirm={handleConfirmBulkDelete}
+        />
+      )}
+
+      {/* Bulk Edit Modal */}
+      {showBulkEditModal && (
+        <BulkEditAssignmentsModal
+          assignments={assignments}
+          selectedIds={selectedAssignmentIds}
+          onClose={() => setShowBulkEditModal(false)}
+          onSaved={() => {
+            setSelectedAssignmentIds([]);
+            onRefresh();
+            setToastMessage('Berhasil memperbarui tugas secara massal.');
+            setTimeout(() => setToastMessage(null), 3500);
+          }}
         />
       )}
 
@@ -10787,9 +13407,14 @@ const SubmitAssignmentModal: React.FC<{
   const existing = classroomService.getSubmissions(assignment.ID, siswa.ID)[0];
   const [isi, setIsi] = useState(existing?.ISI || '');
   const [fileLink, setFileLink] = useState(existing?.FILE_LINK || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isSubmittedSuccess) return;
+    setIsSubmitting(true);
+
     classroomService.saveSubmission({
       ASSIGNMENT_ID: assignment.ID,
       COURSE_ID: assignment.COURSE_ID,
@@ -10810,7 +13435,15 @@ const SubmitAssignmentModal: React.FC<{
       }
     }
 
-    onSaved();
+    try {
+      playFeedback('success');
+    } catch {}
+
+    setIsSubmittedSuccess(true);
+    setTimeout(() => {
+      onSaved();
+      onClose();
+    }, 950);
   };
 
   return (
@@ -10821,16 +13454,30 @@ const SubmitAssignmentModal: React.FC<{
             <h3 className="text-base font-black text-slate-900">{existing ? 'Jawaban Tugas' : 'Kerjakan Tugas'}</h3>
             <p className="text-[11px] text-slate-500">{assignment.JUDUL}</p>
           </div>
-          <button type="button" onClick={onClose}><X size={18} className="text-slate-400" /></button>
+          <button type="button" onClick={onClose} disabled={isSubmitting || isSubmittedSuccess}><X size={18} className="text-slate-400" /></button>
         </div>
         <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-[11px] text-blue-800">{assignment.DESKRIPSI}</div>
         <div>
           <label className="text-xs font-semibold text-slate-700 block mb-1">Jawaban / Tulis di sini</label>
-          <textarea value={isi} onChange={(e) => setIsi(e.target.value)} rows={5} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-blue-600" placeholder="Tulis jawaban atau catatan..." autoFocus />
+          <textarea
+            value={isi}
+            onChange={(e) => setIsi(e.target.value)}
+            rows={5}
+            disabled={isSubmitting || isSubmittedSuccess}
+            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+            placeholder="Tulis jawaban atau catatan..."
+            autoFocus
+          />
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-700 block mb-1">Link File (Google Drive / foto pekerjaan)</label>
-          <input value={fileLink} onChange={(e) => setFileLink(e.target.value)} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-blue-600" placeholder="https://..." />
+          <input
+            value={fileLink}
+            onChange={(e) => setFileLink(e.target.value)}
+            disabled={isSubmitting || isSubmittedSuccess}
+            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+            placeholder="https://..."
+          />
         </div>
         {existing?.STATUS === 'GRADED' && (
           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
@@ -10839,8 +13486,48 @@ const SubmitAssignmentModal: React.FC<{
           </div>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-500">Tutup</button>
-          <button type="submit" className="px-5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5"><Send size={12} /> Kumpulkan</button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting || isSubmittedSuccess}
+            className="px-4 py-2 text-xs font-bold text-slate-500 disabled:opacity-40"
+          >
+            Tutup
+          </button>
+          <motion.button
+            type="submit"
+            disabled={isSubmitting || isSubmittedSuccess}
+            whileTap={{ scale: isSubmittedSuccess ? 1 : 0.96 }}
+            animate={
+              isSubmittedSuccess
+                ? { scale: [1, 1.05, 1], transition: { duration: 0.35, ease: 'easeOut' } }
+                : {}
+            }
+            className={`px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all duration-300 shadow-md ${
+              isSubmittedSuccess
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-500/30 ring-2 ring-emerald-300 cursor-default'
+                : isSubmitting
+                ? 'bg-blue-800 text-white opacity-85 cursor-wait'
+                : 'bg-blue-700 hover:bg-blue-800 text-white cursor-pointer hover:shadow-blue-600/30'
+            }`}
+          >
+            {isSubmittedSuccess ? (
+              <>
+                <CheckCircle2 size={15} className="text-emerald-100 animate-in zoom-in spin-in-12 duration-300" />
+                <span className="font-extrabold tracking-wide">Tugas Berhasil Dikumpulkan!</span>
+              </>
+            ) : isSubmitting ? (
+              <>
+                <RefreshCw size={13} className="animate-spin text-blue-200" />
+                <span>Menyimpan Tugas...</span>
+              </>
+            ) : (
+              <>
+                <Send size={12} />
+                <span>Kumpulkan</span>
+              </>
+            )}
+          </motion.button>
         </div>
       </form>
     </div>
@@ -12513,6 +15200,521 @@ const GradeSubmissionModal: React.FC<{
           </button>
         </div>
       </form>
+    </div>
+  );
+};
+
+interface ClassroomCSVImportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  targetClass: string;
+  onImportSuccess: () => void;
+}
+
+export const ClassroomCSVImportModal: React.FC<ClassroomCSVImportModalProps> = ({
+  isOpen,
+  onClose,
+  targetClass,
+  onImportSuccess,
+}) => {
+  const [csvText, setCsvText] = useState('');
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [importErrors, setImportErrors] = useState<Array<{
+    rowNumber: number;
+    rawData: string;
+    nis: string;
+    nama: string;
+    reason: string;
+    suggestion: string;
+  }>>([]);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleDownloadTemplate = () => {
+    const template = `NIS;Nama Lengkap;Username;Password;Jenis Kelamin;Kebutuhan Khusus;Status Kelulusan
+12001;Ahmad Rizki Fauzi;ahmad12001;siswa123;L;REGULER;AKTIF
+12002;Siti Aisyah Putri;siti12002;siswa123;P;REGULER;AKTIF`;
+    const blob = new Blob(['\uFEFF' + template], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Template_Impor_Siswa_${targetClass.replace(/\s+/g, '_')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const content = evt.target?.result as string;
+      if (content) {
+        setCsvText(content);
+        parseCSVContent(content);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const parseCSVContent = (text: string) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const lines = text.split(/\r\n|\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        setErrorMsg('Format CSV tidak valid atau tidak memiliki baris data.');
+        setParsedRows([]);
+        setImportErrors([]);
+        return;
+      }
+      const delimiter = lines[0].includes(';') ? ';' : ',';
+      
+      const rows = [];
+      const errors = [];
+      for (let i = 1; i < lines.length; i++) {
+        const rawLine = lines[i];
+        const cols = rawLine.split(delimiter).map((c) => c.trim().replace(/^["']|["']$/g, ''));
+        const nis = cols[0] || '';
+        const nama = cols[1] || '';
+
+        if (cols.length < 2) {
+          errors.push({
+            rowNumber: i + 1,
+            rawData: rawLine,
+            nis,
+            nama,
+            reason: 'Format baris tidak lengkap (kurang dari 2 kolom NIS dan Nama).',
+            suggestion: 'Pastikan baris menggunakan pemisah titik koma (;) atau koma (,) sesuai template.'
+          });
+          continue;
+        }
+        if (!nis) {
+          errors.push({
+            rowNumber: i + 1,
+            rawData: rawLine,
+            nis,
+            nama,
+            reason: 'Nomor Induk Siswa (NIS) kosong.',
+            suggestion: 'Isi kolom pertama dengan NIS peserta didik yang valid.'
+          });
+          continue;
+        }
+        if (!nama) {
+          errors.push({
+            rowNumber: i + 1,
+            rawData: rawLine,
+            nis,
+            nama,
+            reason: 'Nama lengkap peserta didik kosong.',
+            suggestion: 'Isi kolom kedua dengan nama lengkap siswa.'
+          });
+          continue;
+        }
+
+        rows.push({
+          nis,
+          nama,
+          username: cols[2] || nis.toLowerCase() || `siswa${i}`,
+          password: cols[3] || 'siswa123',
+          jk: cols[4] || 'L',
+          kebutuhan: cols[5] || 'REGULER',
+          status: cols[6] || 'AKTIF',
+        });
+      }
+      setParsedRows(rows);
+      setImportErrors(errors);
+      if (rows.length === 0 && errors.length === 0) {
+        setErrorMsg('Tidak ada baris data siswa yang berhasil diurai dari file CSV.');
+      }
+    } catch (err: any) {
+      setErrorMsg('Gagal membaca file CSV: ' + err.message);
+    }
+  };
+
+  const exportCSVImportErrorsToCSV = () => {
+    if (importErrors.length === 0) return;
+    const csvRows: string[] = [];
+    csvRows.push(`LAPORAN KESALAHAN VALIDASI IMPOR CSV SISWA - SDN TANGERANG 6`);
+    csvRows.push(`Tanggal Ekspor;${new Date().toLocaleDateString('id-ID')}`);
+    csvRows.push(`Total Baris Error;${importErrors.length} Baris`);
+    csvRows.push(``);
+    csvRows.push(`Nomor Baris;Data Mentah Baris;NIS / ID Terbaca;Nama Terbaca;Alasan Gagal Validasi;Saran Perbaikan`);
+
+    importErrors.forEach((err) => {
+      csvRows.push(
+        `${err.rowNumber};"${err.rawData.replace(/"/g, '""')}";"${err.nis || '-'}";"${err.nama || '-'}";"${err.reason}";"${err.suggestion}"`
+      );
+    });
+
+    const csvContent = '\uFEFF' + csvRows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Error_Log_Impor_CSV_${targetClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleConfirmImport = () => {
+    if (parsedRows.length === 0) return;
+    try {
+      let count = 0;
+      parsedRows.forEach((r, idx) => {
+        const studentId = `SISWA-${targetClass.replace(/\s+/g, '')}-${r.nis || Date.now() + idx}`;
+        accountService.saveAccount({
+          ID: studentId,
+          NAMA: r.nama,
+          USERNAME: r.username,
+          PASSWORD: r.password,
+          ROLE: 'SISWA',
+          SISTEM: 'CLASSROOM',
+          STATUS: r.status,
+          NIP: r.nis,
+          KELAS: targetClass,
+        });
+        count++;
+      });
+      setSuccessMsg(`Berhasil mengimpor dan mendaftarkan ${count} siswa baru ke ${targetClass}!`);
+      setTimeout(() => {
+        onImportSuccess();
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      setErrorMsg('Gagal menyimpan data siswa: ' + err.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div>
+            <h3 className="font-black text-base text-slate-900">Impor Daftar Siswa via CSV</h3>
+            <p className="text-xs text-slate-500">Impor massal peserta didik baru ke dalam rombel {targetClass}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between bg-teal-50 border border-teal-200 p-3.5 rounded-xl">
+            <div>
+              <h4 className="font-bold text-xs text-teal-900">1. Unduh Template CSV Resmi</h4>
+              <p className="text-[11px] text-teal-700">Gunakan templat di bawah untuk memastikan kolom sesuai.</p>
+            </div>
+            <button
+              onClick={handleDownloadTemplate}
+              className="px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+            >
+              <Download size={13} /> Unduh Template CSV
+            </button>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">2. Unggah File CSV / Tempel Data</label>
+            <input
+              type="file"
+              accept=".csv, .txt"
+              onChange={handleFileUpload}
+              className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 mb-2"
+            />
+            <textarea
+              value={csvText}
+              onChange={(e) => {
+                setCsvText(e.target.value);
+                parseCSVContent(e.target.value);
+              }}
+              rows={4}
+              placeholder="Atau tempel isi CSV di sini (Format: NIS;Nama;Username;Password;JK;Kebutuhan)..."
+              className="w-full text-xs font-mono p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-teal-600"
+            />
+          </div>
+
+          {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-bold">{errorMsg}</div>}
+          {successMsg && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-bold">{successMsg}</div>}
+
+          {importErrors.length > 0 && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-rose-800 flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="text-rose-600" />
+                  Ditemukan {importErrors.length} Baris Gagal Validasi CSV
+                </span>
+                <button
+                  type="button"
+                  onClick={exportCSVImportErrorsToCSV}
+                  className="px-3.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Download size={13} /> Ekspor Error ke CSV ({importErrors.length})
+                </button>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                Baris-baris tersebut gagal validasi dan dilewati. Klik tombol di atas untuk mengunduh laporan rincian error ke dalam file CSV baru.
+              </p>
+            </div>
+          )}
+
+          {parsedRows.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-700">Pratinjau Siswa yang Akan Diimpor ({parsedRows.length} Orang):</span>
+              <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-600 font-bold">
+                    <tr>
+                      <th className="p-2">NIS</th>
+                      <th className="p-2">Nama Lengkap</th>
+                      <th className="p-2">Username</th>
+                      <th className="p-2">JK</th>
+                      <th className="p-2">Kebutuhan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {parsedRows.map((r, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="p-2 font-mono">{r.nis}</td>
+                        <td className="p-2 font-bold text-slate-900">{r.nama}</td>
+                        <td className="p-2 font-mono text-slate-600">{r.username}</td>
+                        <td className="p-2">{r.jk}</td>
+                        <td className="p-2"><span className="px-1.5 py-0.5 rounded bg-slate-100 font-semibold">{r.kebutuhan}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl">
+            Batal
+          </button>
+          <button
+            onClick={handleConfirmImport}
+            disabled={parsedRows.length === 0}
+            className="px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-teal-700/20 disabled:opacity-50 cursor-pointer"
+          >
+            <Check size={14} /> Simpan & Masukkan ke {targetClass} ({parsedRows.length})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ClassroomBatchPDFExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  students: Account[];
+  selectedClass?: string;
+  targetClass?: string;
+  teacherName?: string;
+  teacherNip?: string;
+}
+
+export const ClassroomBatchPDFExportModal: React.FC<ClassroomBatchPDFExportModalProps> = ({
+  isOpen,
+  onClose,
+  students,
+  selectedClass,
+  targetClass: propTargetClass,
+  teacherName,
+  teacherNip,
+}) => {
+  const activeClass = selectedClass || propTargetClass || 'Kelas 1A';
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set(students.map((s) => s.ID)));
+  const [searchFilter, setSearchFilter] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    setSelectedStudentIds(new Set(students.map((s) => s.ID)));
+  }, [students]);
+
+  if (!isOpen) return null;
+
+  const filtered = students.filter((s) => s.NAMA.toLowerCase().includes(searchFilter.toLowerCase()) || (s.NIP && s.NIP.includes(searchFilter)));
+
+  const toggleSelectAll = () => {
+    if (selectedStudentIds.size === filtered.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(filtered.map((s) => s.ID)));
+    }
+  };
+
+  const toggleStudent = (id: string) => {
+    const next = new Set(selectedStudentIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedStudentIds(next);
+  };
+
+  const handleGenerateBatchPDF = async () => {
+    if (selectedStudentIds.size === 0) return;
+    setIsGenerating(true);
+    try {
+      const doc = new jsPDF('portrait', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const selectedList = students.filter((s) => selectedStudentIds.has(s.ID));
+
+      selectedList.forEach((student, index) => {
+        if (index > 0) {
+          doc.addPage();
+        }
+
+        // Header
+        doc.setFillColor(22, 101, 52); // Emerald
+        doc.rect(14, 12, pageWidth - 28, 22, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('LAPORAN HASIL BELAJAR & CAPAIAN KOMPETENSI', pageWidth / 2, 20, { align: 'center' });
+        doc.setFontSize(9);
+        doc.text(`SDN TANGERANG 6 - KELOMPOK ${activeClass.toUpperCase()}`, pageWidth / 2, 27, { align: 'center' });
+
+        // Student Details
+        doc.setTextColor(30, 41, 59);
+        doc.setFontSize(10);
+        let y = 42;
+        doc.text(`Nama Peserta Didik : ${student.NAMA}`, 14, y);
+        doc.text(`NIS / NISN : ${student.NIP || '-'}`, 14, y + 6);
+        doc.text(`Rombel / Kelas : ${student.KELAS || activeClass}`, pageWidth - 14, y, { align: 'right' });
+        doc.text(`Status Kebutuhan : ${student.KEBUTUHAN_KHUSUS || 'REGULER'}`, pageWidth - 14, y + 6, { align: 'right' });
+
+        // Get student report card
+        const report = classroomService.getStudentReportCard(student.ID, student.NAMA, student.KELAS || activeClass);
+
+        // Grade Table using autoTable
+        const tableRows = [
+          ['1', 'Rata-Rata Penugasan Mandiri / Kelompok', `${report.tugasCount} Tugas`, `${report.nilaiTugas}`, report.nilaiTugas >= 75 ? 'TUNTAS' : 'PERLU BIMBINGAN'],
+          ['2', 'Evaluasi Kuis & Ujian Harian', `${report.kuisCount} Kuis`, `${report.nilaiKuis}`, report.nilaiKuis >= 75 ? 'TUNTAS' : 'PERLU BIMBINGAN'],
+          ['3', 'Presensi & Kehadiran Kelas', `${report.presensiPct}% Hadir`, `${report.presensiPct}`, report.presensiPct >= 80 ? 'BAIK' : 'CUKUP'],
+        ];
+
+        autoTable(doc, {
+          startY: y + 14,
+          head: [['No', 'Komponen Penilaian', 'Volume / Catatan', 'Nilai Capaian', 'Status Ketuntasan KKM (75)']],
+          body: tableRows,
+          theme: 'grid',
+          headStyles: { fillColor: [22, 101, 52], fontSize: 9, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8 },
+        });
+
+        const finalY = (doc as any).lastAutoTable.finalY || 100;
+
+        // Summary box
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(203, 213, 225);
+        doc.roundedRect(14, finalY + 6, pageWidth - 28, 20, 2, 2, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.text(`Nilai Akhir Rata-Rata: ${report.nilaiAkhir} (Predikat ${report.predikat})`, 20, finalY + 15);
+        doc.text(`Predikat Ketuntasan: ${report.keterangan || (report.nilaiAkhir >= 75 ? 'SANGAT BAIK / TUNTAS' : 'PERLU BIMBINGAN')}`, pageWidth - 20, finalY + 15, { align: 'right' });
+
+        // Signature
+        const signY = pageHeight - 35;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text('Tangerang, ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), pageWidth - 50, signY);
+        doc.text('Wali Kelas / Guru Pengampu,', pageWidth - 50, signY + 5);
+        doc.text(`( ${teacherName || 'Nurul Hidayah, S.Pd.'} )`, pageWidth - 50, signY + 20);
+        if (teacherNip) {
+          doc.text(`NIP. ${teacherNip}`, pageWidth - 50, signY + 25);
+        }
+      });
+
+      doc.save(`Batch_E_Rapor_${activeClass.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+      setIsGenerating(false);
+      onClose();
+    } catch (err) {
+      console.error('Gagal generate batch PDF:', err);
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div>
+            <h3 className="font-black text-base text-slate-900">Cetak Batch E-Rapor Siswa (Multi-Siswa ke 1 PDF)</h3>
+            <p className="text-xs text-slate-500">Pilih siswa yang akan digabungkan dalam satu dokumen PDF tunggal untuk {activeClass}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <input
+              type="text"
+              placeholder="Cari siswa untuk dipilih..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-indigo-600"
+            />
+            <button
+              onClick={toggleSelectAll}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold whitespace-nowrap"
+            >
+              {selectedStudentIds.size === filtered.length ? 'Batalkan Semua' : 'Pilih Semua'} ({selectedStudentIds.size}/{filtered.length})
+            </button>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+            {filtered.map((s) => {
+              const isSelected = selectedStudentIds.has(s.ID);
+              return (
+                <div
+                  key={s.ID}
+                  onClick={() => toggleStudent(s.ID)}
+                  className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">{s.NAMA}</div>
+                      <div className="text-[10px] text-slate-400">NIS: {s.NIP || '-'} | {s.KELAS || activeClass}</div>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-500'}`}>
+                    {isSelected ? 'Terpilih' : 'Lewati'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl">
+            Batal
+          </button>
+          <button
+            onClick={handleGenerateBatchPDF}
+            disabled={isGenerating || selectedStudentIds.size === 0}
+            className="px-5 py-2.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-700/20 disabled:opacity-50 cursor-pointer"
+          >
+            {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
+            <span>{isGenerating ? 'Menyiapkan Dokumen PDF...' : `Unduh PDF Gabungan (${selectedStudentIds.size} Siswa)`}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

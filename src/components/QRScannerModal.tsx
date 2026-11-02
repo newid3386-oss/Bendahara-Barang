@@ -51,6 +51,17 @@ import {
   Printer,
   CheckSquare,
   Square,
+  FileSpreadsheet,
+  Ruler,
+  Maximize2,
+  ChevronLeft,
+  ChevronRight,
+  Lightbulb,
+  Focus,
+  ShieldCheck,
+  Copy,
+  Share2,
+  Grid,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../services/localStorageService';
@@ -174,6 +185,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [successInfo, setSuccessInfo] = useState<ScanSuccessInfo | null>(null);
   const [showGuide, setShowGuide] = useState(true);
+  const [activeGuideStep, setActiveGuideStep] = useState<1 | 2 | 3>(1);
   const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
   const [recentScansFilter, setRecentScansFilter] = useState<'ALL' | 'STUDENT' | 'ASSIGNMENT' | 'ASSET'>('ALL');
   const [selectedScanIds, setSelectedScanIds] = useState<Set<string>>(new Set());
@@ -268,6 +280,26 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     if (nextState) {
       playFeedback('success');
     }
+  };
+
+  // Real-time Camera Alignment Grid Overlay State
+  const [showCameraGrid, setShowCameraGrid] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sdn6_camera_grid_overlay') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleCameraGrid = () => {
+    setShowCameraGrid((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sdn6_camera_grid_overlay', String(next));
+      } catch {}
+      playFeedback('click');
+      return next;
+    });
   };
 
   // Quick Actions Overlay State
@@ -552,7 +584,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }
   }, []);
 
-  // Save item to recent scans (max 5 items)
+  // Track newly scanned item ID for 2-second subtle pulsing highlight confirmation
+  const [newlyScannedId, setNewlyScannedId] = useState<string | null>(null);
+  const newlyScannedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (newlyScannedTimeoutRef.current) {
+        clearTimeout(newlyScannedTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Save item to recent scans (max 100 items)
   const addRecentScan = useCallback((item: Omit<RecentScanItem, 'timestamp'>) => {
     try {
       const newItem: RecentScanItem = {
@@ -565,6 +609,16 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         localStorage.setItem(RECENT_SCANS_STORAGE_KEY, JSON.stringify(updated));
         return updated;
       });
+
+      // Highlight the newly added item with a subtle pulsing effect for 2 seconds
+      setNewlyScannedId(newItem.id);
+      if (newlyScannedTimeoutRef.current) {
+        clearTimeout(newlyScannedTimeoutRef.current);
+      }
+      newlyScannedTimeoutRef.current = setTimeout(() => {
+        setNewlyScannedId(null);
+      }, 2000);
+
       try {
         window.dispatchEvent(new CustomEvent('qr_scan_success', { detail: newItem }));
       } catch {}
@@ -577,11 +631,110 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     localStorage.removeItem(RECENT_SCANS_STORAGE_KEY);
     setRecentScans([]);
     setSelectedScanIds(new Set());
+    setNewlyScannedId(null);
   };
 
   const [undoToast, setUndoToast] = useState<string | null>(null);
   const [dismissedBatchFlyout, setDismissedBatchFlyout] = useState<boolean>(false);
   const [showModalExportClearConfirm, setShowModalExportClearConfirm] = useState<boolean>(false);
+  const [quickSummaryModalOpen, setQuickSummaryModalOpen] = useState<boolean>(false);
+  const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
+
+  // Generate concise text-based overview of current session attendance statistics
+  const generateQuickSummaryText = useCallback((): string => {
+    const studentScans = recentScans.filter((s) => s.type === 'STUDENT');
+    const assignmentScans = recentScans.filter((s) => s.type === 'ASSIGNMENT');
+    const assetScans = recentScans.filter((s) => s.type === 'ASSET');
+    const otherScans = recentScans.filter((s) => s.type === 'OTHER');
+
+    const dateStr = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    let timeRange = '-';
+    if (recentScans.length > 0) {
+      const timestamps = recentScans.map((s) => s.timestamp);
+      const minTime = new Date(Math.min(...timestamps)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const maxTime = new Date(Math.max(...timestamps)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      timeRange = minTime === maxTime ? `${minTime} WIB` : `${minTime} - ${maxTime} WIB`;
+    }
+
+    const lines: string[] = [
+      '📋 *RINGKASAN PRESENSI & SCANNER SESI INI*',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🏫 *SDN Tangerang 6*',
+      `📅 *Tanggal:* ${dateStr}`,
+      `⏰ *Waktu Sesi:* ${timeRange}`,
+      `🎯 *Kelas / Rombel:* ${currentClass || 'Umum / Semua Kelas'}`,
+      `👨‍🏫 *Petugas / Guru:* ${teacherAccount?.NAMA || 'Guru Piket / Operator'}`,
+      '',
+      '📊 *STATISTIK SESI:*',
+      `• Presensi Siswa Hadir: ${studentScans.length} Siswa`,
+      `• Submisi Tugas: ${assignmentScans.length} Tugas`,
+      `• Verifikasi Aset: ${assetScans.length} Aset`,
+      ...(otherScans.length > 0 ? [`• Pemindaian Lainnya: ${otherScans.length} Item`] : []),
+      `• *Total Pemindaian Terverifikasi:* ${recentScans.length} Item`,
+      '',
+    ];
+
+    if (studentScans.length > 0) {
+      lines.push('👥 *DAFTAR SISWA HADIR:*');
+      const maxPreview = 30;
+      studentScans.slice(0, maxPreview).forEach((item, idx) => {
+        const timeFormatted = new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        lines.push(`${idx + 1}. ${item.title} (${item.subtitle || item.code}) - ${timeFormatted} WIB`);
+      });
+      if (studentScans.length > maxPreview) {
+        lines.push(`... dan ${studentScans.length - maxPreview} siswa lainnya.`);
+      }
+      lines.push('');
+    }
+
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('Rekap otomatis dari Pemindai Presensi QR SDN Tangerang 6');
+
+    return lines.join('\n');
+  }, [recentScans, currentClass, teacherAccount]);
+
+  const handleCopyQuickSummary = useCallback(async (openModalAfterCopy = false) => {
+    if (recentScans.length === 0) {
+      playFeedback('error');
+      setUndoToast('Belum ada riwayat pindaian di sesi ini untuk diringkas.');
+      setTimeout(() => setUndoToast(null), 3000);
+      return;
+    }
+
+    const summaryText = generateQuickSummaryText();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(summaryText);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = summaryText;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+    } catch (err) {
+      console.warn('Clipboard write failed, displaying modal instead', err);
+    }
+
+    playFeedback('success');
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 3000);
+    setUndoToast('📋 Ringkasan presensi berhasil disalin ke clipboard!');
+    setTimeout(() => setUndoToast(null), 3500);
+
+    if (openModalAfterCopy) {
+      setQuickSummaryModalOpen(true);
+    }
+  }, [recentScans, generateQuickSummaryText]);
 
   const clearLastScannedItem = () => {
     if (recentScans.length === 0) return;
@@ -632,39 +785,83 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     playFeedback('click');
   };
 
-  const exportHistoryToCSV = () => {
-    if (recentScans.length === 0) return;
+  const handleDownloadScanLogs = () => {
+    if (recentScans.length === 0) {
+      playFeedback('error');
+      setUndoToast('Belum ada log pindaian sesi ini untuk diunduh.');
+      setTimeout(() => setUndoToast(null), 3000);
+      return;
+    }
     
-    // Define CSV Headers in Indonesian/English
-    const headers = ['ID', 'Tipe', 'Kode/Payload', 'Nama/Judul', 'Detail/Subtitel', 'Waktu Pindai'];
+    // Define CSV Headers in Indonesian formatted specifically for teacher attendance cross-referencing
+    const headers = [
+      'No',
+      'ID Log Scan',
+      'Tanggal Scan',
+      'Waktu Scan (WIB)',
+      'Kategori Scan',
+      'Nama Siswa / Subjek',
+      'NIS / Kode Identitas',
+      'Rombel / Kelas / Rincian',
+      'Status Presensi & Verifikasi',
+      'Raw QR Payload'
+    ];
     
     // Format rows
-    const rows = recentScans.map(item => {
-      const timeStr = new Date(item.timestamp).toLocaleString('id-ID');
+    const rows = recentScans.map((item, idx) => {
+      const dateObj = new Date(item.timestamp);
+      const dateStr = dateObj.toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const timeStr = dateObj.toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      const categoryLabel = 
+        item.type === 'STUDENT' ? 'PRESENSI SISWA (ATTENDANCE)' :
+        item.type === 'ASSIGNMENT' ? 'SUBMISI TUGAS (ASSIGNMENT)' :
+        item.type === 'ASSET' ? 'VERIFIKASI ASET (ASSET)' : 'LAINNYA';
+
+      const statusVerification = item.type === 'STUDENT' ? 'TERVERIFIKASI HADIR' : 'SUKSES TERVERIFIKASI';
+
       return [
+        idx + 1,
         `"${item.id.replace(/"/g, '""')}"`,
-        `"${item.type.replace(/"/g, '""')}"`,
-        `"${item.code.replace(/"/g, '""')}"`,
+        `"${dateStr}"`,
+        `"${timeStr}"`,
+        `"${categoryLabel}"`,
         `"${item.title.replace(/"/g, '""')}"`,
+        `"${item.code.replace(/"/g, '""')}"`,
         `"${(item.subtitle || '').replace(/"/g, '""')}"`,
-        `"${timeStr}"`
+        `"${statusVerification}"`,
+        `"${(item.rawPayload || item.code).replace(/"/g, '""')}"`
       ];
     });
     
-    // Combine Headers and Rows
-    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    // Combine Headers and Rows with UTF-8 BOM for Excel compatibility
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\r\n');
     
     // Create Blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `riwayat_pemindaian_sdn6_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `log_presensi_scan_sdn6_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    playFeedback('success');
+    setUndoToast(`Log pindaian (${recentScans.length} item) berhasil diekspor ke CSV untuk kroscek presensi!`);
+    setTimeout(() => setUndoToast(null), 3500);
   };
+
+  const exportHistoryToCSV = handleDownloadScanLogs;
 
   const exportFailedScansToCSV = () => {
     if (scanFailures.length === 0) return;
@@ -1304,6 +1501,29 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             )}
             <button
               type="button"
+              onClick={handleDownloadScanLogs}
+              className="px-2 sm:px-2.5 py-1 rounded-xl bg-teal-800/80 hover:bg-teal-700 text-teal-100 hover:text-white transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ring-1 ring-teal-600/50 shadow-xs"
+              title={`Download Scan Logs (${recentScans.length} item tersimpan untuk kroscek presensi manual)`}
+            >
+              <Download size={13} className="text-teal-300" />
+              <span className="hidden md:inline">Download Logs</span>
+              {recentScans.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-teal-950 text-[10px] font-mono font-bold text-teal-200">
+                  {recentScans.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCopyQuickSummary(true)}
+              className="px-2 sm:px-2.5 py-1 rounded-xl bg-indigo-800/80 hover:bg-indigo-700 text-indigo-100 hover:text-white transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ring-1 ring-indigo-600/50 shadow-xs"
+              title="Quick Summary: Salin ringkasan statistik kehadiran sesi ini ke clipboard"
+            >
+              <Copy size={13} className="text-indigo-300" />
+              <span className="hidden md:inline">Quick Summary</span>
+            </button>
+            <button
+              type="button"
               onClick={toggleSoundFeedback}
               className={`px-2 sm:px-2.5 py-1 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ${
                 soundFeedbackEnabled
@@ -1386,23 +1606,36 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
         {/* Scrollable Body */}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
-          {/* STEP-BY-STEP INSTRUCTIONAL GUIDE FOR STUDENTS */}
-          <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 space-y-2.5 transition-all">
+          {/* INTERACTIVE SETUP GUIDE SECTION (3-STEP VISUAL TUTORIAL) */}
+          <div className="rounded-2xl border border-emerald-300 bg-gradient-to-b from-emerald-50/90 via-white to-emerald-50/40 p-3.5 sm:p-4 space-y-3.5 shadow-xs transition-all">
+            {/* Guide Header & Toggle */}
             <div
               className="flex items-center justify-between cursor-pointer select-none"
               onClick={() => setShowGuide((prev) => !prev)}
             >
-              <div className="flex items-center gap-2">
-                <HelpCircle size={15} className="text-emerald-700 shrink-0" />
-                <span className="text-xs font-black text-emerald-950">
-                  Panduan Cara Scan untuk Siswa & Guru
-                </span>
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles size={15} className="animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-emerald-950">
+                      Interactive Setup Guide
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase tracking-wider border border-emerald-200">
+                      3 Langkah Cepat
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    Tutorial visual interaktif posisi QR, jarak optimal, & pencahayaan anti-silau
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                className="text-emerald-700 hover:text-emerald-900 text-xs font-bold flex items-center gap-0.5"
+                className="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
               >
-                <span>{showGuide ? 'Sembunyikan' : 'Lihat Panduan'}</span>
+                <span>{showGuide ? 'Tutup Tutorial' : 'Buka Tutorial'}</span>
                 {showGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
             </div>
@@ -1413,44 +1646,303 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 overflow-hidden"
+                  transition={{ duration: 0.25 }}
+                  className="space-y-3 overflow-hidden pt-1"
                 >
-                  {/* Step 1 */}
-                  <div className="p-2.5 bg-white rounded-xl border border-emerald-200/60 flex items-start gap-2 text-left shadow-2xs">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-black text-[11px]">
-                      <Camera size={13} />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-[11px] font-bold text-slate-800 leading-tight">1. Buka Kamera</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        Klik tombol kamera dan izinkan akses di peramban.
-                      </p>
-                    </div>
+                  {/* Step Selector Tabs */}
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-emerald-100/70 rounded-xl border border-emerald-200/80">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveGuideStep(1);
+                        playFeedback('click');
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        activeGuideStep === 1
+                          ? 'bg-white text-emerald-950 shadow-xs border border-emerald-200 font-black'
+                          : 'text-emerald-800 hover:bg-emerald-200/60'
+                      }`}
+                    >
+                      <ScanLine size={13} className={activeGuideStep === 1 ? 'text-emerald-600' : 'text-emerald-700'} />
+                      <span className="truncate">1. Penjajaran (Align)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveGuideStep(2);
+                        playFeedback('click');
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        activeGuideStep === 2
+                          ? 'bg-white text-emerald-950 shadow-xs border border-emerald-200 font-black'
+                          : 'text-emerald-800 hover:bg-emerald-200/60'
+                      }`}
+                    >
+                      <Ruler size={13} className={activeGuideStep === 2 ? 'text-emerald-600' : 'text-emerald-700'} />
+                      <span className="truncate">2. Jarak (Distance)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveGuideStep(3);
+                        playFeedback('click');
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        activeGuideStep === 3
+                          ? 'bg-white text-emerald-950 shadow-xs border border-emerald-200 font-black'
+                          : 'text-emerald-800 hover:bg-emerald-200/60'
+                      }`}
+                    >
+                      <SunMedium size={13} className={activeGuideStep === 3 ? 'text-emerald-600' : 'text-emerald-700'} />
+                      <span className="truncate">3. Pencahayaan (Light)</span>
+                    </button>
                   </div>
 
-                  {/* Step 2 */}
-                  <div className="p-2.5 bg-white rounded-xl border border-emerald-200/60 flex items-start gap-2 text-left shadow-2xs">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-black text-[11px]">
-                      <ScanLine size={13} />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-[11px] font-bold text-slate-800 leading-tight">2. Posisikan QR</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        Arahkan kotak bidik hijau sejajar pada jarak 15–20 cm.
-                      </p>
-                    </div>
-                  </div>
+                  {/* Active Step Content Card */}
+                  <div className="bg-white rounded-2xl border border-emerald-200/90 p-4 space-y-3.5 shadow-2xs">
+                    {/* STEP 1: ALIGNMENT & FRAMING */}
+                    {activeGuideStep === 1 && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">
+                              1
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800">
+                              Penjajaran Sudut 90° & Framing Penuh di Kotak Bidik
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            Paling Krusial
+                          </span>
+                        </div>
 
-                  {/* Step 3 */}
-                  <div className="p-2.5 bg-white rounded-xl border border-emerald-200/60 flex items-start gap-2 text-left shadow-2xs">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-black text-[11px]">
-                      <SunMedium size={13} />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-[11px] font-bold text-slate-800 leading-tight">3. Cahaya Terang</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        Pastikan cahaya cukup tanpa silau agar terbaca otomatis.
-                      </p>
+                        {/* Visual Alignment Mockup */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          {/* Visual Diagram Box */}
+                          <div className="bg-slate-950 rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden aspect-video sm:aspect-auto sm:h-36 border border-slate-800">
+                            {/* Scanning Line Animation */}
+                            <motion.div
+                              animate={{ y: [-40, 40, -40] }}
+                              transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
+                              className="absolute w-32 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent z-10 shadow-[0_0_8px_#34d399]"
+                            />
+                            {/* Viewfinder Corner Brackets */}
+                            <div className="w-24 h-24 border-2 border-emerald-400/90 rounded-lg relative flex items-center justify-center bg-emerald-500/5">
+                              <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-emerald-400" />
+                              <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-emerald-400" />
+                              <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-emerald-400" />
+                              <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-emerald-400" />
+                              <QrCode size={40} className="text-white/80" />
+                            </div>
+                            <span className="mt-2 text-[10px] font-mono text-emerald-400 flex items-center gap-1 font-bold">
+                              <ShieldCheck size={11} /> Sudut 90° Sejajar (Simetris)
+                            </span>
+                          </div>
+
+                          {/* Explanation and Comparison */}
+                          <div className="space-y-2 text-left">
+                            <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 space-y-1">
+                              <div className="flex items-center gap-1.5 text-emerald-900 font-extrabold text-[11px]">
+                                <Check size={13} className="text-emerald-600" />
+                                <span>Posisi Benar (Tegak Lurus 90°):</span>
+                              </div>
+                              <p className="text-[10px] text-emerald-800 leading-relaxed">
+                                Posisikan kamera sejajar bidang kartu. Pastikan ke-4 kotak sudut barcode terlihat utuh dan tidak terhalang jari.
+                              </p>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200/80 space-y-1">
+                              <div className="flex items-center gap-1.5 text-rose-900 font-extrabold text-[11px]">
+                                <X size={13} className="text-rose-600" />
+                                <span>Hindari Sudut Miring (&gt;30°):</span>
+                              </div>
+                              <p className="text-[10px] text-rose-800 leading-relaxed">
+                                Kemiringan tajam menyebabkan distorsi perspektif trapesium sehingga algoritma pembacaan gagal mengunci matriks.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* STEP 2: OPTIMAL DISTANCE */}
+                    {activeGuideStep === 2 && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-200">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">
+                              2
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800">
+                              Jarak Optimal 15 – 25 cm (Aturan Sejengkal Tangan)
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                            Fokus Tajam
+                          </span>
+                        </div>
+
+                        {/* Interactive Distance Meter Scale */}
+                        <div className="bg-slate-900 rounded-xl p-4 text-white space-y-3 border border-slate-800">
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-slate-400">Skala Jarak Kamera ke Kartu QR</span>
+                            <span className="text-emerald-400 font-mono font-black">Rekomendasi: 15–25 cm</span>
+                          </div>
+
+                          {/* Multi-segment Distance Bar */}
+                          <div className="grid grid-cols-3 gap-1.5 text-center">
+                            <div className="p-2 rounded-lg bg-rose-950/80 border border-rose-600/40 text-rose-300">
+                              <p className="text-[10px] font-mono font-bold">&lt; 10 cm</p>
+                              <p className="text-[9px] text-rose-400 font-bold mt-0.5">Terlalu Dekat (Blur ✗)</p>
+                            </div>
+                            <div className="p-2 rounded-lg bg-emerald-600/90 border border-emerald-400 text-white shadow-md shadow-emerald-500/30 scale-105 z-10">
+                              <p className="text-[10px] font-mono font-black text-emerald-100">15 – 25 cm</p>
+                              <p className="text-[9px] font-extrabold text-white mt-0.5">Jarak Ideal (Tajam ✓)</p>
+                            </div>
+                            <div className="p-2 rounded-lg bg-amber-950/80 border border-amber-600/40 text-amber-300">
+                              <p className="text-[10px] font-mono font-bold">&gt; 35 cm</p>
+                              <p className="text-[9px] text-amber-400 font-bold mt-0.5">Terlalu Jauh (Kecil ✗)</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1 text-[10px] text-slate-300">
+                            <Lightbulb size={13} className="text-amber-400 shrink-0" />
+                            <span>
+                              <strong>Aturan Sejengkal:</strong> Rentangkan jempol ke kelingking (~20 cm) sebagai patokan jarak tercepat agar autofokus kamera langsung terkunci.
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Practical Tips */}
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-[10px] text-slate-600 space-y-1">
+                          <p>
+                            • <strong>Kamera Macet Fokus?</strong> Jangan goyang-goyangkan kartu. Cukup tahan 1 detik, atau mundurkan sedikit lalu dekatkan kembali secara perlahan.
+                          </p>
+                          <p>
+                            • <strong>Resolusi Rendah:</strong> Pada webcam laptop dengan resolusi VGA, pertahankan kartu mengisi 60-70% area kotak bidik.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* STEP 3: LIGHTING & ANTI-GLARE */}
+                    {activeGuideStep === 3 && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-200">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">
+                              3
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800">
+                              Pencahayaan Merata & Solusi Anti-Silau Laminasi
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            Bebas Refleksi
+                          </span>
+                        </div>
+
+                        {/* Lighting Comparison Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-emerald-950 font-extrabold text-[11px]">
+                              <SunMedium size={14} className="text-emerald-600" />
+                              <span>Cahaya Merata (Ideal ✓):</span>
+                            </div>
+                            <p className="text-[10px] text-emerald-800 leading-relaxed">
+                              Gunakan penerangan lampu ruangan kelas atau dekat jendela. Kontras pola hitam dan latar putih kartu terlihat tegas dan pekat.
+                            </p>
+                          </div>
+
+                          <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/80 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-amber-950 font-extrabold text-[11px]">
+                              <AlertCircle size={14} className="text-amber-600" />
+                              <span>Silau Kartu Laminasi (Hindari ✗):</span>
+                            </div>
+                            <p className="text-[10px] text-amber-800 leading-relaxed">
+                              Plastik laminasi mika kartu siswa memantulkan titik lampu plafon langsung ke kamera, menutupi pola titik QR hingga terlihat putih polos.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Pro-Tip Box for Glare */}
+                        <div className="p-3 bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl border border-teal-200 text-[10px] text-teal-900 space-y-1">
+                          <div className="flex items-center gap-1.5 font-black text-teal-950 text-[11px]">
+                            <Sparkles size={13} className="text-teal-600" />
+                            <span>Trik Cepat Mengatasi Silau Laminasi:</span>
+                          </div>
+                          <p className="leading-relaxed">
+                            Miringkan kartu sedikit saja (sekitar <strong>5° – 10°</strong>) agar pantulan lampu teralihkan keluar dari lensa kamera, sambil menjaga bentuk QR tetap persegi.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step Navigation Bar & Next / Prev Buttons */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        disabled={activeGuideStep === 1}
+                        onClick={() => {
+                          setActiveGuideStep((prev) => Math.max(1, prev - 1) as 1 | 2 | 3);
+                          playFeedback('click');
+                        }}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
+                      >
+                        <ChevronLeft size={13} />
+                        <span>Sebelumnya</span>
+                      </button>
+
+                      {/* Step Indicator Bullets */}
+                      <div className="flex items-center gap-1.5">
+                        {([1, 2, 3] as const).map((step) => (
+                          <button
+                            key={step}
+                            type="button"
+                            onClick={() => {
+                              setActiveGuideStep(step);
+                              playFeedback('click');
+                            }}
+                            className={`transition-all rounded-full cursor-pointer ${
+                              activeGuideStep === step
+                                ? 'w-5 h-2 bg-emerald-600'
+                                : 'w-2 h-2 bg-slate-300 hover:bg-slate-400'
+                            }`}
+                            title={`Langkah ${step}`}
+                          />
+                        ))}
+                        <span className="text-[10px] font-bold text-slate-500 ml-1">
+                          {activeGuideStep}/3
+                        </span>
+                      </div>
+
+                      {activeGuideStep < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveGuideStep((prev) => Math.min(3, prev + 1) as 1 | 2 | 3);
+                            playFeedback('click');
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-1 cursor-pointer shadow-xs transition"
+                        >
+                          <span>Langkah Berikutnya</span>
+                          <ChevronRight size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isCameraActive) startCamera();
+                            setShowGuide(false);
+                            playFeedback('success');
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        >
+                          <Check size={13} strokeWidth={2.5} />
+                          <span>Siap Pindai Sekarang!</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -1611,9 +2103,59 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   </div>
                 )}
 
+                {/* Real-time Camera Alignment Grid Overlay (Rule-of-Thirds & Viewport Crosshairs) */}
+                {showCameraGrid && !successInfo && (
+                  <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                    {/* 3x3 Rule-of-Thirds Grid Lines */}
+                    <div className="w-full h-full grid grid-cols-3 grid-rows-3">
+                      {Array.from({ length: 9 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="border border-emerald-400/20 relative"
+                        >
+                          {/* Intersection alignment markers at rule-of-thirds nodes */}
+                          {(i === 0 || i === 1 || i === 3 || i === 4) && (
+                            <div className="absolute -bottom-1 -right-1 w-2 h-2 rounded-full bg-emerald-400/60 shadow-[0_0_6px_rgba(52,211,153,0.9)] z-10" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Viewport Center Subtle Crosshair Guide */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-60">
+                      <div className="relative w-10 h-10 flex items-center justify-center">
+                        <div className="absolute w-6 h-[1px] bg-emerald-400/80 shadow-[0_0_4px_#34d399]" />
+                        <div className="absolute h-6 w-[1px] bg-emerald-400/80 shadow-[0_0_4px_#34d399]" />
+                        <div className="w-2 h-2 rounded-full border border-emerald-300/80" />
+                      </div>
+                    </div>
+
+                    {/* Real-time Grid Status Indicator */}
+                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-xs px-2.5 py-0.5 rounded-full border border-emerald-500/40 text-[9px] font-mono font-bold text-emerald-300 shadow-md">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>GRID 3x3 AKTIF</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Real-Time Camera Grid Toggle Button (Top Right of Viewport) */}
+                <button
+                  type="button"
+                  onClick={toggleCameraGrid}
+                  className={`absolute top-2.5 right-2.5 z-20 px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1.5 transition cursor-pointer shadow-lg backdrop-blur-md border ${
+                    showCameraGrid
+                      ? 'bg-emerald-600/90 hover:bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/30 ring-1 ring-emerald-300/40'
+                      : 'bg-slate-950/80 hover:bg-slate-900 text-slate-300 border-slate-700'
+                  }`}
+                  title={showCameraGrid ? 'Nonaktifkan Grid Kamera' : 'Aktifkan Grid Kamera Real-Time'}
+                >
+                  <Grid size={12} className={showCameraGrid ? 'text-emerald-100' : 'text-slate-400'} />
+                  <span>{showCameraGrid ? 'Grid On' : 'Grid Off'}</span>
+                </button>
+
                 {/* Reticle Overlay */}
                 {!successInfo && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-15">
                     <div className="w-48 h-48 sm:w-56 sm:h-56 border-2 border-emerald-400/80 rounded-2xl relative shadow-lg shadow-emerald-500/20">
                       {/* Scanning laser line effect */}
                       <div className="absolute left-1 right-1 h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-bounce" />
@@ -1623,6 +2165,16 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                       <div className="absolute top-0 right-0 w-5 h-5 border-t-4 border-r-4 border-emerald-300 -mt-1 -mr-1 rounded-tr-lg" />
                       <div className="absolute bottom-0 left-0 w-5 h-5 border-b-4 border-l-4 border-emerald-300 -mb-1 -ml-1 rounded-bl-lg" />
                       <div className="absolute bottom-0 right-0 w-5 h-5 border-b-4 border-r-4 border-emerald-300 -mb-1 -mr-1 rounded-br-lg" />
+
+                      {/* Internal Grid Alignment Crosshair inside Reticle Target Box */}
+                      {showCameraGrid && (
+                        <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 opacity-35 pointer-events-none">
+                          <div className="border-r border-b border-dashed border-emerald-300/70" />
+                          <div className="border-b border-dashed border-emerald-300/70" />
+                          <div className="border-r border-dashed border-emerald-300/70" />
+                          <div />
+                        </div>
+                      )}
 
                       <div className="absolute -bottom-7 left-0 right-0 text-center">
                         <span className="text-[10px] font-bold text-emerald-300 bg-slate-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
@@ -2159,13 +2711,13 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             )}
           </div>
 
-          {/* Camera Controls & File Upload */}
-          <div className="flex gap-2">
+          {/* Camera Controls & File Upload & Download Scan Logs Button */}
+          <div className="flex flex-wrap gap-2">
             {!isCameraActive ? (
               <button
                 type="button"
                 onClick={startCamera}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer min-h-[42px]"
+                className="flex-1 min-w-[170px] py-2.5 px-4 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer min-h-[42px]"
               >
                 <Camera size={16} className="text-emerald-300" />
                 <span>Nyalakan Kamera Scanner</span>
@@ -2174,13 +2726,29 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               <button
                 type="button"
                 onClick={stopCamera}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer min-h-[42px]"
+                className="flex-1 min-w-[170px] py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer min-h-[42px]"
               >
                 <span>Matikan Kamera</span>
               </button>
             )}
 
-            <label className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-slate-200 shrink-0 min-h-[42px]">
+            {isCameraActive && (
+              <button
+                type="button"
+                onClick={toggleCameraGrid}
+                className={`py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border shrink-0 min-h-[42px] ${
+                  showCameraGrid
+                    ? 'bg-emerald-950 text-emerald-300 border-emerald-500/70 hover:bg-emerald-900 shadow-xs'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                }`}
+                title="Toggle Real-Time Camera Grid Overlay: Membantu penjajaran posisi lurus QR badge siswa"
+              >
+                <Grid size={15} className={showCameraGrid ? 'text-emerald-300' : 'text-slate-400'} />
+                <span>Grid {showCameraGrid ? 'Aktif' : 'Nonaktif'}</span>
+              </button>
+            )}
+
+            <label className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-slate-200 shrink-0 min-h-[42px]">
               <Upload size={15} className="text-slate-600" />
               <span>Unggah Foto</span>
               <input
@@ -2191,6 +2759,31 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                 className="hidden"
               />
             </label>
+
+            <button
+              type="button"
+              onClick={handleDownloadScanLogs}
+              className="py-2.5 px-3.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-teal-600 shadow-xs shrink-0 min-h-[42px]"
+              title="Download Scan Logs: Ekspor seluruh hasil scan sesi ini ke file CSV untuk kroscek dan rekapitulasi data presensi siswa secara manual"
+            >
+              <FileSpreadsheet size={15} className="text-teal-200" />
+              <span>Download Scan Logs</span>
+              {recentScans.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-teal-900 text-[10px] font-mono font-bold text-teal-200 ml-0.5">
+                  {recentScans.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleCopyQuickSummary(true)}
+              className="py-2.5 px-3.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-indigo-600 shadow-xs shrink-0 min-h-[42px]"
+              title="Quick Summary: Hasilkan ringkasan ringkas presensi sesi ini dan salin ke papan klip (clipboard)"
+            >
+              <Copy size={15} className="text-indigo-200" />
+              <span>Quick Summary</span>
+            </button>
           </div>
 
           {/* UNDO TOAST NOTIFICATION BANNER */}
@@ -2367,11 +2960,21 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={exportHistoryToCSV}
-                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 transition cursor-pointer bg-emerald-50/60 px-2.5 py-1 rounded-lg border border-emerald-100"
-                    title="Ekspor riwayat ke file CSV"
+                    onClick={handleDownloadScanLogs}
+                    className="text-[10px] font-extrabold text-teal-800 hover:text-teal-950 flex items-center gap-1.5 transition cursor-pointer bg-teal-50 hover:bg-teal-100 px-3 py-1 rounded-lg border border-teal-200 shadow-2xs"
+                    title="Download Scan Logs: Ekspor seluruh hasil scan sesi ini ke file CSV untuk kroscek dan rekapitulasi data presensi siswa secara manual"
                   >
-                    <Download size={11} /> Ekspor CSV
+                    <Download size={12} className="text-teal-700" />
+                    <span>Download Scan Logs</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyQuickSummary(true)}
+                    className="text-[10px] font-extrabold text-indigo-800 hover:text-indigo-950 flex items-center gap-1.5 transition cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-lg border border-indigo-200 shadow-2xs"
+                    title="Quick Summary: Salin teks ringkasan presensi sesi ini ke clipboard"
+                  >
+                    <Copy size={12} className="text-indigo-700" />
+                    <span>Quick Summary</span>
                   </button>
                   <button
                     type="button"
@@ -2425,62 +3028,111 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                     Tidak ada riwayat untuk kategori "{recentScansFilter === 'STUDENT' ? 'Attendance' : recentScansFilter === 'ASSIGNMENT' ? 'Assignment Submission' : 'Asset Verification'}".
                   </div>
                 ) : (
-                  filteredRecentScans.map((item) => (
-                    <div
-                      key={`${item.id}-${item.timestamp}`}
-                      onClick={() => handleRecentScanClick(item)}
-                      className={`w-full p-2 rounded-xl bg-white hover:bg-emerald-50/70 hover:border-emerald-300 border text-left transition flex items-center justify-between gap-2 shadow-2xs group cursor-pointer ${
-                        selectedScanIds.has(item.id)
-                          ? 'border-emerald-300 bg-emerald-50/40 ring-1 ring-emerald-500/20'
-                          : 'border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        {/* Checkbox button */}
-                        <button
-                          type="button"
-                          onClick={(e) => toggleSelectScan(item.id, e)}
-                          className={`w-4 h-4 rounded border flex items-center justify-center transition shrink-0 cursor-pointer ${
-                            selectedScanIds.has(item.id)
-                              ? 'bg-emerald-600 border-emerald-600 text-white'
-                              : 'border-slate-300 bg-white hover:border-slate-400'
-                          }`}
-                          title={selectedScanIds.has(item.id) ? 'Batalkan pilihan' : 'Pilih untuk cetak massal'}
-                        >
-                          {selectedScanIds.has(item.id) && <Check size={10} strokeWidth={3} />}
-                        </button>
+                  filteredRecentScans.map((item) => {
+                    const isNewlyPulsing = newlyScannedId === item.id;
 
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold ${
-                            item.type === 'ASSIGNMENT'
-                              ? 'bg-blue-100 text-blue-800'
-                              : item.type === 'STUDENT'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {item.type === 'ASSIGNMENT' ? (
-                            <BookOpen size={13} />
-                          ) : item.type === 'STUDENT' ? (
-                            <User size={13} />
-                          ) : (
-                            <Package size={13} />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h5 className="text-xs font-bold text-slate-800 truncate group-hover:text-emerald-900">
-                            {item.title}
-                          </h5>
-                          <p className="text-[10px] text-slate-500 truncate">{item.subtitle || item.code}</p>
-                        </div>
-                      </div>
+                    return (
+                      <motion.div
+                        key={`${item.id}-${item.timestamp}`}
+                        initial={isNewlyPulsing ? { scale: 0.96, opacity: 0.85 } : false}
+                        animate={
+                          isNewlyPulsing
+                            ? {
+                                scale: [1, 1.025, 1, 1.015, 1],
+                                boxShadow: [
+                                  '0 0 0 0 rgba(16, 185, 129, 0.45)',
+                                  '0 0 0 8px rgba(16, 185, 129, 0.2)',
+                                  '0 0 0 14px rgba(16, 185, 129, 0)',
+                                  '0 0 0 0 rgba(16, 185, 129, 0)',
+                                ],
+                              }
+                            : {}
+                        }
+                        transition={
+                          isNewlyPulsing
+                            ? {
+                                duration: 2,
+                                ease: 'easeInOut',
+                              }
+                            : undefined
+                        }
+                        onClick={() => handleRecentScanClick(item)}
+                        className={`w-full p-2 rounded-xl text-left transition flex items-center justify-between gap-2 shadow-2xs group cursor-pointer relative overflow-hidden ${
+                          isNewlyPulsing
+                            ? 'border-2 border-emerald-500 bg-emerald-50/95 ring-2 ring-emerald-400/50 shadow-md shadow-emerald-500/20'
+                            : selectedScanIds.has(item.id)
+                            ? 'border-emerald-300 bg-emerald-50/40 ring-1 ring-emerald-500/20 border'
+                            : 'border-slate-200 border bg-white hover:bg-emerald-50/70 hover:border-emerald-300'
+                        }`}
+                      >
+                        {/* Glowing Left Indicator Strip when pulsing */}
+                        {isNewlyPulsing && (
+                          <motion.div
+                            initial={{ scaleY: 0 }}
+                            animate={{ scaleY: 1 }}
+                            className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 animate-pulse"
+                          />
+                        )}
 
-                      <div className="flex items-center gap-1.5 shrink-0 text-[10px] text-emerald-700 font-bold opacity-80 group-hover:opacity-100">
-                        <span>Buka</span>
-                        <ArrowRight size={12} />
-                      </div>
-                    </div>
-                  ))
+                        <div className="flex items-center gap-2 min-w-0 flex-1 pl-0.5">
+                          {/* Checkbox button */}
+                          <button
+                            type="button"
+                            onClick={(e) => toggleSelectScan(item.id, e)}
+                            className={`w-4 h-4 rounded border flex items-center justify-center transition shrink-0 cursor-pointer ${
+                              selectedScanIds.has(item.id)
+                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                : 'border-slate-300 bg-white hover:border-slate-400'
+                            }`}
+                            title={selectedScanIds.has(item.id) ? 'Batalkan pilihan' : 'Pilih untuk cetak massal'}
+                          >
+                            {selectedScanIds.has(item.id) && <Check size={10} strokeWidth={3} />}
+                          </button>
+
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold ${
+                              item.type === 'ASSIGNMENT'
+                                ? 'bg-blue-100 text-blue-800'
+                                : item.type === 'STUDENT'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {item.type === 'ASSIGNMENT' ? (
+                              <BookOpen size={13} />
+                            ) : item.type === 'STUDENT' ? (
+                              <User size={13} />
+                            ) : (
+                              <Package size={13} />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <h5 className="text-xs font-bold text-slate-800 truncate group-hover:text-emerald-900">
+                                {item.title}
+                              </h5>
+                              {isNewlyPulsing && (
+                                <motion.span
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-0.5 shadow-2xs shrink-0"
+                                >
+                                  <Sparkles size={8} />
+                                  <span>Baru</span>
+                                </motion.span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 truncate">{item.subtitle || item.code}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 text-[10px] text-emerald-700 font-bold opacity-80 group-hover:opacity-100">
+                          <span>Buka</span>
+                          <ArrowRight size={12} />
+                        </div>
+                      </motion.div>
+                    );
+                  })
                 )}
               </div>
 
@@ -2746,6 +3398,94 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           scans={recentScans}
           initialSelectedIds={Array.from(selectedScanIds)}
         />
+
+        {/* Quick Summary Modal / Copy Dialog */}
+        <AnimatePresence>
+          {quickSummaryModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4"
+              onClick={() => setQuickSummaryModalOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]"
+              >
+                {/* Header */}
+                <div className="p-4 bg-gradient-to-r from-indigo-700 via-indigo-800 to-indigo-900 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <Copy size={16} className="text-indigo-200" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-white leading-tight">
+                        Quick Summary Presensi Sesi Ini
+                      </h3>
+                      <p className="text-[11px] text-indigo-200">
+                        Statistik ringkas siap salin untuk grup WA sekolah atau arsip guru
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickSummaryModalOpen(false)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Body: Monospaced Text Preview */}
+                <div className="p-4 overflow-y-auto flex-1 space-y-3 bg-slate-50">
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs font-mono text-[11px] text-slate-800 whitespace-pre-wrap leading-relaxed select-text max-h-72 overflow-y-auto">
+                    {generateQuickSummaryText()}
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic">
+                    💡 Tips: Teks di atas diformat dengan tanda tebal WhatsApp (*teks*) dan baris rapi agar mudah dibaca di grup sekolah.
+                  </p>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="p-3.5 bg-white border-t border-slate-200 flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Total: <strong className="text-indigo-600 font-mono font-bold">{recentScans.length} Scan</strong>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = generateQuickSummaryText();
+                        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                      title="Buka WhatsApp Web dan bagikan ringkasan"
+                    >
+                      <Share2 size={13} />
+                      <span>Kirim ke WhatsApp</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyQuickSummary(false)}
+                      className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                    >
+                      {copiedSummary ? <CheckCheck size={14} /> : <Copy size={14} />}
+                      <span>{copiedSummary ? 'Tersalin ke Clipboard!' : 'Salin ke Clipboard'}</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -260,7 +260,8 @@ class GoogleWorkspaceService {
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/presentations',
     'https://www.googleapis.com/auth/meetings.space.created',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
+    'https://www.googleapis.com/auth/drive.metadata.readonly',
+    'https://www.googleapis.com/auth/gmail.send'
   ];
 
   public getClientId(): string {
@@ -1358,6 +1359,124 @@ class GoogleWorkspaceService {
     return {
       id: presentationId,
       url: `https://docs.google.com/presentation/d/${presentationId}/edit`,
+    };
+  }
+
+  // --- Google Drive CSV Upload & Folder Management ---
+  public async uploadCsvFileToDrive(
+    accessToken: string,
+    fileName: string,
+    csvContent: string,
+    folderName = 'Rekap Nilai Siswa SDN Tangerang 6'
+  ): Promise<{ fileId: string; fileName: string; webViewLink: string; folderUrl: string }> {
+    const folderId = await this.ensureDriveFolder(accessToken, folderName);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const metadata = {
+      name: fileName,
+      parents: folderId ? [folderId] : undefined,
+      description: `Rekapitulasi Nilai & KKM Siswa UPT SD Negeri Tangerang 6 (${new Date().toLocaleString('id-ID')})`,
+    };
+
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    formData.append('file', blob);
+
+    const uploadRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      }
+    );
+
+    if (!uploadRes.ok) {
+      const err = await uploadRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Gagal mengunggah file CSV ke Google Drive.');
+    }
+
+    const uploadJson = await uploadRes.json();
+    return {
+      fileId: uploadJson.id,
+      fileName: uploadJson.name || fileName,
+      webViewLink: uploadJson.webViewLink || `https://drive.google.com/file/d/${uploadJson.id}/view`,
+      folderUrl: `https://drive.google.com/drive/folders/${folderId}`,
+    };
+  }
+
+  // --- Email Delivery (Gmail API or Mailto Fallback) ---
+  public async sendEmailWithCsvSummary(
+    accessToken: string | null,
+    recipientEmail: string,
+    subject: string,
+    summaryBody: string,
+    csvFileName: string,
+    driveLink?: string
+  ): Promise<{ success: boolean; method: 'GMAIL_API' | 'MAILTO'; message: string }> {
+    if (accessToken) {
+      try {
+        const emailLines = [
+          `To: ${recipientEmail}`,
+          `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset=UTF-8',
+          '',
+          summaryBody,
+          '',
+          driveLink ? `Tautan Google Drive Dokumen: ${driveLink}\n` : '',
+          '---',
+          'Dikirim otomatis dari Sistem Manajemen Pembelajaran UPT SD Negeri Tangerang 6'
+        ];
+        const rawMessage = btoa(unescape(encodeURIComponent(emailLines.join('\r\n'))))
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ raw: rawMessage }),
+        });
+
+        if (res.ok) {
+          return {
+            success: true,
+            method: 'GMAIL_API',
+            message: `Email rekapitulasi berhasil dikirim otomatis ke ${recipientEmail} via Gmail API.`,
+          };
+        }
+      } catch (err) {
+        console.warn('Percobaan pengiriman langsung via Gmail API beralih ke mailto fallback:', err);
+      }
+    }
+
+    const mailtoBody = encodeURIComponent(
+      `${summaryBody}\n\n${driveLink ? `Tautan Google Drive: ${driveLink}\n\n` : ''}Berkas lampiran: ${csvFileName}\n\n--- UPT SD Negeri Tangerang 6`
+    );
+    const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(
+      subject
+    )}&body=${mailtoBody}`;
+
+    // Safely trigger mailto
+    try {
+      const a = document.createElement('a');
+      a.href = mailtoUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {}
+
+    return {
+      success: true,
+      method: 'MAILTO',
+      message: `Draf email ke ${recipientEmail} berhasil dibuka dengan ringkasan data siswa.`,
     };
   }
 }
