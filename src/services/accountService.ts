@@ -2,7 +2,6 @@ import { Account, SystemType } from '../types/classroom';
 import { classroomService } from './classroomService';
 import { DAPODIK_PESERTA_DIDIK } from '../data/dapodikPesertaDidik';
 import { DAPODIK_PTK, DAPODIK_ROMBEL } from '../data/dapodikSchoolData';
-import { firebaseService } from './firebaseService';
 
 const STORAGE_KEYS = {
   ACCOUNTS: 'BB_ACCOUNTS',
@@ -534,9 +533,11 @@ class AccountService {
       this.setActiveAdminAccount(saved);
     }
 
-    // Synchronize account immediately to Cloud Firestore
+    // Synchronize account immediately to Cloud Firestore (Firebase SDK loaded on demand)
     try {
-      firebaseService.syncSingleAccountToCloud(saved).catch(() => {});
+      import('./firebaseService')
+        .then((m) => m.firebaseService.syncSingleAccountToCloud(saved))
+        .catch(() => {});
     } catch {}
 
     return saved;
@@ -546,7 +547,9 @@ class AccountService {
     const accounts = this.getAccounts().filter((a) => a.ID !== id);
     this.setItem(STORAGE_KEYS.ACCOUNTS, accounts);
     try {
-      firebaseService.deleteSingleAccountFromCloud(id).catch(() => {});
+      import('./firebaseService')
+        .then((m) => m.firebaseService.deleteSingleAccountFromCloud(id))
+        .catch(() => {});
     } catch {}
   }
 

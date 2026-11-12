@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BookOpen, GraduationCap, FileText, ClipboardList, LogOut, School, Plus,
@@ -20,9 +20,8 @@ import { ResponsiveContainer, BarChart, AreaChart, LineChart, RadarChart, Compos
 import { accountService, STANDARD_CLASSES } from '../services/accountService';
 import { classroomService } from '../services/classroomService';
 import { googleWorkspace } from '../services/googleWorkspace';
-import { pdfService } from '../services/pdfService';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// Heavy libraries (PDF/ZIP) are loaded on demand so they never weigh down the classroom bundle
+const loadPdfService = () => import('../services/pdfService').then((m) => m.pdfService);
 import { exportAssignmentsToICS } from '../utils/icsExporter';
 import { FirebaseCloudSyncModal } from './FirebaseCloudSyncModal';
 import { OfflineSyncIndicator } from './OfflineSyncIndicator';
@@ -33,27 +32,28 @@ import { AutomatedGradeTrendAnalyticsWidget } from './classroom/AutomatedGradeTr
 import { RealtimeClassroomStatsWidget } from './classroom/RealtimeClassroomStatsWidget';
 import { Account, StatusKelulusan, KebutuhanKhusus } from '../types/classroom';
 import { ClassroomCourse, ClassroomAssignment, ClassroomSubmission, ClassroomReport, GradeChangeLog } from '../types/classroom';
-import { ClassroomForumView } from './classroom/ClassroomForumView';
-import { ClassroomAttendanceView } from './classroom/ClassroomAttendanceView';
-import { ClassroomQuizCBTView } from './classroom/ClassroomQuizCBTView';
-import { ClassroomMaterialsView } from './classroom/ClassroomMaterialsView';
-import { ClassroomGradebookView } from './classroom/ClassroomGradebookView';
-import { ClassroomScheduleView } from './classroom/ClassroomScheduleView';
-import { ClassroomMediaView } from './classroom/ClassroomMediaView';
-import { ClassroomLiveClassView } from './classroom/ClassroomLiveClassView';
-import { ClassroomPortfolioView } from './classroom/ClassroomPortfolioView';
-import { DashboardAnalitikGuru } from './classroom/DashboardAnalitikGuru';
+const ClassroomForumView = lazy(() => import('./classroom/ClassroomForumView').then((m) => ({ default: m.ClassroomForumView })));
+const ClassroomAttendanceView = lazy(() => import('./classroom/ClassroomAttendanceView').then((m) => ({ default: m.ClassroomAttendanceView })));
+const ClassroomQuizCBTView = lazy(() => import('./classroom/ClassroomQuizCBTView').then((m) => ({ default: m.ClassroomQuizCBTView })));
+const ClassroomMaterialsView = lazy(() => import('./classroom/ClassroomMaterialsView').then((m) => ({ default: m.ClassroomMaterialsView })));
+const ClassroomGradebookView = lazy(() => import('./classroom/ClassroomGradebookView').then((m) => ({ default: m.ClassroomGradebookView })));
+const ClassroomScheduleView = lazy(() => import('./classroom/ClassroomScheduleView').then((m) => ({ default: m.ClassroomScheduleView })));
+const ClassroomMediaView = lazy(() => import('./classroom/ClassroomMediaView').then((m) => ({ default: m.ClassroomMediaView })));
+const ClassroomLiveClassView = lazy(() => import('./classroom/ClassroomLiveClassView').then((m) => ({ default: m.ClassroomLiveClassView })));
+const ClassroomPortfolioView = lazy(() => import('./classroom/ClassroomPortfolioView').then((m) => ({ default: m.ClassroomPortfolioView })));
+const DashboardAnalitikGuru = lazy(() => import('./classroom/DashboardAnalitikGuru').then((m) => ({ default: m.DashboardAnalitikGuru })));
 import { ClassroomNotificationCenter } from './classroom/ClassroomNotificationCenter';
 import { StudentBadgesWidget } from './classroom/StudentBadgesWidget';
 import { UserProfileSettingsModal } from './classroom/UserProfileSettingsModal';
 import { ClassroomSummaryModal } from './classroom/ClassroomSummaryModal';
 import { QuickGradeModal } from './classroom/QuickGradeModal';
-import { BulkQrGeneratorModal } from './classroom/BulkQrGeneratorModal';
-import { QRScannerModal, RecentScanItem } from './QRScannerModal';
-import { ScanSettingsModal } from './classroom/ScanSettingsModal';
+const BulkQrGeneratorModal = lazy(() => import('./classroom/BulkQrGeneratorModal').then((m) => ({ default: m.BulkQrGeneratorModal })));
+import type { RecentScanItem } from './QRScannerModal';
+const QRScannerModal = lazy(() => import('./QRScannerModal').then((m) => ({ default: m.QRScannerModal })));
+const ScanSettingsModal = lazy(() => import('./classroom/ScanSettingsModal').then((m) => ({ default: m.ScanSettingsModal })));
 import { BatteryDiagnosticModal } from './classroom/BatteryDiagnosticModal';
 import { VoiceNoteRecorder } from './classroom/VoiceNoteRecorder';
-import { AIRemedialModulModal } from './classroom/AIRemedialModulModal';
+const AIRemedialModulModal = lazy(() => import('./classroom/AIRemedialModulModal').then((m) => ({ default: m.AIRemedialModulModal })));
 import { ParentPortalModal } from './classroom/ParentPortalModal';
 import { ExecutiveSupervisorReportModal } from './ExecutiveSupervisorReportModal';
 import { playFeedback, playBatteryAlertSound } from '../utils/feedback';
@@ -64,21 +64,21 @@ import { IoTSmartClassroomModal } from './IoTSmartClassroomModal';
 import { InteractiveGuideModal } from './InteractiveGuideModal';
 import { StorageManagerModal } from './StorageManagerModal';
 import { TwoFactorAuthModal } from './TwoFactorAuthModal';
-import { LastScanInspectorModal } from './LastScanInspectorModal';
+const LastScanInspectorModal = lazy(() => import('./LastScanInspectorModal').then((m) => ({ default: m.LastScanInspectorModal })));
 import { useTheme } from '../utils/theme';
 import { LibraryKioskModal } from './LibraryKioskModal';
 import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
-import { MonthlyManagementReportDashboard } from './classroom/MonthlyManagementReportDashboard';
+const MonthlyManagementReportDashboard = lazy(() => import('./classroom/MonthlyManagementReportDashboard').then((m) => ({ default: m.MonthlyManagementReportDashboard })));
 import { P5ProjectTrackerWidget } from './classroom/P5ProjectTrackerWidget';
-import { ExportStudentReportModal } from './classroom/ExportStudentReportModal';
+const ExportStudentReportModal = lazy(() => import('./classroom/ExportStudentReportModal').then((m) => ({ default: m.ExportStudentReportModal })));
 import { BehaviorAnalysisWidget } from './classroom/BehaviorAnalysisWidget';
 import { ClassroomOverviewWidget } from './classroom/ClassroomOverviewWidget';
 import { RecentScans } from './classroom/RecentScans';
 import { ParticleCelebration } from './classroom/ParticleCelebration';
-import { ClassroomPeerReviewModal } from './classroom/ClassroomPeerReviewModal';
-import { BulkQRHistoryPrintModal } from './BulkQRHistoryPrintModal';
+const ClassroomPeerReviewModal = lazy(() => import('./classroom/ClassroomPeerReviewModal').then((m) => ({ default: m.ClassroomPeerReviewModal })));
+const BulkQRHistoryPrintModal = lazy(() => import('./BulkQRHistoryPrintModal').then((m) => ({ default: m.BulkQRHistoryPrintModal })));
 import { useRealtimeProgress } from '../services/progressSyncService';
-import { PeerReviewDashboardView } from './classroom/PeerReviewDashboardView';
+const PeerReviewDashboardView = lazy(() => import('./classroom/PeerReviewDashboardView').then((m) => ({ default: m.PeerReviewDashboardView })));
 import { ClassroomPortalLogin } from './classroom/ClassroomPortalLogin';
 import { SecureMaskedField } from './common/SecureMaskedField';
 import { SecureMaskingBar } from './common/SecureMaskingBar';
@@ -1238,7 +1238,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         day: 'numeric',
       });
 
-      await pdfService.generateBeritaAcara({
+      await (await loadPdfService()).generateBeritaAcara({
         title: 'LAPORAN REKAPITULASI PEMINDAIAN QR CODE',
         docNo: `QR-FAB/${new Date().getFullYear()}/${new Date().getMonth() + 1}/${Date.now().toString().slice(-4)}`,
         description: `Rekapitulasi riwayat pemindaian QR Code (Filter: ${filterLabel}). Total item: ${filteredFabScans.length}. Tanggal cetak: ${nowStr}.`,
@@ -1614,7 +1614,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         s.title || s.subtitle || '-'
       ]);
 
-      await pdfService.generateBeritaAcara({
+      await (await loadPdfService()).generateBeritaAcara({
         title: 'LAPORAN REKAPITULASI PEMINDAIAN QR CODE SESI PEMBELAJARAN',
         docNo: `SCAN-LOG/${targetClassCode.replace(/\s+/g, '-')}/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
         description: `Rekapitulasi log aktivitas pemindaian presensi siswa, evaluasi tugas, dan inventaris berbasis QR Scanner pada ${targetClassCode}. Tercatat total ${recentFabScans.length} pemindaian aktif (Pencapaian Sesi: ${sessionScanCount}/${sessionScanGoal} scan - ${progressPct}%).`,
@@ -2374,6 +2374,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
 
         {/* Main */}
         <main className="flex-1 overflow-y-auto p-4 pb-28 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36 max-w-6xl mx-auto w-full" key={refreshKey}>
+          <Suspense fallback={<div className="flex items-center justify-center py-24"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"></div></div>}>
           {page === 'dashboard' && (
             <DashboardView
               account={account}
@@ -2487,6 +2488,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           {page === 'management_report' && (
             <MonthlyManagementReportDashboard isModal={false} />
           )}
+          </Suspense>
         </main>
       </div>
 
@@ -4694,6 +4696,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       />
 
       {/* LAST SCAN INSPECTION & QUICK ACTIONS MODAL */}
+      {showLastScanModal && (
       <LastScanInspectorModal
         isOpen={showLastScanModal}
         onClose={() => setShowLastScanModal(false)}
@@ -4714,6 +4717,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           setShowGlobalQrScanner(true);
         }}
       />
+      )}
 
       {/* AMBIENT SCREEN FLASHLIGHT / TORCH OVERLAY */}
       {isFlashlightOn && (
@@ -4724,6 +4728,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       )}
 
       {/* GLOBAL QR SCANNER MODAL (Ctrl+Shift+S) */}
+      {showGlobalQrScanner && (
       <QRScannerModal
         isOpen={showGlobalQrScanner}
         onClose={() => setShowGlobalQrScanner(false)}
@@ -4756,8 +4761,10 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           setPage('attendance');
         }}
       />
+      )}
 
       {/* SCAN SETTINGS & CUSTOM SCAN GOAL MODAL */}
+      {showScanSettingsModal && (
       <ScanSettingsModal
         isOpen={showScanSettingsModal}
         onClose={() => setShowScanSettingsModal(false)}
@@ -4800,6 +4807,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         autoFlashlightScheduleMode={autoFlashlightScheduleMode}
         onChangeAutoFlashlightScheduleMode={changeAutoFlashlightScheduleMode}
       />
+      )}
 
       {/* BATTERY HARDWARE DIAGNOSTIC & HEALTH MODAL */}
       <BatteryDiagnosticModal
@@ -4869,12 +4877,14 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       )}
 
       {/* AI REMEDIAL & MODUL AJAR KURIKULUM MERDEKA MODAL */}
-      <AIRemedialModulModal
-        isOpen={showAIRemedialModal}
-        onClose={() => setShowAIRemedialModal(false)}
-        students={classStudents}
-        assignments={allAssignments}
-      />
+      {showAIRemedialModal && (
+        <AIRemedialModulModal
+          isOpen={showAIRemedialModal}
+          onClose={() => setShowAIRemedialModal(false)}
+          students={classStudents}
+          assignments={allAssignments}
+        />
+      )}
 
       {/* PARENT PORTAL & WHATSAPP NOTIFICATION HUB MODAL */}
       <ParentPortalModal
@@ -4962,14 +4972,16 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       )}
 
       {/* BULK QR HISTORY PRINT & PDF EXPORT MODAL */}
-      <BulkQRHistoryPrintModal
-        isOpen={isFabBulkPrintModalOpen}
-        onClose={() => setIsFabBulkPrintModalOpen(false)}
-        scans={recentFabScans}
-        initialSelectedIds={Array.from(selectedFabScanIds)}
-        operatorName={account.NAMA}
-        operatorRole={account.ROLE}
-      />
+      {isFabBulkPrintModalOpen && (
+        <BulkQRHistoryPrintModal
+          isOpen={isFabBulkPrintModalOpen}
+          onClose={() => setIsFabBulkPrintModalOpen(false)}
+          scans={recentFabScans}
+          initialSelectedIds={Array.from(selectedFabScanIds)}
+          operatorName={account.NAMA}
+          operatorRole={account.ROLE}
+        />
+      )}
     </div>
   );
 };
@@ -6808,13 +6820,13 @@ const DashboardView: React.FC<{
         <BehaviorAnalysisWidget
           currentClass={account.KELAS || 'Kelas 4B'}
           currentUser={account}
-          onOpenComprehensiveReport={(studentId) => {
+          onOpenComprehensiveReport={async (studentId) => {
             const st = accountService.getAccounts().find((a) => a.ID === studentId);
             if (st) {
               onOpenStudentReport?.(st);
             } else {
               const compData = classroomService.getStudentComprehensiveReportData(studentId);
-              pdfService.generateIndividualStudentComprehensivePdf(
+              (await loadPdfService()).generateIndividualStudentComprehensivePdf(
                 compData,
                 account.NAMA,
                 account.NIP || '19850412 201101 2 003'
@@ -8599,7 +8611,7 @@ const StudentAssignmentQrModal: React.FC<{
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const converted = scanLogs.map((l, i) => ({
                         id: `session-log-${i}`,
                         code: l.status || 'ASG-QR',
@@ -8609,7 +8621,7 @@ const StudentAssignmentQrModal: React.FC<{
                         timestamp: Date.now() - i * 60000,
                         rawPayload: l.text,
                       }));
-                      pdfService.generateQRScanLogsPDF(converted, {
+                      (await loadPdfService()).generateQRScanLogsPDF(converted, {
                         title: 'LOG PEMINDAIAN SESI TUGAS SISWA',
                         notes: `Dicetak langsung dari sesi pemindaian tugas siswa.`,
                       });
@@ -11464,7 +11476,7 @@ const StudentsListView: React.FC<{
       const guruNama = isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.';
       const guruNip = isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003';
       
-      const zipBlob = await pdfService.exportClassReportsToZip(
+      const zipBlob = await (await loadPdfService()).exportClassReportsToZip(
         filteredStudents,
         targetClass,
         guruNama,
@@ -13306,7 +13318,7 @@ const AssignmentsView: React.FC<{
     }
 
     const allSubmissions = classroomService.getSubmissions();
-    await pdfService.generateBulkAssignmentsReportPdf(
+    await (await loadPdfService()).generateBulkAssignmentsReportPdf(
       targetAssignments,
       courses,
       allSubmissions,
@@ -13335,7 +13347,7 @@ const AssignmentsView: React.FC<{
       return;
     }
 
-    await pdfService.generateBulkAssignmentsQrBadgeSheetPdf(
+    await (await loadPdfService()).generateBulkAssignmentsQrBadgeSheetPdf(
       targetAssignments,
       courses,
       account.KELAS || 'Kelas 4',
@@ -15572,8 +15584,8 @@ const ReportsView: React.FC<{ account: Account; reports: ClassroomReport[]; onRe
           )}
           {reports.length > 0 && (
             <button
-              onClick={() =>
-                pdfService.generateConsolidatedTeacherReportsPdf(
+              onClick={async () =>
+                (await loadPdfService()).generateConsolidatedTeacherReportsPdf(
                   reports,
                   isKepsek ? account.NAMA : 'Liestya Kusuma Sari, S.Pd., M.Pd.',
                   isKepsek ? account.NIP : '198406192009022007'
@@ -17562,6 +17574,10 @@ export const ClassroomBatchPDFExportModal: React.FC<ClassroomBatchPDFExportModal
     if (selectedStudentIds.size === 0) return;
     setIsGenerating(true);
     try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
       const doc = new jsPDF('portrait', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();

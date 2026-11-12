@@ -28,8 +28,6 @@ import {
   ListPlus,
   FileText,
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { Account, P5Project, P5ProjectStage } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
 import { STANDARD_CLASSES } from '../../services/accountService';
@@ -263,10 +261,14 @@ export const P5ProjectTrackerWidget: React.FC<P5ProjectTrackerWidgetProps> = ({ 
   };
 
   // Handler for Generating & Downloading P5 Milestone Summary PDF
-  const handleDownloadP5SummaryPDF = () => {
+  const handleDownloadP5SummaryPDF = async () => {
     try {
       setIsDownloadingPdf(true);
       playFeedback('click');
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',

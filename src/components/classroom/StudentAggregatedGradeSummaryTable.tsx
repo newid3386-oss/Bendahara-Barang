@@ -1,6 +1,6 @@
 import React from 'react';
 import { FileText, Printer, CheckCircle2, AlertCircle, Award, Sparkles, BookOpen, User } from 'lucide-react';
-import { pdfService } from '../../services/pdfService';
+const loadPdfService = () => import('../../services/pdfService').then((m) => m.pdfService);
 
 export interface StudentAggregatedGradeItem {
   siswaId: string;
@@ -74,8 +74,8 @@ export const StudentAggregatedGradeSummaryTable: React.FC<StudentAggregatedGrade
     ? Math.max(...reports.map((r) => r.tugasCount))
     : 0;
 
-  const handleExportPdf = () => {
-    pdfService.generateClassGradebookSummaryPdf(reports, targetClass, guruNama, guruNip, activePeriod);
+  const handleExportPdf = async () => {
+    (await loadPdfService()).generateClassGradebookSummaryPdf(reports, targetClass, guruNama, guruNip, activePeriod);
   };
 
   return (
@@ -256,7 +256,7 @@ export const StudentAggregatedGradeSummaryTable: React.FC<StudentAggregatedGrade
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => pdfService.generateStudentProgressReportPdf(report as any, guruNama)}
+                          onClick={async () => (await loadPdfService()).generateStudentProgressReportPdf(report as any, guruNama)}
                           title="Cetak Laporan Per Siswa Format PDF"
                           className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-200 transition cursor-pointer"
                         >

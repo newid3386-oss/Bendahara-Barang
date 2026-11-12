@@ -23,7 +23,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { db } from '../services/localStorageService';
-import { firebaseService, FirebaseSyncStatus } from '../services/firebaseService';
+import type { FirebaseSyncStatus } from '../services/firebaseService';
 import { User, ActivePage } from '../types';
 import { OfflineSyncIndicator } from './OfflineSyncIndicator';
 import { InteractiveGuideModal } from './InteractiveGuideModal';

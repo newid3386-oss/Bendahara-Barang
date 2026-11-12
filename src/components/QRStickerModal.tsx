@@ -39,7 +39,6 @@ import {
 import { Asset, User, QRStickerPreset } from '../types';
 import { db } from '../services/localStorageService';
 import { qrService, QRStickerCustomLayout } from '../services/qrService';
-import jsPDF from 'jspdf';
 
 interface QRStickerModalProps {
   asset: Asset | null;
@@ -443,12 +442,13 @@ export const QRStickerModal: React.FC<QRStickerModalProps> = ({ asset, isOpen, o
     printWindow.document.close();
   };
 
-  const handleExportA4PDF = () => {
+  const handleExportA4PDF = async () => {
     if (!asset) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const dataUrl = canvas.toDataURL('image/png');
+    const { default: jsPDF } = await import('jspdf');
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
     const pageWidth = 210;

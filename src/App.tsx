@@ -1,13 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
-import { UniversalSearchModal } from './components/UniversalSearchModal';
-import { GoogleSheetsIntegrationModal } from './components/GoogleSheetsIntegrationModal';
-import { FirebaseCloudSyncModal } from './components/FirebaseCloudSyncModal';
-import { AIAssistantModal } from './components/AIAssistantModal';
-import { QRScannerModal } from './components/QRScannerModal';
-import { PublicAssetVerificationModal } from './components/PublicAssetVerificationModal';
-import { QRStickerModal } from './components/QRStickerModal';
 import { DataReconciliationDialog } from './components/DataReconciliationDialog';
 import { DlpGlobalNotice } from './components/common/DlpGlobalNotice';
 import { InactivityLockModal } from './components/common/InactivityLockModal';
@@ -45,6 +38,15 @@ const DepresiasiAsetView = lazy(() => import('./components/DepresiasiAsetView').
 const MultiSchoolConsolidationView = lazy(() => import('./components/MultiSchoolConsolidationView').then(module => ({ default: module.MultiSchoolConsolidationView })));
 const ClassroomApp = lazy(() => import('./components/ClassroomApp').then(module => ({ default: module.ClassroomApp })));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
+
+// Global modals are loaded the first time they are opened (keeps the initial bundle small)
+const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal').then(module => ({ default: module.UniversalSearchModal })));
+const GoogleSheetsIntegrationModal = lazy(() => import('./components/GoogleSheetsIntegrationModal').then(module => ({ default: module.GoogleSheetsIntegrationModal })));
+const FirebaseCloudSyncModal = lazy(() => import('./components/FirebaseCloudSyncModal').then(module => ({ default: module.FirebaseCloudSyncModal })));
+const AIAssistantModal = lazy(() => import('./components/AIAssistantModal').then(module => ({ default: module.AIAssistantModal })));
+const QRScannerModal = lazy(() => import('./components/QRScannerModal').then(module => ({ default: module.QRScannerModal })));
+const PublicAssetVerificationModal = lazy(() => import('./components/PublicAssetVerificationModal').then(module => ({ default: module.PublicAssetVerificationModal })));
+const QRStickerModal = lazy(() => import('./components/QRStickerModal').then(module => ({ default: module.QRStickerModal })));
 
 export default function App() {
   const { styles } = useTheme();
@@ -265,16 +267,18 @@ export default function App() {
 
         {/* Global Modals accessible if opened from website actions */}
         {scannedCode && (
-          <PublicAssetVerificationModal
-            isOpen={Boolean(scannedCode)}
-            assetCode={scannedCode}
-            driveUrl={scannedDriveUrl}
-            onClose={() => {
-              setScannedCode(null);
-              setScannedDriveUrl(undefined);
-            }}
-            onOpenInApp={handleOpenAssetInApp}
-          />
+          <Suspense fallback={null}>
+            <PublicAssetVerificationModal
+              isOpen={Boolean(scannedCode)}
+              assetCode={scannedCode}
+              driveUrl={scannedDriveUrl}
+              onClose={() => {
+                setScannedCode(null);
+                setScannedDriveUrl(undefined);
+              }}
+              onOpenInApp={handleOpenAssetInApp}
+            />
+          </Suspense>
         )}
       </>
     );
@@ -334,73 +338,88 @@ export default function App() {
         </main>
       </div>
 
-      {/* Global Universal Search & Omnibar Command Palette Modal */}
-      <UniversalSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onNavigate={(page, queryParam) => {
-          handleNavigate(page);
-          setIsSearchOpen(false);
-        }}
-        onOpenQRScanner={() => setIsQRScannerOpen(true)}
-        onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
-        onOpenGoogleSync={() => setIsGoogleModalOpen(true)}
-        onSwitchViewMode={(mode) => setViewMode(mode)}
-      />
+      {/* Global modals — each one is downloaded only when it is opened for the first time */}
+      <Suspense fallback={null}>
+        {/* Global Universal Search & Omnibar Command Palette Modal */}
+        {isSearchOpen && (
+          <UniversalSearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            onNavigate={(page, queryParam) => {
+              handleNavigate(page);
+              setIsSearchOpen(false);
+            }}
+            onOpenQRScanner={() => setIsQRScannerOpen(true)}
+            onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
+            onOpenGoogleSync={() => setIsGoogleModalOpen(true)}
+            onSwitchViewMode={(mode) => setViewMode(mode)}
+          />
+        )}
 
-      {/* Global Google Sheets Sync & Apps Script Modal */}
-      <GoogleSheetsIntegrationModal
-        isOpen={isGoogleModalOpen}
-        onClose={() => setIsGoogleModalOpen(false)}
-      />
+        {/* Global Google Sheets Sync & Apps Script Modal */}
+        {isGoogleModalOpen && (
+          <GoogleSheetsIntegrationModal
+            isOpen={isGoogleModalOpen}
+            onClose={() => setIsGoogleModalOpen(false)}
+          />
+        )}
 
-      {/* Global Firebase Firestore Cloud Sync Modal */}
-      <FirebaseCloudSyncModal
-        isOpen={isFirebaseModalOpen}
-        onClose={() => setIsFirebaseModalOpen(false)}
-      />
+        {/* Global Firebase Firestore Cloud Sync Modal */}
+        {isFirebaseModalOpen && (
+          <FirebaseCloudSyncModal
+            isOpen={isFirebaseModalOpen}
+            onClose={() => setIsFirebaseModalOpen(false)}
+          />
+        )}
 
-      {/* Global Gemini AI Assistant Modal */}
-      <AIAssistantModal
-        isOpen={isAIAssistantOpen}
-        onClose={() => setIsAIAssistantOpen(false)}
-        onNavigate={(page) => {
-          handleNavigate(page);
-          setIsAIAssistantOpen(false);
-        }}
-      />
+        {/* Global Gemini AI Assistant Modal */}
+        {isAIAssistantOpen && (
+          <AIAssistantModal
+            isOpen={isAIAssistantOpen}
+            onClose={() => setIsAIAssistantOpen(false)}
+            onNavigate={(page) => {
+              handleNavigate(page);
+              setIsAIAssistantOpen(false);
+            }}
+          />
+        )}
 
-      {/* Global In-App QR Scanner Modal */}
-      <QRScannerModal
-        isOpen={isQRScannerOpen}
-        onClose={() => setIsQRScannerOpen(false)}
-        onSelectAsset={(asset) => {
-          setSelectedAssetDetail(asset);
-          setActivePage('aset');
-        }}
-      />
+        {/* Global In-App QR Scanner Modal */}
+        {isQRScannerOpen && (
+          <QRScannerModal
+            isOpen={isQRScannerOpen}
+            onClose={() => setIsQRScannerOpen(false)}
+            onSelectAsset={(asset) => {
+              setSelectedAssetDetail(asset);
+              setActivePage('aset');
+            }}
+          />
+        )}
+
+        {/* Scanned Asset QR Details Modal */}
+        {selectedAssetDetail && (
+          <QRStickerModal
+            isOpen={Boolean(selectedAssetDetail)}
+            asset={selectedAssetDetail}
+            onClose={() => setSelectedAssetDetail(null)}
+          />
+        )}
+      </Suspense>
 
       {/* Public Asset Verification & Dual-Mode Google Drive Modal */}
       {scannedCode && (
-        <PublicAssetVerificationModal
-          isOpen={Boolean(scannedCode)}
-          assetCode={scannedCode}
-          driveUrl={scannedDriveUrl}
-          onClose={() => {
-            setScannedCode(null);
-            setScannedDriveUrl(undefined);
-          }}
-          onOpenInApp={handleOpenAssetInApp}
-        />
-      )}
-
-      {/* Scanned Asset QR Details Modal */}
-      {selectedAssetDetail && (
-        <QRStickerModal
-          isOpen={Boolean(selectedAssetDetail)}
-          asset={selectedAssetDetail}
-          onClose={() => setSelectedAssetDetail(null)}
-        />
+        <Suspense fallback={null}>
+          <PublicAssetVerificationModal
+            isOpen={Boolean(scannedCode)}
+            assetCode={scannedCode}
+            driveUrl={scannedDriveUrl}
+            onClose={() => {
+              setScannedCode(null);
+              setScannedDriveUrl(undefined);
+            }}
+            onOpenInApp={handleOpenAssetInApp}
+          />
+        </Suspense>
       )}
 
       {/* Connection & Offline Conflict Reconciliation Dialog */}

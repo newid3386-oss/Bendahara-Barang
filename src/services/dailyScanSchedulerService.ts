@@ -9,9 +9,9 @@
  * 4. Pencadangan otomatis ke Google Drive / Google Workspace & logging audit
  */
 
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import { db } from './localStorageService';
-import { pdfService, QRScanLogItem } from './pdfService';
+import type { QRScanLogItem } from './pdfService';
 import { googleWorkspace } from './googleWorkspace';
 import { DailyScanDeliveryLog, DailyScanScheduleConfig } from '../types';
 
@@ -284,6 +284,7 @@ class DailyScanSchedulerService {
       `Disampaikan kepada Kepala UPT Satuan Pendidikan untuk verifikasi, rekonsiliasi, dan pemantauan mutu harian.`,
     ].join('\n');
 
+    const { pdfService } = await import('./pdfService');
     const doc = await pdfService.generateQRScanLogsPDF(scans, {
       title: docTitle,
       docNo,

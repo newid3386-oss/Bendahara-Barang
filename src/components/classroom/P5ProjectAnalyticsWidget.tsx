@@ -26,7 +26,7 @@ import {
   Cell,
 } from 'recharts';
 import { classroomService } from '../../services/classroomService';
-import { pdfService } from '../../services/pdfService';
+const loadPdfService = () => import('../../services/pdfService').then((m) => m.pdfService);
 import { P5Project } from '../../types/classroom';
 
 interface P5ProjectAnalyticsWidgetProps {
@@ -176,7 +176,7 @@ export const P5ProjectAnalyticsWidget: React.FC<P5ProjectAnalyticsWidgetProps> =
 
           <button
             type="button"
-            onClick={() => pdfService.generateExecutiveP5AndGradeTrendPdf()}
+            onClick={async () => (await loadPdfService()).generateExecutiveP5AndGradeTrendPdf()}
             className="px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
             title="Unduh Laporan Ringkasan Eksekutif P5 & Tren Nilai untuk Kepala Sekolah"
           >

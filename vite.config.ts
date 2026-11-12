@@ -63,12 +63,32 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            // Heavy app modules that are only needed on demand (PDF/QR/ZIP tooling).
+            // Without this, Rollup hoists them into the entry chunk because many lazy
+            // views import them, forcing every visitor to download jspdf + jszip.
+            if (id.includes('/src/services/pdfService') || id.includes('/src/services/qrService')) {
+              return 'pdf-tools';
+            }
+            // Eager stores/data share one chunk so the heavy services above are never
+            // pulled back into the entry chunk. Heavy services keep their own chunks.
+            if (id.includes('/src/services/') || id.includes('/src/data/')) {
+              if (
+                id.includes('excelService') ||
+                id.includes('archiveBackupService') ||
+                id.includes('firebaseService') ||
+                id.includes('/src/firebase.ts')
+              ) {
+                return;
+              }
+              return 'app-core';
+            }
             if (id.includes('node_modules')) {
               if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'vendor-react';
               if (id.includes('firebase')) return 'vendor-firebase';
               if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('jspdf-autotable')) return 'vendor-pdf';
               if (id.includes('xlsx')) return 'vendor-xlsx';
               if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
+              if (id.includes('qrcode') || id.includes('dijkstrajs')) return 'vendor-qrcode';
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('motion')) return 'vendor-motion';
             }

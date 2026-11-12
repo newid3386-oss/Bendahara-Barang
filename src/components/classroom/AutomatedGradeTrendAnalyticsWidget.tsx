@@ -46,7 +46,7 @@ import {
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
 import { SecureMaskedField } from '../common/SecureMaskedField';
 import { classroomService } from '../../services/classroomService';
-import { pdfService } from '../../services/pdfService';
+const loadPdfService = () => import('../../services/pdfService').then((m) => m.pdfService);
 import { Account } from '../../types/classroom';
 
 interface AutomatedGradeTrendAnalyticsWidgetProps {
@@ -884,7 +884,7 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
 
           <button
             type="button"
-            onClick={() => pdfService.generateExecutiveP5AndGradeTrendPdf({ targetClass: selectedClass })}
+            onClick={async () => (await loadPdfService()).generateExecutiveP5AndGradeTrendPdf({ targetClass: selectedClass })}
             className="px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
             title="Unduh Laporan Ringkasan Eksekutif P5 & Tren Nilai untuk Kepala Sekolah"
           >

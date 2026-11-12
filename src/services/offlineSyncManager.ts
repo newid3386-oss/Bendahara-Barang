@@ -1,6 +1,5 @@
 import { db } from './localStorageService';
 import { autoSyncService } from './autoSyncService';
-import { firebaseService } from './firebaseService';
 import { googleWorkspace } from './googleWorkspace';
 
 export interface PendingOfflineChange {
@@ -207,6 +206,7 @@ class OfflineSyncManager {
       // 2. Sync with Firebase if configured
       let firebaseSynced = false;
       try {
+        const { firebaseService } = await import('./firebaseService');
         const res = await firebaseService.pushAllToCloud(isManual);
         firebaseSynced = res.success;
       } catch (e) {
