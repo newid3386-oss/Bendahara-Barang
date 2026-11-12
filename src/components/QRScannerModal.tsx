@@ -62,6 +62,7 @@ import {
   Copy,
   Share2,
   Grid,
+  ScanFace,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../services/localStorageService';
@@ -144,6 +145,13 @@ export interface QRScannerModalProps {
   onDataChanged?: () => void;
   pauseOnInactivity?: boolean;
   inactivityTimeoutSeconds?: number;
+  // Smart Auto-Pause with Face Detection
+  faceAutoPauseEnabled?: boolean;
+  faceDetectionSensitivity?: 'low' | 'medium' | 'high';
+  // Smart Ambient Light & Scheduled Auto-Flashlight
+  autoFlashlightEnabled?: boolean;
+  ambientLightThreshold?: number;
+  autoFlashlightScheduleMode?: 'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY';
 }
 
 type ErrorType = 'CAMERA_DENIED' | 'CAMERA_NOT_FOUND' | 'NO_QR_IN_IMAGE' | 'NOT_FOUND_IN_DB' | 'GENERAL_ERROR' | null;
@@ -176,6 +184,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   onDataChanged,
   pauseOnInactivity,
   inactivityTimeoutSeconds,
+  faceAutoPauseEnabled,
+  faceDetectionSensitivity = 'medium',
+  autoFlashlightEnabled,
+  ambientLightThreshold,
+  autoFlashlightScheduleMode,
 }) => {
   const [activeMode, setActiveMode] = useState<'ALL' | 'ASSIGNMENT' | 'STUDENT' | 'ASSET'>(initialMode);
   const [manualCode, setManualCode] = useState('');
@@ -195,6 +208,92 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   // Inactivity Sleep / Suspension State
   const [isSuspendedByInactivity, setIsSuspendedByInactivity] = useState(false);
   const lastActivityTimeRef = useRef<number>(Date.now());
+
+  // Smart Auto-Pause with Face Detection State
+  const [isFacePaused, setIsFacePaused] = useState(false);
+  const lastFaceSeenTimeRef = useRef<number>(Date.now());
+  const faceDetectorRef = useRef<any>(null);
+  const faceCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Smart Ambient Light & Scheduled Auto-Flashlight State
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [measuredLuma, setMeasuredLuma] = useState<number | null>(null);
+  const [isAutoTorchActive, setIsAutoTorchActive] = useState<boolean>(false);
+  const ambientCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastTorchCheckTimeRef = useRef<number>(0);
+  const lowLightCounterRef = useRef<number>(0);
+  const brightLightCounterRef = useRef<number>(0);
+
+  const effectiveAutoFlashlight = useMemo(() => {
+    if (autoFlashlightEnabled !== undefined) return autoFlashlightEnabled;
+    try {
+      return localStorage.getItem('sdn6_auto_flashlight_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  }, [autoFlashlightEnabled]);
+
+  const effectiveAmbientThreshold = useMemo(() => {
+    if (ambientLightThreshold !== undefined) return ambientLightThreshold;
+    try {
+      const saved = localStorage.getItem('sdn6_ambient_light_threshold');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    } catch {}
+    return 35;
+  }, [ambientLightThreshold]);
+
+  const effectiveFlashlightScheduleMode = useMemo(() => {
+    if (autoFlashlightScheduleMode !== undefined) return autoFlashlightScheduleMode;
+    try {
+      const saved = localStorage.getItem('sdn6_auto_flashlight_schedule_mode');
+      if (saved === 'ALWAYS' || saved === 'LOW_LIGHT_ONLY' || saved === 'KBM_EVENING_ONLY') return saved;
+    } catch {}
+    return 'LOW_LIGHT_ONLY';
+  }, [autoFlashlightScheduleMode]);
+
+  // Apply torch state to camera track if hardware torch is supported
+  const setHardwareTorch = useCallback(async (state: boolean) => {
+    if (!stream) return;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const capabilities: any = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        if (capabilities.torch) {
+          await (videoTrack as any).applyConstraints({
+            advanced: [{ torch: state }],
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Hardware torch constraint could not be applied:', e);
+    }
+  }, [stream]);
+
+  const toggleManualTorch = useCallback(async () => {
+    if (isLowBattery || isBatterySaverMode) {
+      playFeedback('warning');
+      return;
+    }
+    const nextState = !isTorchOn;
+    setIsTorchOn(nextState);
+    if (!nextState) {
+      setIsAutoTorchActive(false);
+    }
+    await setHardwareTorch(nextState);
+    playFeedback('click');
+  }, [isTorchOn, isLowBattery, isBatterySaverMode, setHardwareTorch]);
+
+  const effectiveFaceAutoPause = useMemo(() => {
+    if (faceAutoPauseEnabled !== undefined) return faceAutoPauseEnabled;
+    try {
+      return localStorage.getItem('sdn6_face_auto_pause_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  }, [faceAutoPauseEnabled]);
 
   const effectivePauseOnInactivity = useMemo(() => {
     if (pauseOnInactivity !== undefined) return pauseOnInactivity;
@@ -890,10 +989,18 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
   const stopCamera = useCallback(() => {
     if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
+      stream.getTracks().forEach((track) => {
+        try {
+          track.applyConstraints({ advanced: [{ torch: false } as any] });
+        } catch {}
+        track.stop();
+      });
       setStream(null);
     }
     setIsCameraActive(false);
+    setIsTorchOn(false);
+    setIsAutoTorchActive(false);
+    setMeasuredLuma(null);
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -917,6 +1024,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facingMode },
+          ...(isBatterySaverMode ? { frameRate: { ideal: 15, max: 15 } } : {}),
           ...(isMobile ? { width: { ideal: 1080 }, height: { ideal: 1920 } } : {})
         },
         audio: false,
@@ -946,7 +1054,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         trackScanFailure('GENERAL_ERROR', msg, 'Inisialisasi Kamera');
       }
     }
-  }, [facingMode, trackScanFailure]);
+  }, [facingMode, isBatterySaverMode, trackScanFailure]);
 
   useEffect(() => {
     if (isOpen) {
@@ -1003,6 +1111,21 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             code = decodeURIComponent(match[1]);
           }
         }
+      }
+
+      // Check for rapid duplicate scans within 15 seconds
+      const now = Date.now();
+      const recentDup = recentScans.find(
+        (s) => s.code.toLowerCase() === code.toLowerCase() && now - s.timestamp < 15000
+      );
+      if (recentDup) {
+        playFeedback('duplicate_warning'); // getaran pendek cepat untuk peringatan QR salah/duplikat
+        setIsProcessing(false);
+        setErrorType('GENERAL_ERROR');
+        const dupMsg = `⚠️ QR Duplikat: Kode "${code}" (${recentDup.title}) sudah dipindai beberapa detik yang lalu.`;
+        setErrorMsg(dupMsg);
+        trackScanFailure('GENERAL_ERROR', dupMsg, code);
+        return;
       }
 
       // Check if it's a JSON payload (Classroom assignment or student badge QR)
@@ -1091,7 +1214,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           timestamp: Date.now(),
         };
 
-        playFeedback('success');
+        // Differentiated haptic feedback: task_success if assignment attached, else attendance_success
+        playFeedback(matchedAssignment ? 'task_success' : 'attendance_success');
         setSuccessInfo(info);
         addRecentScan(recentItem);
         if (onScanSuccess) onScanSuccess(recentItem);
@@ -1170,7 +1294,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           timestamp: Date.now(),
         };
 
-        playFeedback('success');
+        // Differentiated haptic feedback: long vibration for task success
+        playFeedback('task_success');
         setSuccessInfo(info);
         addRecentScan(recentItem);
         if (onScanSuccess) onScanSuccess(recentItem);
@@ -1264,8 +1389,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         return;
       }
 
-      // 4. Not found
-      playFeedback('error');
+      // 4. Not found - quick staccato error pulse
+      playFeedback('scan_error');
       setIsProcessing(false);
       setErrorType('NOT_FOUND_IN_DB');
       const notFoundMsg = `Data dengan kode "${code}" tidak ditemukan dalam database aset, tugas, maupun siswa.`;
@@ -1283,6 +1408,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       quickActionsActive,
       currentClass,
       onScanSuccess,
+      recentScans,
     ]
   );
 
@@ -1304,16 +1430,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }
 
     const isPowerSaveActive = isLowBattery || isBatterySaverMode;
+    const isFrontCamera = facingMode === 'user';
+    // Non-essential real-time face detection analytics is disabled in Eco-Scan to extend battery life
+    const shouldCheckFace = effectiveFaceAutoPause && isFrontCamera && !isPowerSaveActive;
 
     const scanFrame = async () => {
       if (!isScanning || !videoRef.current || videoRef.current.readyState < 2) {
         if (isScanning) {
-          if (isPowerSaveActive) {
+          if (isPowerSaveActive || isFacePaused) {
             setTimeout(() => {
               if (isScanning) {
                 animationFrameRef.current = requestAnimationFrame(scanFrame);
               }
-            }, 1000);
+            }, isFacePaused ? 800 : (isBatterySaverMode ? 66 : 800));
           } else {
             animationFrameRef.current = requestAnimationFrame(scanFrame);
           }
@@ -1321,7 +1450,130 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         return;
       }
 
-      if (detector) {
+      // Smart Auto-Pause: Face Detection check when using front camera
+      if (shouldCheckFace) {
+        let hasFace = true;
+        try {
+          if ('FaceDetector' in window) {
+            if (!faceDetectorRef.current) {
+              faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+            }
+            const faces = await faceDetectorRef.current.detect(videoRef.current);
+            hasFace = faces && faces.length > 0;
+          } else {
+            // Adaptive Canvas skin-luminance presence detection heuristic
+            if (!faceCanvasRef.current) {
+              faceCanvasRef.current = document.createElement('canvas');
+              faceCanvasRef.current.width = 48;
+              faceCanvasRef.current.height = 36;
+            }
+            const ctx = faceCanvasRef.current.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(videoRef.current, 0, 0, 48, 36);
+              const imgData = ctx.getImageData(10, 8, 28, 20).data;
+              let skinPixels = 0;
+              for (let i = 0; i < imgData.length; i += 4) {
+                const r = imgData[i];
+                const g = imgData[i + 1];
+                const b = imgData[i + 2];
+                // Human skin tone chroma & contrast variance test
+                if (r > 60 && g > 35 && b > 20 && r > g && r > b && (r - g) > 10 && (r - b) > 15) {
+                  skinPixels++;
+                }
+              }
+              const minPixels = faceDetectionSensitivity === 'high' ? 30 : faceDetectionSensitivity === 'low' ? 8 : 16;
+              hasFace = skinPixels >= minPixels;
+            }
+          }
+        } catch {
+          hasFace = true;
+        }
+
+        const thresholdMs = faceDetectionSensitivity === 'high' ? 1800 : faceDetectionSensitivity === 'low' ? 3500 : 2500;
+        if (hasFace) {
+          lastFaceSeenTimeRef.current = Date.now();
+          if (isFacePaused) {
+            setIsFacePaused(false);
+          }
+        } else if (Date.now() - lastFaceSeenTimeRef.current > thresholdMs) {
+          if (!isFacePaused) {
+            setIsFacePaused(true);
+          }
+          // While face auto-paused, skip heavy barcode detection to preserve battery and CPU
+          if (isScanning) {
+            setTimeout(() => {
+              if (isScanning) {
+                animationFrameRef.current = requestAnimationFrame(scanFrame);
+              }
+            }, 800);
+            return;
+          }
+        }
+      } else if (isFacePaused) {
+        setIsFacePaused(false);
+      }
+
+      // Ambient Light Sensor & Scheduled Auto-Flashlight Detection
+      const now = Date.now();
+      if (effectiveAutoFlashlight && !isPowerSaveActive && now - lastTorchCheckTimeRef.current > 400) {
+        lastTorchCheckTimeRef.current = now;
+        try {
+          if (!ambientCanvasRef.current) {
+            ambientCanvasRef.current = document.createElement('canvas');
+            ambientCanvasRef.current.width = 32;
+            ambientCanvasRef.current.height = 24;
+          }
+          const ambCtx = ambientCanvasRef.current.getContext('2d', { willReadFrequently: true });
+          if (ambCtx && videoRef.current) {
+            ambCtx.drawImage(videoRef.current, 0, 0, 32, 24);
+            const frameData = ambCtx.getImageData(0, 0, 32, 24).data;
+            let totalLuma = 0;
+            const pixelCount = frameData.length / 4;
+            for (let i = 0; i < frameData.length; i += 4) {
+              // Standard ITU-R BT.601 perceptual luminance formula
+              const y = 0.299 * frameData[i] + 0.587 * frameData[i + 1] + 0.114 * frameData[i + 2];
+              totalLuma += y;
+            }
+            const avgLuma = Math.round(totalLuma / pixelCount);
+            setMeasuredLuma(avgLuma);
+
+            // Determine if current time/schedule satisfies flashlight schedule mode
+            let schedulePermitsTorch = true;
+            if (effectiveFlashlightScheduleMode === 'KBM_EVENING_ONLY') {
+              const currentHour = new Date().getHours();
+              // Early morning before 07:00 or late afternoon after 15:00
+              schedulePermitsTorch = currentHour < 7 || currentHour >= 15;
+            } else if (effectiveFlashlightScheduleMode === 'ALWAYS') {
+              schedulePermitsTorch = true;
+            } else if (effectiveFlashlightScheduleMode === 'LOW_LIGHT_ONLY') {
+              schedulePermitsTorch = true; // Governed strictly by luma threshold
+            }
+
+            // Hysteresis calculation: activate when luma < threshold, deactivate when luma > threshold + 15
+            if (schedulePermitsTorch && avgLuma < effectiveAmbientThreshold) {
+              lowLightCounterRef.current++;
+              brightLightCounterRef.current = 0;
+              if (lowLightCounterRef.current >= 2 && !isTorchOn) {
+                setIsTorchOn(true);
+                setIsAutoTorchActive(true);
+                setHardwareTorch(true);
+              }
+            } else if (avgLuma > effectiveAmbientThreshold + 15 || !schedulePermitsTorch) {
+              brightLightCounterRef.current++;
+              lowLightCounterRef.current = 0;
+              if (brightLightCounterRef.current >= 2 && isTorchOn && isAutoTorchActive) {
+                setIsTorchOn(false);
+                setIsAutoTorchActive(false);
+                setHardwareTorch(false);
+              }
+            }
+          }
+        } catch {
+          // Ignore sampling errors
+        }
+      }
+
+      if (detector && !isFacePaused) {
         try {
           const barcodes = await detector.detect(videoRef.current);
           if (barcodes && barcodes.length > 0 && barcodes[0]?.rawValue) {
@@ -1335,12 +1587,13 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }
 
       if (isScanning) {
-        if (isPowerSaveActive) {
+        if (isPowerSaveActive || isFacePaused) {
+          const frameDelay = isFacePaused ? 800 : (isBatterySaverMode ? 66 : 1000);
           setTimeout(() => {
             if (isScanning) {
               animationFrameRef.current = requestAnimationFrame(scanFrame);
             }
-          }, 1000);
+          }, frameDelay);
         } else {
           animationFrameRef.current = requestAnimationFrame(scanFrame);
         }
@@ -1355,7 +1608,24 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isCameraActive, successInfo, resolveScannedText, isLowBattery, isBatterySaverMode]);
+  }, [
+    isCameraActive,
+    successInfo,
+    quickAction,
+    resolveScannedText,
+    isLowBattery,
+    isBatterySaverMode,
+    effectiveFaceAutoPause,
+    faceDetectionSensitivity,
+    isFacePaused,
+    facingMode,
+    effectiveAutoFlashlight,
+    effectiveAmbientThreshold,
+    effectiveFlashlightScheduleMode,
+    isTorchOn,
+    isAutoTorchActive,
+    setHardwareTorch,
+  ]);
 
   const handleManualSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1454,7 +1724,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                 {isBatterySaverMode && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 font-bold flex items-center gap-1 shadow-xs animate-in fade-in">
                     <Leaf size={10} className="fill-emerald-300" />
-                    <span>Hemat Daya (1 FPS)</span>
+                    <span>Eco-Scan (15 FPS)</span>
                   </span>
                 )}
                 {scanGoal !== undefined && scanGoal > 0 && (
@@ -1524,16 +1794,25 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={toggleSoundFeedback}
+              onClick={toggleManualTorch}
               className={`px-2 sm:px-2.5 py-1 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ${
-                soundFeedbackEnabled
-                  ? 'bg-emerald-500/30 text-emerald-200 hover:bg-emerald-500/40 ring-1 ring-emerald-400/40 shadow-xs'
-                  : 'bg-white/10 text-white/50 hover:bg-white/20'
+                isTorchOn
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/40 ring-2 ring-amber-300 animate-pulse'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
               }`}
-              title={soundFeedbackEnabled ? 'Audio & Haptic Feedback Aktif: Suara dan getaran menyala saat scan sukses (Klik untuk menonaktifkan)' : 'Audio & Haptic Feedback Nonaktif: Mode Senyap (Klik untuk mengaktifkan)'}
+              title={
+                isLowBattery || isBatterySaverMode
+                  ? 'Senter dinonaktifkan untuk menghemat daya baterai'
+                  : isTorchOn
+                  ? `Senter Menyala ${isAutoTorchActive ? '(Otomatis dari Sensor Cahaya)' : '(Manual)'} • Klik untuk mematikan`
+                  : 'Nyalakan Senter Kamera (Flashlight)'
+              }
+              disabled={isLowBattery || isBatterySaverMode}
             >
-              {soundFeedbackEnabled ? <Volume2 size={13} className="text-emerald-300 animate-pulse" /> : <VolumeX size={13} className="text-white/50" />}
-              <span className="hidden sm:inline">{soundFeedbackEnabled ? 'Audio/Haptic: ON' : 'Audio/Haptic: OFF'}</span>
+              <SunMedium size={13} className={isTorchOn ? 'text-slate-950 stroke-[2.5]' : 'text-amber-300'} />
+              <span className="hidden sm:inline">
+                {isTorchOn ? (isAutoTorchActive ? 'Senter (Auto)' : 'Senter: ON') : 'Senter'}
+              </span>
             </button>
             <button
               type="button"
@@ -2069,11 +2348,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                       </div>
                       <div className="text-left min-w-0">
                         <p className="text-[10px] font-black tracking-tight leading-none text-emerald-300 uppercase flex items-center gap-1.5">
-                          Mode Hemat Baterai (1 FPS)
-                          <span className="bg-emerald-800/80 text-emerald-200 text-[8px] px-1 py-0.2 rounded font-mono font-bold">Kecerahan 65%</span>
+                          Mode Eco-Scan (15 FPS)
+                          <span className="bg-emerald-800/80 text-emerald-200 text-[8px] px-1 py-0.2 rounded font-mono font-bold">Hemat 65% Daya</span>
                         </p>
                         <p className="text-[9px] text-emerald-200/90 leading-tight truncate mt-0.5">
-                          Laju bingkai & kecerahan kamera diturunkan untuk efisiensi baterai.
+                          Laju bingkai dibatasi 15 FPS & analitik real-time dinonaktifkan untuk menghemat baterai.
                         </p>
                       </div>
                     </div>
@@ -2100,6 +2379,37 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                         ECO
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Ambient Torch / Flashlight Screen Glow Effect when Active */}
+                {isTorchOn && (
+                  <div className="absolute inset-0 pointer-events-none z-10 bg-amber-200/25 ring-8 ring-amber-300/40 shadow-[inset_0_0_80px_rgba(251,191,36,0.35)] transition-all duration-300" />
+                )}
+
+                {/* Ambient Light Sensor & Auto-Flashlight Realtime Status HUD */}
+                {effectiveAutoFlashlight && !isLowBattery && (
+                  <div className="absolute top-3 right-3 sm:right-auto sm:left-3 z-15 flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-md text-[10px]">
+                    <div className={`p-1 rounded-md ${isTorchOn ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
+                      <SunMedium size={11} className={isTorchOn ? 'animate-spin' : ''} />
+                    </div>
+                    <div className="text-left font-mono leading-tight">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-white">Luma: {measuredLuma !== null ? measuredLuma : '--'}</span>
+                        <span className="text-[8px] text-slate-400">/ Thresh: {effectiveAmbientThreshold}</span>
+                      </div>
+                      <span className={`text-[8px] font-bold ${
+                        isTorchOn 
+                          ? 'text-amber-300' 
+                          : measuredLuma !== null && measuredLuma < effectiveAmbientThreshold
+                          ? 'text-yellow-400'
+                          : 'text-emerald-400'
+                      }`}>
+                        {isTorchOn 
+                          ? (isAutoTorchActive ? '⚡ Senter Otomatis Aktif' : '⚡ Senter Manual Aktif')
+                          : 'Sensor Cahaya Siaga'}
+                      </span>
+                    </div>
                   </div>
                 )}
 
@@ -2182,6 +2492,40 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                         </span>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Smart Auto-Pause Berbasis Deteksi Wajah Overlay */}
+                {isFacePaused && !successInfo && !quickAction && (
+                  <div
+                    id="overlay-face-auto-paused"
+                    className="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-5 z-25 text-center text-white space-y-3 animate-in fade-in duration-200"
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shadow-lg shadow-indigo-500/20">
+                      <ScanFace size={32} className="animate-pulse" />
+                    </div>
+                    <div className="space-y-1.5 max-w-xs">
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-950 border border-indigo-500/50 text-indigo-300 font-mono">
+                        ⏸️ Smart Auto-Pause Aktif
+                      </span>
+                      <h4 className="text-xs font-black text-slate-100">Scanner Dijeda Otomatis</h4>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Tidak ada siswa di depan kamera depan. Arahkan siswa ke depan kamera atau klik tombol di bawah untuk melanjutkan.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-resume-face-auto-pause"
+                      onClick={() => {
+                        playFeedback('click');
+                        lastFaceSeenTimeRef.current = Date.now();
+                        setIsFacePaused(false);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white text-[11px] font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/30 cursor-pointer"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Lanjutkan Pindai Manual</span>
+                    </button>
                   </div>
                 )}
               </div>

@@ -22,6 +22,21 @@ import {
   P5Project,
   P5ProjectStage,
   P5ProjectDailyLog,
+  GradeChangeLog,
+  SubjectKkmAlert,
+  AssignmentErrorPattern,
+  RemedialModule,
+  SpecialInterventionStudent,
+  ErrorCategory,
+  AffectedStudentInfo,
+  StudentBehaviorLog,
+  BehaviorAnalysisInsight,
+  BehaviorCategory,
+  BehaviorType,
+  ComprehensiveStudentReportData,
+  ComprehensiveStudentSubjectGrade,
+  RemedialGuidanceSession,
+  RemedialSessionStatus,
 } from '../types/classroom';
 import { offlineSyncManager } from './offlineSyncManager';
 import { progressSyncService } from './progressSyncService';
@@ -31,6 +46,8 @@ const STORAGE_KEYS = {
   ASSIGNMENTS: 'BB_CLASSROOM_ASSIGNMENTS',
   SUBMISSIONS: 'BB_CLASSROOM_SUBMISSIONS',
   REPORTS: 'BB_CLASSROOM_REPORTS',
+  REMEDIAL_MODULES: 'BB_CLASSROOM_REMEDIAL_MODULES_V1',
+  ASSIGNED_REMEDIAL: 'BB_CLASSROOM_ASSIGNED_REMEDIAL_V1',
   FORUM_POSTS: 'BB_CLASSROOM_FORUM_POSTS_V3',
   ATTENDANCE: 'BB_CLASSROOM_ATTENDANCE_V3',
   QUIZZES: 'BB_CLASSROOM_QUIZZES_V3',
@@ -45,7 +62,22 @@ const STORAGE_KEYS = {
   PORTFOLIO: 'BB_CLASSROOM_PORTFOLIO_V1',
   P5_PROJECTS: 'BB_CLASSROOM_P5_PROJECTS_V1',
   P5_DAILY_LOGS: 'BB_CLASSROOM_P5_DAILY_LOGS_V1',
+  GRADE_LOGS: 'BB_CLASSROOM_GRADE_LOGS_V1',
+  SUBJECT_KKM: 'BB_CLASSROOM_SUBJECT_KKM_V1',
+  BEHAVIOR_LOGS: 'BB_CLASSROOM_BEHAVIOR_LOGS_V1',
+  REMEDIAL_SESSIONS: 'BB_CLASSROOM_REMEDIAL_SESSIONS_V1',
   SEEDED: 'BB_CLASSROOM_SEEDED_V4',
+};
+
+export const DEFAULT_SUBJECT_KKM: Record<string, number> = {
+  'Matematika': 75,
+  'Bahasa Indonesia': 78,
+  'IPAS': 75,
+  'Pendidikan Pancasila': 78,
+  'PJOK': 80,
+  'Seni Budaya': 80,
+  'Bahasa Inggris': 72,
+  'Pendidikan Agama': 80,
 };
 
 const nowISO = () => new Date().toISOString();
@@ -65,6 +97,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Festival Kuliner & Gelar Karya', DESCRIPTION: 'Bazar jajanan pasar dan evaluasi hasil belajar', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 62,
+    DEADLINE: '2026-11-09',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   },
@@ -82,6 +115,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Refleksi Kebinekaan', DESCRIPTION: 'Jurnal pengalaman bertoleransi & kebersamaan', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 38,
+    DEADLINE: '2026-11-06',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   },
@@ -99,6 +133,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Pasar Produk Herbal Cilik', DESCRIPTION: 'Penjualan minuman herbal saat hari bebas kendaraan', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 62,
+    DEADLINE: '2026-11-12',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   },
@@ -116,6 +151,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Panen Karya Pupuk & Pameran P5', DESCRIPTION: 'Pemasaran pupuk organik untuk kebun sekolah dan refleksi', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 62,
+    DEADLINE: '2026-11-07',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   },
@@ -133,6 +169,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Laporan Inovasi & Presentasi Karya', DESCRIPTION: 'Presentasi hasil karya rekayasa di depan wali murid', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 38,
+    DEADLINE: '2026-11-07',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   },
@@ -150,6 +187,7 @@ const DEFAULT_P5_PROJECTS: P5Project[] = [
       { ID: 'STG-4', NAME: 'Tahap 4: Penghitungan Suara & Pelantikan', DESCRIPTION: 'Pengumuman pemenang & pidato penutupan', STATUS: 'BELUM_MULAI' }
     ],
     PERCENTAGE: 62,
+    DEADLINE: '2026-11-06',
     UPDATED_AT: nowISO(),
     UPDATED_BY: 'GURU_SYS'
   }
@@ -426,6 +464,62 @@ const DEFAULT_SUBMISSIONS: ClassroomSubmission[] = [
     FEEDBACK: 'Sangat bagus Zahra! Gambar rapi dan penjelasannya sangat lengkap.',
     GRADED_BY: 'Nurul Hidayah, S.Pd.',
     GRADED_AT: ts(),
+  },
+];
+
+const DEFAULT_GRADE_LOGS: GradeChangeLog[] = [
+  {
+    ID: 'GLOG-001',
+    SISWA_ID: 'SISWA-004',
+    SISWA_NAMA: 'Zahra Aulia Nabila',
+    SUBMISSION_ID: 'SUB-004',
+    ASSIGNMENT_ID: 'ASG-001',
+    ASSIGNMENT_TITLE: 'Tugas 1: Mengamati & Menggambar Benda Hidup',
+    OLD_NILAI: 85,
+    NEW_NILAI: 95,
+    DIFF: 10,
+    CHANGED_AT: '2026-10-28 10:15:00',
+    CHANGED_BY: 'Nurul Hidayah, S.Pd.',
+    REASON: 'Perbaikan detail gambar dan penjelasan manfaat pohon kelapa.',
+  },
+  {
+    ID: 'GLOG-002',
+    SISWA_ID: 'SISWA-001',
+    SISWA_NAMA: 'Ahmad Zaki Pratama',
+    ASSIGNMENT_ID: 'ASG-002',
+    ASSIGNMENT_TITLE: 'Latihan 2: Pengenalan Angka & Berhitung Penjumlahan',
+    OLD_NILAI: 68,
+    NEW_NILAI: 82,
+    DIFF: 14,
+    CHANGED_AT: '2026-10-29 14:30:00',
+    CHANGED_BY: 'Nurul Hidayah, S.Pd.',
+    REASON: 'Selesai mengikuti sesi bimbingan remedial dan perbaikan soal hitung.',
+  },
+  {
+    ID: 'GLOG-003',
+    SISWA_ID: 'SISWA-002',
+    SISWA_NAMA: 'Siti Aisyah Putri',
+    ASSIGNMENT_ID: 'ASG-001',
+    ASSIGNMENT_TITLE: 'Tugas 1: Mengamati & Menggambar Benda Hidup',
+    OLD_NILAI: 78,
+    NEW_NILAI: 88,
+    DIFF: 10,
+    CHANGED_AT: '2026-10-30 09:45:00',
+    CHANGED_BY: 'Nurul Hidayah, S.Pd.',
+    REASON: 'Penyempurnaan deskripsi pengamatan lingkungan.',
+  },
+  {
+    ID: 'GLOG-004',
+    SISWA_ID: 'SISWA-003',
+    SISWA_NAMA: 'Budi Santoso',
+    ASSIGNMENT_ID: 'ASG-003',
+    ASSIGNMENT_TITLE: 'Tugas Literasi: Menyusun Paragraf Sederhana',
+    OLD_NILAI: 65,
+    NEW_NILAI: 76,
+    DIFF: 11,
+    CHANGED_AT: '2026-11-01 11:20:00',
+    CHANGED_BY: 'Nurul Hidayah, S.Pd.',
+    REASON: 'Remedial mandiri: Penulisan huruf kapital dan tanda baca sudah tuntas KKM.',
   },
 ];
 
@@ -1039,7 +1133,16 @@ class ClassroomService {
       this.setItem(STORAGE_KEYS.NOTIFICATIONS, DEFAULT_NOTIFICATIONS);
       this.setItem(STORAGE_KEYS.GRADE_WEIGHTS, DEFAULT_GRADE_WEIGHTS);
       this.setItem(STORAGE_KEYS.PORTFOLIO, DEFAULT_PORTFOLIO);
+      this.setItem(STORAGE_KEYS.GRADE_LOGS, DEFAULT_GRADE_LOGS);
+      this.setItem(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
       localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
+    } else if (typeof localStorage !== 'undefined') {
+      if (!localStorage.getItem(STORAGE_KEYS.GRADE_LOGS)) {
+        this.setItem(STORAGE_KEYS.GRADE_LOGS, DEFAULT_GRADE_LOGS);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.BEHAVIOR_LOGS)) {
+        this.setItem(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
+      }
     }
   }
 
@@ -1355,20 +1458,76 @@ class ClassroomService {
     return saved;
   }
 
-  public gradeSubmission(id: string, nilai: number, feedback: string, gradedBy: string, voiceNote?: string): void {
+  public getGradeChangeLogs(siswaId?: string): GradeChangeLog[] {
+    this.initClassroom();
+    const all = this.getItem<GradeChangeLog[]>(STORAGE_KEYS.GRADE_LOGS, DEFAULT_GRADE_LOGS);
+    if (siswaId) {
+      return all.filter((l) => l.SISWA_ID === siswaId);
+    }
+    return all;
+  }
+
+  public recordGradeChange(log: Omit<GradeChangeLog, 'ID'>): GradeChangeLog {
+    const list = this.getGradeChangeLogs();
+    const entry: GradeChangeLog = {
+      ...log,
+      ID: `GLOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    };
+    list.unshift(entry);
+    const trimmed = list.slice(0, 150);
+    this.setItem(STORAGE_KEYS.GRADE_LOGS, trimmed);
+    return entry;
+  }
+
+  public gradeSubmission(
+    id: string,
+    nilai: number,
+    feedback: string,
+    gradedBy: string,
+    voiceNote?: string,
+    reason?: string
+  ): void {
     const list = this.getItem<ClassroomSubmission[]>(STORAGE_KEYS.SUBMISSIONS, []);
     const sub = list.find((s) => s.ID === id);
     if (sub) {
+      const oldNilai = sub.NILAI;
+      const assignments = this.getAssignments();
+      const assignment = assignments.find((a) => a.ID === sub.ASSIGNMENT_ID);
+      const assignmentTitle = assignment?.JUDUL || 'Tugas Pembelajaran';
+      const hasChanged = oldNilai !== undefined && oldNilai !== nilai;
+
       sub.NILAI = nilai;
       sub.FEEDBACK = feedback;
       if (voiceNote !== undefined) sub.VOICE_NOTE = voiceNote;
       sub.GRADED_BY = gradedBy;
       sub.GRADED_AT = ts();
       sub.STATUS = 'GRADED';
+
+      const changeLogEntry: GradeChangeLog = {
+        ID: `GLOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        SISWA_ID: sub.SISWA_ID,
+        SISWA_NAMA: sub.SISWA_NAMA,
+        SUBMISSION_ID: sub.ID,
+        ASSIGNMENT_ID: sub.ASSIGNMENT_ID,
+        ASSIGNMENT_TITLE: assignmentTitle,
+        OLD_NILAI: oldNilai,
+        NEW_NILAI: nilai,
+        DIFF: oldNilai !== undefined ? nilai - oldNilai : undefined,
+        CHANGED_AT: ts(),
+        CHANGED_BY: gradedBy,
+        REASON: reason || feedback || (hasChanged ? 'Penyesuaian nilai oleh guru' : 'Penilaian tugas baru'),
+      };
+
+      const history = sub.GRADE_HISTORY || [];
+      history.unshift(changeLogEntry);
+      sub.GRADE_HISTORY = history.slice(0, 15);
+
       this.setItem(STORAGE_KEYS.SUBMISSIONS, list);
+      this.recordGradeChange(changeLogEntry);
+
       offlineSyncManager.addPendingChange(
         'STUDENT_SUBMISSION',
-        `Nilai tugas ${sub.SISWA_NAMA}: ${nilai}/100 oleh ${gradedBy}`,
+        `Nilai tugas ${sub.SISWA_NAMA}: ${nilai}/100 (${oldNilai !== undefined ? `${oldNilai} ➔ ${nilai}` : 'Baru'}) oleh ${gradedBy}`,
         sub
       );
       try {
@@ -1378,20 +1537,47 @@ class ClassroomService {
   }
 
   public gradeSubmissionsBulk(
-    updates: Array<{ id: string; nilai: number; feedback?: string; voiceNote?: string }>,
+    updates: Array<{ id: string; nilai: number; feedback?: string; voiceNote?: string; reason?: string }>,
     gradedBy: string
   ): void {
     const list = this.getItem<ClassroomSubmission[]>(STORAGE_KEYS.SUBMISSIONS, []);
+    const assignments = this.getAssignments();
     let lastSub: ClassroomSubmission | null = null;
-    updates.forEach(({ id, nilai, feedback, voiceNote }) => {
+    updates.forEach(({ id, nilai, feedback, voiceNote, reason }) => {
       const sub = list.find((s) => s.ID === id);
       if (sub) {
+        const oldNilai = sub.NILAI;
+        const assignment = assignments.find((a) => a.ID === sub.ASSIGNMENT_ID);
+        const assignmentTitle = assignment?.JUDUL || 'Tugas Pembelajaran';
+        const hasChanged = oldNilai !== undefined && oldNilai !== nilai;
+
         sub.NILAI = nilai;
         if (feedback !== undefined) sub.FEEDBACK = feedback;
         if (voiceNote !== undefined) sub.VOICE_NOTE = voiceNote;
         sub.GRADED_BY = gradedBy;
         sub.GRADED_AT = ts();
         sub.STATUS = 'GRADED';
+
+        const changeLogEntry: GradeChangeLog = {
+          ID: `GLOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          SISWA_ID: sub.SISWA_ID,
+          SISWA_NAMA: sub.SISWA_NAMA,
+          SUBMISSION_ID: sub.ID,
+          ASSIGNMENT_ID: sub.ASSIGNMENT_ID,
+          ASSIGNMENT_TITLE: assignmentTitle,
+          OLD_NILAI: oldNilai,
+          NEW_NILAI: nilai,
+          DIFF: oldNilai !== undefined ? nilai - oldNilai : undefined,
+          CHANGED_AT: ts(),
+          CHANGED_BY: gradedBy,
+          REASON: reason || feedback || (hasChanged ? 'Penyesuaian nilai massal' : 'Penilaian tugas baru'),
+        };
+
+        const history = sub.GRADE_HISTORY || [];
+        history.unshift(changeLogEntry);
+        sub.GRADE_HISTORY = history.slice(0, 15);
+
+        this.recordGradeChange(changeLogEntry);
         lastSub = sub;
       }
     });
@@ -1822,6 +2008,167 @@ class ClassroomService {
   public deleteSchedule(id: string): void {
     const list = this.getItem<ClassScheduleItem[]>(STORAGE_KEYS.SCHEDULES, DEFAULT_SCHEDULES);
     this.setItem(STORAGE_KEYS.SCHEDULES, list.filter((s) => s.ID !== id));
+  }
+
+  // ==========================================
+  // === 5b. JADWAL BIMBINGAN REMEDIAL KHUSUS (INTEGRATED WITH CALENDAR) ===
+  // ==========================================
+  public getRemedialSessions(kelas?: string, siswaId?: string): RemedialGuidanceSession[] {
+    this.initClassroom();
+    const defaultSessions: RemedialGuidanceSession[] = [
+      {
+        ID: 'REM-SES-001',
+        SISWA_ID: 'SIS-002',
+        SISWA_NAMA: 'Dimas Aditya',
+        KELAS: 'Kelas 4B',
+        MAPEL: 'Matematika',
+        TOPIK: 'Operasi Hitung Pecahan & Penyelesaian Soal Cerita',
+        TANGGAL: new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10),
+        HARI: 'Kamis',
+        JAM_MULAI: '13:00',
+        JAM_SELESAI: '14:00',
+        RUANGAN: 'Ruang Bimbingan Konseling / Remedial',
+        GURU_ID: 'GURU-001',
+        GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+        CATATAN: 'Fokus pada penyederhanaan penyebut pecahan dan pembimbingan langkah demi langkah',
+        TARGET_KOMPETENSI: 'Mencapai target KKM 75 pada asesmen remedial pecahan',
+        STATUS: 'TERJADWAL',
+        CREATED_AT: new Date(Date.now() - 86400000 * 2).toISOString(),
+      },
+      {
+        ID: 'REM-SES-002',
+        SISWA_ID: 'SIS-003',
+        SISWA_NAMA: 'Budi Santoso',
+        KELAS: 'Kelas 4B',
+        MAPEL: 'Bahasa Indonesia',
+        TOPIK: 'Identifikasi Ide Pokok Paragraf & Penguatan Karakter Disiplin',
+        TANGGAL: new Date(Date.now() + 86400000 * 4).toISOString().slice(0, 10),
+        HARI: 'Selasa',
+        JAM_MULAI: '13:30',
+        JAM_SELESAI: '14:30',
+        RUANGAN: 'Pojok Literasi & Remedial Kelas 4B',
+        GURU_ID: 'GURU-001',
+        GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+        CATATAN: 'Bimbingan khusus membaca intensif dan pendampingan pengelolaan fokus belajar',
+        TARGET_KOMPETENSI: 'Peningkatan konsentrasi dan pemenuhan tugas bacaan tepat waktu',
+        STATUS: 'TERJADWAL',
+        CREATED_AT: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+
+    let list = this.getItem<RemedialGuidanceSession[]>(STORAGE_KEYS.REMEDIAL_SESSIONS, defaultSessions);
+    if (kelas && kelas !== 'Semua') {
+      list = list.filter((s) => s.KELAS.toLowerCase().includes(kelas.toLowerCase()));
+    }
+    if (siswaId) {
+      list = list.filter((s) => s.SISWA_ID === siswaId);
+    }
+    return list.sort((a, b) => new Date(a.TANGGAL).getTime() - new Date(b.TANGGAL).getTime());
+  }
+
+  public saveRemedialSession(
+    session: Partial<RemedialGuidanceSession> & { syncToCalendar?: boolean }
+  ): RemedialGuidanceSession {
+    this.initClassroom();
+    const defaultSessions = this.getRemedialSessions();
+    const list = this.getItem<RemedialGuidanceSession[]>(STORAGE_KEYS.REMEDIAL_SESSIONS, defaultSessions);
+
+    const syncToCalendar = session.syncToCalendar !== false;
+    let saved: RemedialGuidanceSession;
+    let integratedScheduleId = session.SCHEDULE_ID;
+
+    // Synchronize to class calendar schedule if enabled
+    if (syncToCalendar) {
+      const calendarMapel = `[Bimbingan Remedial] ${session.MAPEL || 'Akademik'} - ${session.SISWA_NAMA || 'Siswa'} (${session.TOPIK || 'Penguatan Kompetensi'})`;
+      const scheduleItem: Partial<ClassScheduleItem> = {
+        ID: integratedScheduleId || `SCH-REM-${Date.now()}`,
+        KELAS: session.KELAS || 'Kelas 4B',
+        HARI: session.HARI || 'Kamis',
+        JAM_MULAI: session.JAM_MULAI || '13:00',
+        JAM_SELESAI: session.JAM_SELESAI || '14:00',
+        MAPEL: calendarMapel,
+        GURU_NAMA: session.GURU_NAMA || 'Guru Kelas',
+        RUANGAN: session.RUANGAN || 'Ruang Remedial / BK',
+      };
+      const savedSchedule = this.saveSchedule(scheduleItem);
+      integratedScheduleId = savedSchedule.ID;
+    }
+
+    if (session.ID) {
+      const idx = list.findIndex((s) => s.ID === session.ID);
+      if (idx >= 0) {
+        list[idx] = {
+          ...list[idx],
+          ...session,
+          SCHEDULE_ID: integratedScheduleId || list[idx].SCHEDULE_ID,
+        } as RemedialGuidanceSession;
+        saved = list[idx];
+      } else {
+        saved = {
+          ...session,
+          ID: session.ID,
+          SCHEDULE_ID: integratedScheduleId,
+          CREATED_AT: session.CREATED_AT || nowISO(),
+        } as RemedialGuidanceSession;
+        list.push(saved);
+      }
+    } else {
+      saved = {
+        ID: `REM-SES-${Date.now()}`,
+        SISWA_ID: session.SISWA_ID || 'SIS-UNKNOWN',
+        SISWA_NAMA: session.SISWA_NAMA || 'Peserta Didik',
+        KELAS: session.KELAS || 'Kelas 4B',
+        MAPEL: session.MAPEL || 'Matematika',
+        TOPIK: session.TOPIK || 'Penguatan Remedial',
+        TANGGAL: session.TANGGAL || new Date().toISOString().slice(0, 10),
+        HARI: session.HARI || 'Kamis',
+        JAM_MULAI: session.JAM_MULAI || '13:00',
+        JAM_SELESAI: session.JAM_SELESAI || '14:00',
+        RUANGAN: session.RUANGAN || 'Ruang Remedial / BK',
+        GURU_ID: session.GURU_ID || 'GURU-001',
+        GURU_NAMA: session.GURU_NAMA || 'Guru Kelas',
+        CATATAN: session.CATATAN || '',
+        TARGET_KOMPETENSI: session.TARGET_KOMPETENSI || 'Pencapaian ketuntasan KKM',
+        STATUS: session.STATUS || 'TERJADWAL',
+        SCHEDULE_ID: integratedScheduleId,
+        CREATED_AT: nowISO(),
+      };
+      list.push(saved);
+    }
+
+    this.setItem(STORAGE_KEYS.REMEDIAL_SESSIONS, list);
+
+    // Add alert notification for class & student
+    this.addNotification({
+      KELAS: saved.KELAS,
+      TITLE: `🗓️ Jadwal Bimbingan Remedial: ${saved.SISWA_NAMA}`,
+      MESSAGE: `Sesi bimbingan remedial mapel ${saved.MAPEL} (${saved.TOPIK}) dijadwalkan hari ${saved.HARI}, ${saved.JAM_MULAI}-${saved.JAM_SELESAI} di ${saved.RUANGAN}. Terintegrasi dengan kalender kelas.`,
+      TYPE: 'SYSTEM',
+      LINK_PAGE: 'schedule',
+    });
+
+    return saved;
+  }
+
+  public updateRemedialSessionStatus(id: string, status: RemedialSessionStatus): void {
+    const list = this.getRemedialSessions();
+    const idx = list.findIndex((s) => s.ID === id);
+    if (idx >= 0) {
+      list[idx].STATUS = status;
+      this.setItem(STORAGE_KEYS.REMEDIAL_SESSIONS, list);
+    }
+  }
+
+  public deleteRemedialSession(id: string): void {
+    const list = this.getRemedialSessions();
+    const target = list.find((s) => s.ID === id);
+    if (target?.SCHEDULE_ID) {
+      this.deleteSchedule(target.SCHEDULE_ID);
+    }
+    this.setItem(
+      STORAGE_KEYS.REMEDIAL_SESSIONS,
+      list.filter((s) => s.ID !== id)
+    );
   }
 
   // ==========================================
@@ -2352,6 +2699,21 @@ class ClassroomService {
       projects = DEFAULT_P5_PROJECTS;
       this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
     }
+    // Ensure all projects have DEADLINE populated
+    const defaultDeadlines: Record<string, string> = {
+      'kelas 1': '2026-11-09',
+      'kelas 2': '2026-11-06',
+      'kelas 3': '2026-11-12',
+      'kelas 4': '2026-11-07',
+      'kelas 5': '2026-11-07',
+      'kelas 6': '2026-11-06',
+    };
+    projects = projects.map((p) => {
+      if (!p.DEADLINE) {
+        return { ...p, DEADLINE: defaultDeadlines[p.KELAS.toLowerCase()] || '2026-11-07' };
+      }
+      return p;
+    });
     if (kelas) {
       const filtered = projects.filter(p => p.KELAS.toLowerCase() === kelas.toLowerCase());
       if (filtered.length > 0) return filtered;
@@ -2377,9 +2739,42 @@ class ClassroomService {
         { ID: 'STG-4', NAME: 'Tahap 4: Refleksi & Tindak Lanjut', DESCRIPTION: 'Evaluasi dan pameran hasil belajar', STATUS: 'BELUM_MULAI' },
       ],
       PERCENTAGE: 38,
+      DEADLINE: '2026-11-07',
       UPDATED_AT: nowISO(),
       UPDATED_BY: 'GURU_SYS',
     };
+  }
+
+  public updateP5ProjectDeadline(
+    projectId: string,
+    newDeadline: string,
+    updatedBy: string = 'GURU_SYS'
+  ): P5Project {
+    const projects = this.getP5Projects();
+    const projIdx = projects.findIndex(p => p.ID === projectId);
+    let targetProject: P5Project;
+
+    if (projIdx >= 0) {
+      targetProject = projects[projIdx];
+    } else {
+      targetProject = DEFAULT_P5_PROJECTS[0];
+    }
+
+    const updatedProject: P5Project = {
+      ...targetProject,
+      DEADLINE: newDeadline,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: updatedBy,
+    };
+
+    if (projIdx >= 0) {
+      projects[projIdx] = updatedProject;
+    } else {
+      projects.push(updatedProject);
+    }
+
+    this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
+    return updatedProject;
   }
 
   public updateP5StageStatus(
@@ -2409,6 +2804,99 @@ class ClassroomService {
       return s;
     });
 
+    const total = updatedStages.length || 1;
+    const completedCount = updatedStages.filter(s => s.STATUS === 'SELESAI').length;
+    const inProgressCount = updatedStages.filter(s => s.STATUS === 'SEDANG_BERJALAN').length;
+    const percentage = Math.round(((completedCount + (inProgressCount * 0.5)) / total) * 100);
+
+    const updatedProject: P5Project = {
+      ...targetProject,
+      STAGES: updatedStages,
+      PERCENTAGE: percentage,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: updatedBy,
+    };
+
+    if (projIdx >= 0) {
+      projects[projIdx] = updatedProject;
+    } else {
+      projects.push(updatedProject);
+    }
+
+    this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
+    return updatedProject;
+  }
+
+  public addP5Stage(
+    projectId: string,
+    stageData: {
+      NAME: string;
+      DESCRIPTION: string;
+      STATUS?: 'BELUM_MULAI' | 'SEDANG_BERJALAN' | 'SELESAI';
+      TARGET_DATE?: string;
+      COMPLETED_AT?: string;
+    },
+    updatedBy: string = 'GURU_SYS'
+  ): P5Project {
+    const projects = this.getP5Projects();
+    const projIdx = projects.findIndex(p => p.ID === projectId);
+    let targetProject: P5Project;
+
+    if (projIdx >= 0) {
+      targetProject = projects[projIdx];
+    } else {
+      targetProject = DEFAULT_P5_PROJECTS[0];
+    }
+
+    const newStage: P5ProjectStage = {
+      ID: 'STG-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+      NAME: stageData.NAME.trim(),
+      DESCRIPTION: stageData.DESCRIPTION.trim(),
+      STATUS: stageData.STATUS || 'BELUM_MULAI',
+      TARGET_DATE: stageData.TARGET_DATE || undefined,
+      COMPLETED_AT: stageData.STATUS === 'SELESAI' ? (stageData.COMPLETED_AT || todayDate()) : undefined,
+    };
+
+    const updatedStages = [...targetProject.STAGES, newStage];
+    const total = updatedStages.length || 1;
+    const completedCount = updatedStages.filter(s => s.STATUS === 'SELESAI').length;
+    const inProgressCount = updatedStages.filter(s => s.STATUS === 'SEDANG_BERJALAN').length;
+    const percentage = Math.round(((completedCount + (inProgressCount * 0.5)) / total) * 100);
+
+    const updatedProject: P5Project = {
+      ...targetProject,
+      STAGES: updatedStages,
+      PERCENTAGE: percentage,
+      UPDATED_AT: nowISO(),
+      UPDATED_BY: updatedBy,
+    };
+
+    if (projIdx >= 0) {
+      projects[projIdx] = updatedProject;
+    } else {
+      projects.push(updatedProject);
+    }
+
+    this.setItem(STORAGE_KEYS.P5_PROJECTS, projects);
+    return updatedProject;
+  }
+
+  public deleteP5Stage(
+    projectId: string,
+    stageId: string,
+    updatedBy: string = 'GURU_SYS'
+  ): P5Project {
+    const projects = this.getP5Projects();
+    const projIdx = projects.findIndex(p => p.ID === projectId);
+    let targetProject: P5Project;
+
+    if (projIdx >= 0) {
+      targetProject = projects[projIdx];
+    } else {
+      targetProject = DEFAULT_P5_PROJECTS[0];
+    }
+
+    const updatedStages = targetProject.STAGES.filter(s => s.ID !== stageId);
     const total = updatedStages.length || 1;
     const completedCount = updatedStages.filter(s => s.STATUS === 'SELESAI').length;
     const inProgressCount = updatedStages.filter(s => s.STATUS === 'SEDANG_BERJALAN').length;
@@ -2535,7 +3023,1301 @@ class ClassroomService {
     }
     return false;
   }
+
+  // ==========================================
+  // --- Subject KKM Targets & Alerts Methods ---
+  // ==========================================
+  public getSubjectKkmTargets(): Record<string, number> {
+    this.initClassroom();
+    const stored = this.getItem<Record<string, number>>(STORAGE_KEYS.SUBJECT_KKM, DEFAULT_SUBJECT_KKM);
+    return { ...DEFAULT_SUBJECT_KKM, ...(stored || {}) };
+  }
+
+  public saveSubjectKkmTargets(targets: Record<string, number>): void {
+    this.initClassroom();
+    this.setItem(STORAGE_KEYS.SUBJECT_KKM, targets);
+  }
+
+  public getSubjectClassAverage(kelas: string, subject: string): number {
+    let students: { id: string; nama: string; kelas: string }[] = [];
+    try {
+      const raw = localStorage.getItem('BB_ACCOUNTS');
+      if (raw) {
+        const accounts = JSON.parse(raw);
+        if (Array.isArray(accounts)) {
+          const filtered = accounts.filter(
+            (a: any) => a.ROLE === 'SISWA' && (!kelas || kelas === 'Semua' || a.KELAS === kelas || a.KELAS?.startsWith(kelas))
+          );
+          if (filtered.length > 0) {
+            students = filtered.map((s: any) => ({ id: s.ID, nama: s.NAMA, kelas: s.KELAS || kelas }));
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (students.length === 0) {
+      students = [
+        { id: 'S-01', nama: 'Ahmad Faiz', kelas: kelas || 'Kelas 5A' },
+        { id: 'S-02', nama: 'Bunga Citra', kelas: kelas || 'Kelas 5A' },
+        { id: 'S-03', nama: 'Cahyo Utomo', kelas: kelas || 'Kelas 5A' },
+        { id: 'S-04', nama: 'Dewi Anggraini', kelas: kelas || 'Kelas 5A' },
+        { id: 'S-05', nama: 'Eko Prasetyo', kelas: kelas || 'Kelas 5A' },
+        { id: 'S-06', nama: 'Fajar Nugraha', kelas: kelas || 'Kelas 5A' },
+      ];
+    }
+
+    const subjectOffsets: Record<string, number> = {
+      'Matematika': -4,
+      'Bahasa Indonesia': 2,
+      'IPAS': -2,
+      'Pendidikan Pancasila': 3,
+      'PJOK': 4,
+      'Seni Budaya': 3,
+      'Bahasa Inggris': -3,
+      'Pendidikan Agama': 4,
+    };
+    const offset = subjectOffsets[subject] || 0;
+
+    let sum = 0;
+    students.forEach((s) => {
+      let hash = 0;
+      const key = `${s.nama}-${subject}-${kelas || 'Kelas 5A'}`;
+      for (let i = 0; i < key.length; i++) {
+        hash = (hash << 5) - hash + key.charCodeAt(i);
+        hash |= 0;
+      }
+      const score = Math.min(98, Math.max(58, 76 + offset + (Math.abs(hash) % 21) - 10));
+      sum += score;
+    });
+
+    return Math.round(sum / students.length);
+  }
+
+  public checkSubjectKkmAlerts(kelas: string, autoNotify: boolean = true): SubjectKkmAlert[] {
+    const targets = this.getSubjectKkmTargets();
+    const alerts: SubjectKkmAlert[] = [];
+    const subjects = Object.keys(targets);
+
+    subjects.forEach((subject) => {
+      const targetKkm = targets[subject];
+      const classAvg = this.getSubjectClassAverage(kelas, subject);
+      if (classAvg < targetKkm) {
+        const shortfall = targetKkm - classAvg;
+        alerts.push({
+          subject,
+          kelas: kelas || 'Kelas 5A',
+          classAvg,
+          targetKkm,
+          shortfall,
+          status: shortfall >= 5 ? 'BELUM_TUNTAS' : 'PERINGATAN',
+        });
+
+        if (autoNotify) {
+          const notifs = this.getNotifications(kelas);
+          const alreadyNotified = notifs.some(
+            (n) => n.TITLE.includes(`Target KKM ${subject}`) && (n.KELAS === kelas || !n.KELAS)
+          );
+          if (!alreadyNotified) {
+            this.addNotification({
+              KELAS: kelas,
+              TITLE: `⚠️ Ambang KKM ${subject} Turun (${classAvg}/${targetKkm})`,
+              MESSAGE: `Rata-rata kelas ${kelas} untuk mata pelajaran ${subject} adalah ${classAvg}, berada di bawah target KKM ${targetKkm} (selisih -${shortfall} poin). Disarankan melakukan bimbingan remedial dan asesmen ulang.`,
+              TYPE: 'SYSTEM',
+              LINK_PAGE: 'analytics',
+            });
+          }
+        }
+      }
+    });
+
+    return alerts;
+  }
+
+  // =========================================================================
+  // === 14. ERROR PATTERN ANALYSIS & ADAPTIVE REMEDIAL MODULES ===
+  // =========================================================================
+
+  public getRemedialModuleCatalog(): RemedialModule[] {
+    this.initClassroom();
+    const stored = this.getItem<RemedialModule[]>(STORAGE_KEYS.REMEDIAL_MODULES, DEFAULT_REMEDIAL_MODULES);
+    const assignedRecords = this.getItem<Record<string, { studentIds: string[]; assignedAt: string }>>(
+      STORAGE_KEYS.ASSIGNED_REMEDIAL,
+      {}
+    );
+
+    return stored.map((mod) => {
+      const assigned = assignedRecords[mod.id];
+      if (assigned) {
+        return {
+          ...mod,
+          isAssignedToClass: true,
+          assignedStudentIds: assigned.studentIds,
+          assignedAt: assigned.assignedAt,
+        };
+      }
+      return mod;
+    });
+  }
+
+  public getAssignmentErrorPatterns(kelas: string, subjectFilter?: string): AssignmentErrorPattern[] {
+    this.initClassroom();
+
+    // 1. Get students for class
+    let students: { id: string; nama: string; nisn: string; kelas: string }[] = [];
+    try {
+      const raw = localStorage.getItem('BB_ACCOUNTS');
+      if (raw) {
+        const accounts = JSON.parse(raw);
+        if (Array.isArray(accounts)) {
+          const filtered = accounts.filter(
+            (a: any) => a.ROLE === 'SISWA' && (!kelas || kelas === 'Semua' || a.KELAS === kelas || a.KELAS?.startsWith(kelas))
+          );
+          if (filtered.length > 0) {
+            students = filtered.map((s: any, idx: number) => ({
+              id: s.ID,
+              nama: s.NAMA,
+              nisn: s.NISN || `00${idx + 1}84920${idx + 1}`,
+              kelas: s.KELAS || kelas,
+            }));
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (students.length === 0) {
+      students = [
+        { id: 'SISWA-001', nama: 'Ahmad Fauzan', nisn: '0019283741', kelas: kelas || 'Kelas 4' },
+        { id: 'SISWA-002', nama: 'Siti Aisyah Putri', nisn: '0019283742', kelas: kelas || 'Kelas 4' },
+        { id: 'SISWA-003', nama: 'Rian Pratama', nisn: '0019283743', kelas: kelas || 'Kelas 4' },
+        { id: 'SISWA-004', nama: 'Dewi Anggraini', nisn: '0019283744', kelas: kelas || 'Kelas 4' },
+      ];
+    }
+
+    // Helper to determine student scores deterministically per topic
+    const getStudentScoreForTopic = (student: { id: string; nama: string }, topicKey: string, base: number) => {
+      let hash = 0;
+      const key = `${student.nama}-${topicKey}-${kelas}`;
+      for (let i = 0; i < key.length; i++) {
+        hash = (hash << 5) - hash + key.charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.min(95, Math.max(50, base + ((Math.abs(hash) % 25) - 14)));
+    };
+
+    // Define standard Curricular error patterns based on SD Negeri Tangerang 6 diagnostic rubrics
+    const patternsRaw: Omit<AssignmentErrorPattern, 'affectedStudents' | 'errorRatePercent' | 'frequencyCount' | 'severity'>[] = [
+      {
+        id: 'ERR-NUM-001',
+        category: 'NUMERASI',
+        subject: 'Matematika',
+        topic: 'Nilai Tempat & Penjumlahan Bersusun Teknik Menyimpan',
+        misconceptionDetails: 'Siswa sering lupa menambahkan angka simpanan puluhan/ratusan pada kolom berikutnya saat menjumlahkan bilangan bersusun tiga digit, menghasilkan jawaban dengan selisih 10 atau 100.',
+        recommendedModuleId: 'MOD-REM-NUM-01',
+        suggestedRemedialStrategy: 'Scaffolding bertahap dengan kolom nilai tempat berwarna (blok Dienes visual) dan latihan terbimbing 5 soal per sesi.',
+      },
+      {
+        id: 'ERR-NUM-002',
+        category: 'NUMERASI',
+        subject: 'Matematika',
+        topic: 'Pecahan Senilai & Perbandingan Pembilang-Penyebut',
+        misconceptionDetails: 'Siswa menganggap bahwa bilangan penyebut yang lebih besar selalu berarti nilai pecahan lebih besar (misal menganggap 1/4 lebih besar dari 1/2), serta keliru menyederhanakan pecahan.',
+        recommendedModuleId: 'MOD-REM-NUM-02',
+        suggestedRemedialStrategy: 'Representasi diagram visual batang/arsiran pizza kue, diikuti dengan games kartu pasangan pecahan senilai.',
+      },
+      {
+        id: 'ERR-LIT-001',
+        category: 'LITERASI',
+        subject: 'Bahasa Indonesia',
+        topic: 'Menentukan Ide Pokok & Inferensi Kalimat Utama',
+        misconceptionDetails: 'Siswa cenderung hanya menyalin kalimat pertama pada seluruh tipe paragraf, kesulitan membedakan antara kalimat pengembang/penjelas dengan ide pokok tersirat.',
+        recommendedModuleId: 'MOD-REM-LIT-01',
+        suggestedRemedialStrategy: 'Teknik membaca terpandu (Guided Reading) dengan stabilo warna khusus kata kunci, serta pertanyaan inferensial "Mengapa" dan "Bagaimana".',
+      },
+      {
+        id: 'ERR-IPAS-001',
+        category: 'IPAS_SAINS',
+        subject: 'IPAS',
+        topic: 'Jaring-Jaring Makanan & Peran Dekomposer Ekosistem',
+        misconceptionDetails: 'Siswa tertukar antara peran dekomposer (pengurai jamur/bakteri) dengan konsumen tingkat puncak, serta kebingungan menelusuri aliran energi pada jaring-jaring bercabang.',
+        recommendedModuleId: 'MOD-REM-IPAS-01',
+        suggestedRemedialStrategy: 'Penyusunan peta konsep diagram interaktif aliran energi dan studi kasus mini dampak kepunahan katak di sawah Tangerang.',
+      },
+      {
+        id: 'ERR-IPAS-002',
+        category: 'IPAS_SAINS',
+        subject: 'IPAS',
+        topic: 'Siklus Air & Pengaruh Penebangan Pohon Terhadap Resapan',
+        misconceptionDetails: 'Siswa keliru membedakan proses evaporasi (penguapan air) dan transpirasi (penguapan tumbuhan), serta belum memahami keterkaitan air tanah dengan bencana banjir lokal.',
+        recommendedModuleId: 'MOD-REM-IPAS-02',
+        suggestedRemedialStrategy: 'Eksperimen sederhana siklus air dalam botol transparan dan LKPD observasi biopori sekolah.',
+      },
+      {
+        id: 'ERR-PP-001',
+        category: 'PENDIDIKAN_PANCASILA',
+        subject: 'Pendidikan Pancasila',
+        topic: 'Hak & Kewajiban Siswa dalam Musyawarah Kelas',
+        misconceptionDetails: 'Siswa memprioritaskan penuntutan hak individu tanpa mengimbangi kewajiban mematuhi keputusan mufakat kelompok dan menghormati giliran bicara rekan kelas.',
+        recommendedModuleId: 'MOD-REM-PP-01',
+        suggestedRemedialStrategy: 'Simulasi sosiodrama roleplay sidang musyawarah kelas dan jurnal refleksi harian perilaku gotong royong.',
+      },
+    ];
+
+    // Compute metrics and affected students dynamically
+    const results: AssignmentErrorPattern[] = [];
+
+    patternsRaw.forEach((pattern) => {
+      if (subjectFilter && subjectFilter !== 'Semua' && pattern.subject !== subjectFilter) {
+        return;
+      }
+
+      // Base error tendency per pattern
+      const baseScores: Record<string, number> = {
+        'ERR-NUM-001': 67,
+        'ERR-NUM-002': 64,
+        'ERR-LIT-001': 70,
+        'ERR-IPAS-001': 68,
+        'ERR-IPAS-002': 73,
+        'ERR-PP-001': 74,
+      };
+
+      const baseScore = baseScores[pattern.id] || 70;
+      const affectedList: AffectedStudentInfo[] = [];
+
+      students.forEach((s) => {
+        const score = getStudentScoreForTopic(s, pattern.id, baseScore);
+        if (score < 75) {
+          affectedList.push({
+            id: s.id,
+            nama: s.nama,
+            score,
+            nisn: s.nisn,
+            kelas: s.kelas,
+          });
+        }
+      });
+
+      // Sort lowest score first
+      affectedList.sort((a, b) => a.score - b.score);
+
+      const totalStudents = students.length || 1;
+      const errorRatePercent = Math.round((affectedList.length / totalStudents) * 100);
+
+      let severity: 'TINGGI' | 'SEDANG' | 'RENDAH' = 'RENDAH';
+      if (errorRatePercent >= 40 || affectedList.some((s) => s.score < 65)) {
+        severity = 'TINGGI';
+      } else if (errorRatePercent >= 25 || affectedList.length >= 2) {
+        severity = 'SEDANG';
+      }
+
+      results.push({
+        ...pattern,
+        affectedStudents: affectedList,
+        errorRatePercent,
+        frequencyCount: affectedList.length,
+        severity,
+      });
+    });
+
+    // Sort by severity (TINGGI > SEDANG > RENDAH) then by error rate descending
+    const severityRank = { TINGGI: 3, SEDANG: 2, RENDAH: 1 };
+    return results.sort((a, b) => {
+      if (severityRank[b.severity] !== severityRank[a.severity]) {
+        return severityRank[b.severity] - severityRank[a.severity];
+      }
+      return b.errorRatePercent - a.errorRatePercent;
+    });
+  }
+
+  public getSpecialInterventionStudents(kelas: string): SpecialInterventionStudent[] {
+    this.initClassroom();
+    const errorPatterns = this.getAssignmentErrorPatterns(kelas);
+
+    // Map all affected students across error patterns
+    const studentMap = new Map<
+      string,
+      {
+        siswaId: string;
+        siswaNama: string;
+        nisn: string;
+        kelas: string;
+        scores: number[];
+        criticalSubjectsSet: Set<string>;
+        frequentErrorPatterns: string[];
+      }
+    >();
+
+    errorPatterns.forEach((p) => {
+      p.affectedStudents.forEach((aff) => {
+        if (!studentMap.has(aff.id)) {
+          studentMap.set(aff.id, {
+            siswaId: aff.id,
+            siswaNama: aff.nama,
+            nisn: aff.nisn || '0018374921',
+            kelas: aff.kelas || kelas,
+            scores: [],
+            criticalSubjectsSet: new Set<string>(),
+            frequentErrorPatterns: [],
+          });
+        }
+        const entry = studentMap.get(aff.id)!;
+        entry.scores.push(aff.score);
+        entry.criticalSubjectsSet.add(p.subject);
+        entry.frequentErrorPatterns.push(p.topic);
+      });
+    });
+
+    // Also check if any student has general class average < 75
+    let rawAccounts: any[] = [];
+    try {
+      const raw = localStorage.getItem('BB_ACCOUNTS');
+      if (raw) rawAccounts = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+
+    const assignedRecords = this.getItem<Record<string, { studentIds: string[]; assignedAt: string }>>(
+      STORAGE_KEYS.ASSIGNED_REMEDIAL,
+      {}
+    );
+
+    const interventionList: SpecialInterventionStudent[] = [];
+
+    studentMap.forEach((entry) => {
+      const avgScore =
+        entry.scores.length > 0
+          ? Math.round(entry.scores.reduce((a, b) => a + b, 0) / entry.scores.length)
+          : 68;
+
+      const criticalSubjects = Array.from(entry.criticalSubjectsSet);
+
+      // Determine assigned modules
+      const assignedModuleIds: string[] = [];
+      Object.entries(assignedRecords).forEach(([modId, rec]) => {
+        if (rec.studentIds.includes(entry.siswaId)) {
+          assignedModuleIds.push(modId);
+        }
+      });
+
+      // Individual intervention strategy formulated based on subjects
+      let interventionStrategy = 'Pendampingan tutor sebaya dan latihan terbimbing 15 menit per hari.';
+      if (criticalSubjects.includes('Matematika') && criticalSubjects.includes('Bahasa Indonesia')) {
+        interventionStrategy = 'Bimbingan intensif klinis membaca pemahaman soal cerita dan scaffolding numerasi dengan alat peraga visual.';
+      } else if (criticalSubjects.includes('Matematika')) {
+        interventionStrategy = 'Penguatan konsep nilai tempat dan drill soal bertingkat mulai dari level dasar berarsir.';
+      } else if (criticalSubjects.includes('IPAS')) {
+        interventionStrategy = 'Visualisasi konsep aliran energi sains melalui kartu gambar interaktif dan studi kasus lingkungan nyata.';
+      }
+
+      let status: 'PERLU_PENDAMPINGAN' | 'SEDANG_REMEDIAL' | 'TUNTAS_REMEDIAL' = 'PERLU_PENDAMPINGAN';
+      if (assignedModuleIds.length > 0) {
+        status = 'SEDANG_REMEDIAL';
+      }
+
+      interventionList.push({
+        siswaId: entry.siswaId,
+        siswaNama: entry.siswaNama,
+        nisn: entry.nisn,
+        kelas: entry.kelas,
+        averageScore: avgScore,
+        criticalSubjects,
+        frequentErrorPatterns: entry.frequentErrorPatterns.slice(0, 3),
+        interventionStrategy,
+        assignedRemedialModuleIds: assignedModuleIds,
+        status,
+      });
+    });
+
+    // Sort lowest average score first
+    return interventionList.sort((a, b) => a.averageScore - b.averageScore);
+  }
+
+  public assignRemedialModule(
+    moduleId: string,
+    studentIds: string[],
+    kelas: string,
+    notes?: string
+  ): { success: boolean; message: string; moduleTitle: string } {
+    this.initClassroom();
+    const catalog = this.getRemedialModuleCatalog();
+    const targetMod = catalog.find((m) => m.id === moduleId);
+    const modTitle = targetMod ? targetMod.title : 'Modul Remedial';
+
+    const assignedRecords = this.getItem<Record<string, { studentIds: string[]; assignedAt: string; notes?: string }>>(
+      STORAGE_KEYS.ASSIGNED_REMEDIAL,
+      {}
+    );
+
+    const existingStudents = assignedRecords[moduleId]?.studentIds || [];
+    const combinedStudents = Array.from(new Set([...existingStudents, ...studentIds]));
+
+    assignedRecords[moduleId] = {
+      studentIds: combinedStudents,
+      assignedAt: nowISO(),
+      notes: notes || 'Ditugaskan melalui Sistem Analisis Pola Kesalahan',
+    };
+
+    this.setItem(STORAGE_KEYS.ASSIGNED_REMEDIAL, assignedRecords);
+
+    // Register notification
+    this.addNotification({
+      KELAS: kelas,
+      TITLE: `🎯 Modul Remedial Ditugaskan: ${modTitle}`,
+      MESSAGE: `Guru telah menugaskan ${modTitle} (${targetMod?.subject || 'Akademik'}) kepada ${studentIds.length} siswa untuk penguatan kompetensi remedial.`,
+      TYPE: 'SYSTEM',
+      LINK_PAGE: 'analytics',
+    });
+
+    return {
+      success: true,
+      message: `Modul '${modTitle}' berhasil ditugaskan ke ${studentIds.length} siswa terpilih.`,
+      moduleTitle: modTitle,
+    };
+  }
+
+  // ==========================================
+  // 15. STUDENT BEHAVIOR & CHARACTER NOTES SUBSYSTEM
+  // ==========================================
+
+  public getBehaviorLogs(kelas?: string, siswaId?: string): StudentBehaviorLog[] {
+    this.initClassroom();
+    let logs = this.getItem<StudentBehaviorLog[]>(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
+    if (!Array.isArray(logs) || logs.length === 0) {
+      logs = DEFAULT_BEHAVIOR_LOGS;
+    }
+
+    if (kelas && kelas !== 'Semua' && kelas !== 'Semua Kelas') {
+      const target = kelas.toLowerCase().trim();
+      logs = logs.filter((l) => l.KELAS.toLowerCase().trim() === target || l.KELAS.toLowerCase().includes(target));
+    }
+
+    if (siswaId) {
+      logs = logs.filter((l) => l.SISWA_ID === siswaId);
+    }
+
+    // Sort by latest date first
+    return logs.sort((a, b) => new Date(b.TANGGAL || b.CREATED_AT).getTime() - new Date(a.TANGGAL || a.CREATED_AT).getTime());
+  }
+
+  public addBehaviorLog(data: Omit<StudentBehaviorLog, 'ID' | 'CREATED_AT'>): StudentBehaviorLog {
+    this.initClassroom();
+    const logs = this.getItem<StudentBehaviorLog[]>(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
+    const newLog: StudentBehaviorLog = {
+      ...data,
+      ID: `BEH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      CREATED_AT: nowISO(),
+    };
+
+    const updated = [newLog, ...logs];
+    this.setItem(STORAGE_KEYS.BEHAVIOR_LOGS, updated);
+
+    // If needing urgent attention, dispatch notification
+    if (data.TIPE === 'PERLU_PERHATIAN') {
+      this.addNotification({
+        KELAS: data.KELAS,
+        TITLE: `⚠️ Catatan Perhatian Karakter: ${data.SISWA_NAMA}`,
+        MESSAGE: `Guru ${data.GURU_NAMA} mencatat perilaku '${data.JUDUL}' kategori ${data.KATEGORI}. Tindak lanjut: ${data.TINDAK_LANJUT || 'Bimbingan Wali Kelas'}.`,
+        TYPE: 'SYSTEM',
+        LINK_PAGE: 'students',
+      });
+    }
+
+    return newLog;
+  }
+
+  public updateBehaviorLog(id: string, updates: Partial<StudentBehaviorLog>): boolean {
+    this.initClassroom();
+    const logs = this.getItem<StudentBehaviorLog[]>(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
+    const idx = logs.findIndex((l) => l.ID === id);
+    if (idx === -1) return false;
+
+    logs[idx] = { ...logs[idx], ...updates };
+    this.setItem(STORAGE_KEYS.BEHAVIOR_LOGS, [...logs]);
+    return true;
+  }
+
+  public deleteBehaviorLog(id: string): boolean {
+    this.initClassroom();
+    const logs = this.getItem<StudentBehaviorLog[]>(STORAGE_KEYS.BEHAVIOR_LOGS, DEFAULT_BEHAVIOR_LOGS);
+    const filtered = logs.filter((l) => l.ID !== id);
+    if (filtered.length === logs.length) return false;
+
+    this.setItem(STORAGE_KEYS.BEHAVIOR_LOGS, filtered);
+    return true;
+  }
+
+  public getBehaviorAnalysisInsights(kelas?: string): BehaviorAnalysisInsight {
+    const logs = this.getBehaviorLogs(kelas);
+
+    const positiveLogs = logs.filter((l) => l.TIPE === 'POSITIF');
+    const needsAttentionLogs = logs.filter((l) => l.TIPE === 'PERLU_PERHATIAN');
+
+    const totalLogs = logs.length;
+    const positiveCount = positiveLogs.length;
+    const needsAttentionCount = needsAttentionLogs.length;
+    const positiveRatio = totalLogs > 0 ? Math.round((positiveCount / totalLogs) * 100) : 0;
+
+    // Grouping by student for positive highlights
+    const studentPositiveMap = new Map<string, {
+      siswaId: string;
+      siswaNama: string;
+      kelas: string;
+      count: number;
+      totalScore: number;
+      categories: Set<BehaviorCategory>;
+      recentHighlight: string;
+    }>();
+
+    positiveLogs.forEach((l) => {
+      const existing = studentPositiveMap.get(l.SISWA_ID) || {
+        siswaId: l.SISWA_ID,
+        siswaNama: l.SISWA_NAMA,
+        kelas: l.KELAS,
+        count: 0,
+        totalScore: 0,
+        categories: new Set<BehaviorCategory>(),
+        recentHighlight: l.JUDUL,
+      };
+      existing.count += 1;
+      existing.totalScore += Math.abs(l.POIN || 10);
+      existing.categories.add(l.KATEGORI);
+      studentPositiveMap.set(l.SISWA_ID, existing);
+    });
+
+    const topPositiveStudents = Array.from(studentPositiveMap.values())
+      .map((item) => {
+        const badges: string[] = [];
+        if (item.categories.has('KEDISIPLINAN')) badges.push('⭐ Bintang Disiplin');
+        if (item.categories.has('GOTONG_ROYONG')) badges.push('🤝 Teladan Gotong Royong');
+        if (item.categories.has('KEJUJURAN')) badges.push('🛡️ Ksatria Kejujuran');
+        if (item.categories.has('TANGGUNG_JAWAB')) badges.push('🎯 Mandat Tanggung Jawab');
+        if (item.categories.has('KEPEMIMPINAN')) badges.push('👑 Pemimpin Cilik');
+        if (item.categories.has('KEMANDIRIAN')) badges.push('💡 Inspirasi Mandiri');
+        if (badges.length === 0) badges.push('✨ Karakter Terpuji');
+
+        return {
+          siswaId: item.siswaId,
+          siswaNama: item.siswaNama,
+          kelas: item.kelas,
+          positiveCount: item.count,
+          totalScore: item.totalScore,
+          badges,
+          recentHighlight: item.recentHighlight,
+        };
+      })
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .slice(0, 8);
+
+    // Grouping by student for needs attention
+    const studentAttentionMap = new Map<string, {
+      siswaId: string;
+      siswaNama: string;
+      kelas: string;
+      count: number;
+      categories: Set<BehaviorCategory>;
+      lastLogDate: string;
+      lastNote: string;
+    }>();
+
+    needsAttentionLogs.forEach((l) => {
+      const existing = studentAttentionMap.get(l.SISWA_ID) || {
+        siswaId: l.SISWA_ID,
+        siswaNama: l.SISWA_NAMA,
+        kelas: l.KELAS,
+        count: 0,
+        categories: new Set<BehaviorCategory>(),
+        lastLogDate: l.TANGGAL,
+        lastNote: l.CATATAN || l.JUDUL,
+      };
+      existing.count += 1;
+      existing.categories.add(l.KATEGORI);
+      if (new Date(l.TANGGAL).getTime() > new Date(existing.lastLogDate).getTime()) {
+        existing.lastLogDate = l.TANGGAL;
+        existing.lastNote = l.CATATAN || l.JUDUL;
+      }
+      studentAttentionMap.set(l.SISWA_ID, existing);
+    });
+
+    const studentsNeedingAttention = Array.from(studentAttentionMap.values())
+      .map((item) => {
+        const criticalCategories = Array.from(item.categories);
+        let urgency: 'TINGGI' | 'SEDANG' | 'RINGAN' = 'RINGAN';
+        let recommendedAction = 'Pendampingan wajar saat kegiatan belajar di kelas';
+
+        if (item.count >= 2 || criticalCategories.includes('KEDISIPLINAN')) {
+          urgency = 'TINGGI';
+          recommendedAction = 'Konseling individual Wali Kelas & komunikasi dengan orang tua murid';
+        } else if (item.count === 1) {
+          urgency = 'SEDANG';
+          recommendedAction = 'Observasi berkala dan penempatan teman sebaya sebagai tutor motivasi';
+        }
+
+        return {
+          siswaId: item.siswaId,
+          siswaNama: item.siswaNama,
+          kelas: item.kelas,
+          attentionCount: item.count,
+          criticalCategories,
+          urgency,
+          recommendedAction,
+          lastLogDate: item.lastLogDate,
+        };
+      })
+      .sort((a, b) => b.attentionCount - a.attentionCount)
+      .slice(0, 8);
+
+    // Category breakdown
+    const categories: Array<{ category: BehaviorCategory; label: string }> = [
+      { category: 'KEDISIPLINAN', label: 'Kedisiplinan & Waktu' },
+      { category: 'GOTONG_ROYONG', label: 'Gotong Royong & Kerja Sama' },
+      { category: 'KEJUJURAN', label: 'Kejujuran & Integritas' },
+      { category: 'TANGGUNG_JAWAB', label: 'Tanggung Jawab Belajar' },
+      { category: 'KESANTUNAN', label: 'Kesantunan & Adab' },
+      { category: 'KEMANDIRIAN', label: 'Kemandirian & Inisiatif' },
+      { category: 'KEPEMIMPINAN', label: 'Kepemimpinan Sebaya' },
+    ];
+
+    const categoryBreakdown = categories.map(({ category, label }) => {
+      const pos = positiveLogs.filter((l) => l.KATEGORI === category).length;
+      const att = needsAttentionLogs.filter((l) => l.KATEGORI === category).length;
+      return {
+        category,
+        label,
+        positive: pos,
+        needsAttention: att,
+        total: pos + att,
+      };
+    });
+
+    // Weekly trends (last 4 weeks)
+    const now = Date.now();
+    const weeklyTrends = [3, 2, 1, 0].map((weekOffset) => {
+      const endMs = now - weekOffset * 7 * 24 * 60 * 60 * 1000;
+      const startMs = endMs - 7 * 24 * 60 * 60 * 1000;
+      const label = weekOffset === 0 ? 'Minggu Ini' : `${weekOffset} Mgg Lalu`;
+
+      const wPositive = positiveLogs.filter((l) => {
+        const t = new Date(l.TANGGAL || l.CREATED_AT).getTime();
+        return t >= startMs && t <= endMs;
+      }).length;
+
+      const wAttention = needsAttentionLogs.filter((l) => {
+        const t = new Date(l.TANGGAL || l.CREATED_AT).getTime();
+        return t >= startMs && t <= endMs;
+      }).length;
+
+      return {
+        weekLabel: label,
+        positive: wPositive,
+        needsAttention: wAttention,
+      };
+    });
+
+    return {
+      totalLogs,
+      positiveCount,
+      needsAttentionCount,
+      positiveRatio,
+      topPositiveStudents,
+      studentsNeedingAttention,
+      categoryBreakdown,
+      weeklyTrends,
+    };
+  }
+
+  // ==========================================
+  // 16. COMPREHENSIVE INDIVIDUAL STUDENT REPORT
+  // ==========================================
+
+  public getStudentComprehensiveReportData(
+    siswaId: string,
+    customTeacherNotes?: string
+  ): ComprehensiveStudentReportData {
+    this.initClassroom();
+
+    // 1. Find student
+    let studentName = 'Peserta Didik';
+    let studentNis = siswaId;
+    let studentNisn = '3150' + Math.floor(100000 + Math.random() * 900000);
+    let studentClass = 'Kelas 4B';
+
+    try {
+      const accs = localStorage.getItem('BB_ACCOUNTS');
+      if (accs) {
+        const parsed = JSON.parse(accs);
+        const match = Array.isArray(parsed) ? parsed.find((a: any) => a.ID === siswaId) : null;
+        if (match) {
+          studentName = match.NAMA;
+          studentClass = match.KELAS || studentClass;
+          studentNis = match.NIP || match.ID;
+          if (match.NISN) studentNisn = match.NISN;
+        }
+      }
+    } catch {}
+
+    // 2. Fetch basic card & attendance
+    const basicCard = this.getStudentReportCard(siswaId, studentName, studentClass);
+    const attendanceStats = this.getStudentAttendanceStats(siswaId, studentClass);
+
+    // 3. Fetch character logs for this student
+    const studentLogs = this.getBehaviorLogs(undefined, siswaId);
+    const positiveLogs = studentLogs.filter((l) => l.TIPE === 'POSITIF');
+    const attentionLogs = studentLogs.filter((l) => l.TIPE === 'PERLU_PERHATIAN');
+
+    const positiveNotes = positiveLogs.slice(0, 3).map((l) => `[${l.KATEGORI}] ${l.JUDUL} - ${l.CATATAN}`);
+    const needsAttentionNotes = attentionLogs.slice(0, 2).map((l) => `[${l.KATEGORI}] ${l.JUDUL} (${l.TINDAK_LANJUT || 'Bimbingan kelas'})`);
+
+    const characterBadges: string[] = [];
+    if (positiveLogs.some((l) => l.KATEGORI === 'KEDISIPLINAN')) characterBadges.push('⭐ Bintang Disiplin');
+    if (positiveLogs.some((l) => l.KATEGORI === 'GOTONG_ROYONG')) characterBadges.push('🤝 Gotong Royong');
+    if (positiveLogs.some((l) => l.KATEGORI === 'KEJUJURAN')) characterBadges.push('🛡️ Integritas Tinggi');
+    if (positiveLogs.some((l) => l.KATEGORI === 'TANGGUNG_JAWAB')) characterBadges.push('🎯 Mandat Tanggung Jawab');
+    if (positiveLogs.some((l) => l.KATEGORI === 'KEMANDIRIAN')) characterBadges.push('💡 Kemandirian Belajar');
+    if (characterBadges.length === 0) characterBadges.push('✨ Berakhlak Mulia');
+
+    const overallCharacterGrade: 'SANGAT_BAIK' | 'BAIK' | 'CUKUP' =
+      positiveLogs.length >= 3 && attentionLogs.length === 0
+        ? 'SANGAT_BAIK'
+        : attentionLogs.length >= 2
+        ? 'CUKUP'
+        : 'BAIK';
+
+    // 4. Subject Grades breakdown
+    const subjectGrades: ComprehensiveStudentSubjectGrade[] = [
+      {
+        no: 1,
+        mapel: 'Pendidikan Pancasila & Kewarganegaraan',
+        kkm: 78,
+        tugas: basicCard.nilaiTugas,
+        kuis: basicCard.nilaiKuis,
+        nilaiAkhir: basicCard.nilaiAkhir,
+        predikat: basicCard.predikat,
+        deskripsi: 'Sangat baik dalam memahami hak, kewajiban, musyawarah mufakat, dan penerapan Profil Pelajar Pancasila.',
+        status: basicCard.nilaiAkhir >= 78 ? 'TUNTAS' : 'BELUM_TUNTAS',
+      },
+      {
+        no: 2,
+        mapel: 'Bahasa Indonesia (Literasi & Komunikasi)',
+        kkm: 78,
+        tugas: basicCard.nilaiTugas,
+        kuis: Math.min(100, basicCard.nilaiKuis + 2),
+        nilaiAkhir: Math.round((basicCard.nilaiTugas + basicCard.nilaiKuis) / 2),
+        predikat: basicCard.predikat,
+        deskripsi: 'Mampu menemukan gagasan pokok teks narasi, menyusun ringkasan, dan berbicara secara santun di depan kelas.',
+        status: (basicCard.nilaiTugas + basicCard.nilaiKuis) / 2 >= 78 ? 'TUNTAS' : 'BELUM_TUNTAS',
+      },
+      {
+        no: 3,
+        mapel: 'Matematika & Numerasi Gasing',
+        kkm: 75,
+        tugas: Math.max(65, basicCard.nilaiTugas - 4),
+        kuis: basicCard.nilaiKuis,
+        nilaiAkhir: Math.round(basicCard.nilaiTugas * 0.4 + basicCard.nilaiKuis * 0.6),
+        predikat: basicCard.predikat,
+        deskripsi: 'Terampil melakukan operasi hitung penjumlahan bersusun, perkalian dasar, dan pemecahan soal cerita kontekstual.',
+        status: (basicCard.nilaiTugas * 0.4 + basicCard.nilaiKuis * 0.6) >= 75 ? 'TUNTAS' : 'BELUM_TUNTAS',
+      },
+      {
+        no: 4,
+        mapel: 'Ilmu Pengetahuan Alam dan Sosial (IPAS)',
+        kkm: 75,
+        tugas: basicCard.nilaiTugas,
+        kuis: Math.max(68, basicCard.nilaiKuis - 2),
+        nilaiAkhir: Math.max(70, basicCard.nilaiAkhir - 1),
+        predikat: basicCard.predikat === 'A' ? 'B' : basicCard.predikat,
+        deskripsi: 'Memahami siklus hidup makhluk hidup, konservasi air dan keanekaragaman hayati lingkungan Kota Tangerang.',
+        status: basicCard.nilaiAkhir - 1 >= 75 ? 'TUNTAS' : 'BELUM_TUNTAS',
+      },
+      {
+        no: 5,
+        mapel: 'Koding & Literasi Digital Kurikulum SD',
+        kkm: 75,
+        tugas: Math.min(100, basicCard.nilaiTugas + 6),
+        kuis: Math.min(100, basicCard.nilaiKuis + 4),
+        nilaiAkhir: Math.min(100, basicCard.nilaiAkhir + 5),
+        predikat: 'A',
+        deskripsi: 'Sangat antusias mengoperasikan modul koding visual Scratch, pengerjaan kuis CBT mandiri, dan literasi internet aman.',
+        status: 'TUNTAS',
+      },
+      {
+        no: 6,
+        mapel: 'Pendidikan Jasmani, Olahraga & Kesehatan (PJOK)',
+        kkm: 80,
+        tugas: Math.min(95, basicCard.nilaiTugas + 3),
+        kuis: 85,
+        nilaiAkhir: 86,
+        predikat: 'B',
+        deskripsi: 'Menunjukkan kebugaran jasmani, sportivitas tim dalam permainan bola kecil (kasti), dan menjaga kebersihan diri.',
+        status: 'TUNTAS',
+      },
+      {
+        no: 7,
+        mapel: 'Seni Budaya & Prakarya (P5)',
+        kkm: 80,
+        tugas: 88,
+        kuis: 84,
+        nilaiAkhir: 86,
+        predikat: 'B',
+        deskripsi: 'Kreatif dalam membuat karya kearifan lokal jajanan sehat Tangerang dan aktif bekerja sama dalam kelompok.',
+        status: 'TUNTAS',
+      },
+    ];
+
+    const defaultNotes =
+      customTeacherNotes ||
+      `Ananda ${studentName} menunjukkan perkembangan belajar yang konsisten dan aktif berpartisipasi di kelas ${studentClass}. Presensi ${attendanceStats.percentage}% dengan ketuntasan KKM tercapai. Mohon dukungan orang tua di rumah untuk terus mendampingi literasi dan karakter mandiri.`;
+
+    return {
+      siswaId,
+      siswaNama: studentName,
+      nisn: studentNisn,
+      nip: studentNis,
+      kelas: studentClass,
+      semester: 'Ganjil',
+      tahunPelajaran: '2026/2027',
+      nilaiTugas: basicCard.nilaiTugas,
+      nilaiKuis: basicCard.nilaiKuis,
+      presensiPct: basicCard.presensiPct,
+      nilaiAkhir: basicCard.nilaiAkhir,
+      predikat: basicCard.predikat,
+      kkmStatus: basicCard.nilaiAkhir >= 75 ? 'TUNTAS (>= 75)' : 'BELUM TUNTAS (< 75)',
+      teacherNotes: defaultNotes,
+      attendanceBreakdown: {
+        hadir: attendanceStats.hadir,
+        sakit: attendanceStats.sakit,
+        izin: attendanceStats.izin,
+        alpa: attendanceStats.alpa,
+        totalHari: attendanceStats.total,
+      },
+      subjectGrades,
+      behaviorHighlights: {
+        positiveNotes: positiveNotes.length > 0 ? positiveNotes : ['Sopan santun dan disiplin mengikuti proses pembelajaran harian.'],
+        needsAttentionNotes: needsAttentionNotes.length > 0 ? needsAttentionNotes : ['Tidak ada catatan pelanggaran khusus (perilaku tertib & kondusif).'],
+        characterBadges,
+        overallCharacterGrade,
+      },
+    };
+  }
 }
 
+// Curated default remedial modules for SD Negeri Tangerang 6
+export const DEFAULT_REMEDIAL_MODULES: RemedialModule[] = [
+  {
+    id: 'MOD-REM-NUM-01',
+    title: 'Modul Scaffolding: Nilai Tempat & Penjumlahan Bersusun Teknik Menyimpan',
+    subject: 'Matematika',
+    category: 'NUMERASI',
+    targetCompetency: 'Peserta didik mampu menganalisis nilai tempat ratusan, puluhan, satuan serta melakukan operasi penjumlahan bilangan tiga angka dengan teknik menyimpan tanpa kekeliruan.',
+    format: 'LKPD',
+    difficulty: 'DASAR',
+    estimatedMinutes: 30,
+    contentOutline: [
+      '1. Review Konsep Nilai Tempat (Ratusan, Puluhan, Satuan) menggunakan Blok Dienes',
+      '2. Simulasi Interaktif: Kapan angka 10 harus berpindah ke kolom puluhan',
+      '3. Panduan Langkah Demi Langkah Penjumlahan Bersusun',
+      '4. Latihan Terbimbing Bergradasi (Tingkat 1 s/d 3)',
+    ],
+    guideSteps: [
+      'Langkah 1: Selalu tuliskan bilangan lurus vertikal sejajar sesuai nilai tempatnya (satuan lurus satuan, puluhan lurus puluhan).',
+      'Langkah 2: Mulai menjumlahkan dari kolom PALING KANAN (satuan).',
+      'Langkah 3: Jika hasil penjumlahan satuan >= 10, tulis digit satuan di bawah dan letakkan angka 1 kecil (simpanan) di atas kolom puluhan.',
+      'Langkah 4: Jangan lupa menjumlahkan angka simpanan saat menghitung kolom puluhan.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Hitunglah penjumlahan bersusun berikut: 247 + 138 = ...',
+        hint: 'Perhatikan 7 + 8 = 15. Tulis 5 di satuan, simpan 1 di atas angka 4 puluhan.',
+        answerKey: '385 (7+8=15 simpan 1; 1+4+3=8; 2+1=3)',
+      },
+      {
+        question: 'Sebuah perpustakaan memiliki 365 buku cerita dan menerima kiriman 187 buku baru. Berapakah total buku sekarang?',
+        hint: 'Operasi: 365 + 187. Lakukan penjumlahan bersusun dengan teknik menyimpan di kolom satuan dan puluhan.',
+        answerKey: '552 buku cerita',
+      },
+      {
+        question: 'Manakah dari pernyataan berikut yang benar mengenai bilangan 482?',
+        hint: 'Ingat urutan nilai tempat: Angka paling kiri adalah ratusan, tengah adalah puluhan, kanan adalah satuan.',
+        answerKey: 'Angka 4 bernilai 400 (ratusan), 8 bernilai 80 (puluhan), 2 bernilai 2 (satuan).',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-NUM-02',
+    title: 'Modul Visual Konkret: Pecahan Senilai & Perbandingan Pembilang-Penyebut',
+    subject: 'Matematika',
+    category: 'NUMERASI',
+    targetCompetency: 'Peserta didik mampu memvisualisasikan representasi pecahan 1/2, 1/4, 2/4, 3/4 serta membandingkan nilai pecahan tanpa miskonsepsi besaran penyebut.',
+    format: 'INTERAKTIF',
+    difficulty: 'MENENGAH',
+    estimatedMinutes: 35,
+    contentOutline: [
+      '1. Pemahaman Konseptual: Pembilang (bagian yang diambil) vs Penyebut (total bagian utuh)',
+      '2. Miskonsepsi Umum: Mengapa 1/4 lebih kecil dari 1/2 meski angka 4 lebih besar dari 2',
+      '3. Eksplorasi Diagram Pizza dan Batang Pecahan Senilai (1/2 = 2/4 = 4/8)',
+      '4. Menyelesaikan Masalah Kontekstual Pembagian Makanan & Buah',
+    ],
+    guideSteps: [
+      'Langkah 1: Bayangkan sepotong kue. Semakin banyak kue dipotong (penyebut makin besar), ukuran tiap potongan justru makin KECIL.',
+      'Langkah 2: Gunakan garis bilangan pecahan untuk meletakkan titik pecahan antara 0 dan 1.',
+      'Langkah 3: Untuk menyamakan pecahan senilai, kalikan pembilang dan penyebut dengan angka yang sama.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Budi memiliki 1/2 bagian cokelat, sedangkan Doni memiliki 2/4 bagian cokelat dengan ukuran yang sama. Siapakah yang memiliki cokelat lebih banyak?',
+        hint: 'Coba sederhanakan 2/4 dengan membagi pembilang dan penyebut dengan 2.',
+        answerKey: 'Sama banyak, karena 1/2 dan 2/4 adalah pecahan senilai (1/2 = 2/4).',
+      },
+      {
+        question: 'Urutkan pecahan berikut dari yang nilainya PALING KECIL ke PALING BESAR: 1/2, 1/8, 1/4',
+        hint: 'Jika pembilang sama-sama 1, maka pecahan dengan penyebut terbesar bernilai paling kecil.',
+        answerKey: '1/8, kemudian 1/4, lalu 1/2.',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-LIT-01',
+    title: 'Modul Remedial Literasi: Menentukan Kalimat Utama & Inferensi Ide Pokok Paragraf Naratif',
+    subject: 'Bahasa Indonesia',
+    category: 'LITERASI',
+    targetCompetency: 'Peserta didik mampu menemukan gagasan pokok pada paragraf deduktif, induktif, maupun campuran, serta membuat simpulan logis dari teks narasi pendek.',
+    format: 'BACAAN',
+    difficulty: 'DASAR',
+    estimatedMinutes: 25,
+    contentOutline: [
+      '1. Perbedaan Kalimat Utama (Gagasan Pokok) vs Kalimat Penjelas (Gagasan Pendukung)',
+      '2. Cara Mendeteksi Posisi Kalimat Utama (Awal Paragraf, Akhir Paragraf, atau Campuran)',
+      '3. Membaca Terpandu Teks Cerita Rakyat Banten',
+      '4. Merumuskan Simpulan Bacaan Menggunakan Rumus 5W1H Sederhana',
+    ],
+    guideSteps: [
+      'Langkah 1: Baca paragraf secara utuh dari awal sampai akhir tanpa tergesa-gesa.',
+      'Langkah 2: Tanyakan pada diri sendiri: "Tentang apa atau siapa hal penting yang sedang dibahas paragraf ini?"',
+      'Langkah 3: Cari kalimat yang sifatnya paling UMUM dan memayungi kalimat-kalimat lain.',
+      'Langkah 4: Kalimat penjelas biasanya memuat contoh, ciri-ciri, rincian, atau alasan.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Tentukan gagasan pokok dari paragraf berikut: "Sungai Cisadane memiliki peranan vital bagi warga Kota Tangerang. Aliran airnya dimanfaatkan sebagai sumber air bersih PDAM, jalur irigasi pertanian, dan ruang rekreasi keluarga. Di samping itu, keasrian sungai ini terus dijaga melalui program festival tahunan."',
+        hint: 'Perhatikan kalimat mana yang menjadi inti bahasan yang kemudian dijelaskan oleh rincian manfaat berikutnya.',
+        answerKey: 'Gagasan Pokok: Peranan vital Sungai Cisadane bagi warga Kota Tangerang (terletak pada kalimat pertama / paragraf deduktif).',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-IPAS-01',
+    title: 'Modul Diagnostik IPAS: Jaring-Jaring Makanan & Peran Dekomposer Ekosistem',
+    subject: 'IPAS',
+    category: 'IPAS_SAINS',
+    targetCompetency: 'Peserta didik mampu menguraikan hubungan saling ketergantungan antarmakhluk hidup dalam rantai dan jaring-jaring makanan ekosistem darat serta menganalisis dampak kepunahan suatu organisme.',
+    format: 'LATIHAN_BERTINGKAT',
+    difficulty: 'MENENGAH',
+    estimatedMinutes: 30,
+    contentOutline: [
+      '1. Tingkatan Trofik: Produsen (Tumbuhan Hijau), Konsumen I (Herbivora), Konsumen II/III (Karnivora)',
+      '2. Peran Penting Pengurai (Dekomposer seperti Jamur & Bakteri) yang Mengembalikan Nutrisi ke Tanah',
+      '3. Perbedaan Rantai Makanan Tunggal vs Jaring-Jaring Makanan Kompleks',
+      '4. Analisis Sebab-Akibat: Apa yang terjadi jika populasi ular sawah diburu habis?',
+    ],
+    guideSteps: [
+      'Langkah 1: Selalu awali rantai makanan dengan PRODUSEN (makhluk hidup yang mampu berfotosintesis).',
+      'Langkah 2: Tanda panah (->) berarti "DIMAKAN OLEH", bukan "memakan". Arah panah menunjukkan arah aliran energi.',
+      'Langkah 3: Pahami bahwa hilangnya satu jenis konsumen dapat menyebabkan ledakan populasi mangsanya dan penurunan populasi predatornya.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Perhatikan rantai makanan sawah: Padi -> Tikus -> Ular -> Burung Elang. Jika petani membasmi semua ular di sawah, apakah dampak langsung yang akan terjadi?',
+        hint: 'Perhatikan organisme sebelum ular (tikus) dan organisme sesudah ular (elang).',
+        answerKey: 'Populasi tikus akan melonjak tajam karena tidak ada pemangsa, sehingga merusak tanaman padi milik petani; sedangkan populasi elang akan kekurangan makanan.',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-IPAS-02',
+    title: 'Modul Siklus Alam: Daur Air (Evaporasi, Kondensasi, Presipitasi) & Konservasi Air Bersih',
+    subject: 'IPAS',
+    category: 'IPAS_SAINS',
+    targetCompetency: 'Peserta didik mampu mengidentifikasi urutan siklus air di bumi dan mengaitkan fungsi daerah resapan air dengan pencegahan banjir di lingkungan sekitar.',
+    format: 'LKPD',
+    difficulty: 'DASAR',
+    estimatedMinutes: 30,
+    contentOutline: [
+      '1. Mengapa Air di Bumi Tidak Pernah Habis? Konsep Siklus Air Berkelanjutan',
+      '2. Istilah Sains Siklus Air: Evaporasi, Transpirasi, Kondensasi, Presipitasi, dan Infiltrasi',
+      '3. Fungsi Hutan dan Daerah Resapan Air (Infiltrasi Air Tanah)',
+      '4. Tindakan Sederhana Siswa: Membuat Biopori dan Menghemat Air di Rumah',
+    ],
+    guideSteps: [
+      'Langkah 1: Hubungkan istilah dengan bahasa sehari-hari: Evaporasi = Penguapan air oleh panas matahari; Kondensasi = Pembentukan awan titik air; Presipitasi = Hujan turun.',
+      'Langkah 2: Ingat bahwa tumbuhan juga menguapkan air melalui daun yang disebut proses Transpirasi.',
+      'Langkah 3: Air hujan yang diserap tanah disebut Infiltrasi. Jika tanah tertutup semen tanpa pori resapan, air akan meluap menjadi genangan/banjir.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Ketika udara dingin di atmosfer menyebabkan uap air berubah menjadi titik-titik air kecil yang berkumpul membentuk awan, proses ini disebut...',
+        hint: 'Ingat proses pembentukan embun di pagi hari atau dinding gelas es yang basah.',
+        answerKey: 'Kondensasi (Pengembunan).',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-PP-01',
+    title: 'Modul Karakter Pancasila: Hak & Kewajiban Siswa dalam Musyawarah Mufakat Kelas',
+    subject: 'Pendidikan Pancasila',
+    category: 'PENDIDIKAN_PANCASILA',
+    targetCompetency: 'Peserta didik mampu memahami dan menerapkan nilai-nilai Sila Keempat Pancasila melalui praktik musyawarah mufakat, menghargai keberagaman pendapat, serta melaksanakan hasil mufakat dengan ikhlas dan tanggung jawab.',
+    format: 'SCAFFOLDING',
+    difficulty: 'DASAR',
+    estimatedMinutes: 20,
+    contentOutline: [
+      '1. Arti Musyawarah Mufakat: Kebersamaan Mengambil Keputusan Terbaik',
+      '2. Hak Setiap Siswa: Menyampaikan Pendapat secara Sopan Tanpa Memotong Pembicaraan',
+      '3. Kewajiban Bersama: Menerima dan Melaksanakan Keputusan dengan Rasa Tanggung Jawab',
+      '4. Studi Kasus Pemilihan Ketua Regu Piket Kebersihan Kelas',
+    ],
+    guideSteps: [
+      'Langkah 1: Angkat tangan terlebih dahulu sebelum berbicara saat musyawarah kelas.',
+      'Langkah 2: Gunakan kata-kata yang santun saat menyampaikan gagasan atau ketidaksetujuan.',
+      'Langkah 3: Apabila keputusan bersama sudah disepakati, semua anggota wajib melaksanakannya meskipun pendapat pribadinya tidak terpilih.',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Dalam musyawarah penentuan tempat tujuan kegiatan luar kelas, usulan Andi tidak terpilih karena sebagian besar teman memilih usulan Budi. Sikap terbaik yang harus ditunjukkan Andi adalah...',
+        hint: 'Pikirkan tentang nilai kebesaran hati dan tanggung jawab bersama dalam Sila Ke-4 Pancasila.',
+        answerKey: 'Menerima keputusan bersama dengan lapang dada dan tetap berpartisipasi aktif serta mendukung penuh rencana yang telah disepakati.',
+      },
+    ],
+  },
+  {
+    id: 'MOD-REM-PJOK-01',
+    title: 'Modul Penguatan Teori: Variasi Pola Gerak Dasar Lokomotor, Non-Lokomotor & Manipulatif',
+    subject: 'PJOK',
+    category: 'PJOK',
+    targetCompetency: 'Peserta didik mampu membedakan dan mencontohkan pola gerak dasar lokomotor (berpindah tempat), non-lokomotor (di tempat), dan manipulatif (menggunakan alat/bola) dalam aktivitas olahraga harian.',
+    format: 'LKPD',
+    difficulty: 'DASAR',
+    estimatedMinutes: 20,
+    contentOutline: [
+      '1. Definisi Gerak Lokomotor vs Non-Lokomotor vs Manipulatif',
+      '2. Contoh Gerak dalam Permainan Kasti dan Sepak Bola Mini',
+      '3. Manfaat Pemanasan dan Pendinginan untuk Mencegah Cedera Otot',
+    ],
+    guideSteps: [
+      'Kunci Ingat: Lokomotor = Ada perpindahan badan (berlari, melompat, meluncur); Non-lokomotor = Badan tetap di tempat (meliuk, menekuk lutut, memutar lengan); Manipulatif = Memegang benda (melempar bola, menendang bola, menangkap kasti).',
+    ],
+    practiceQuestions: [
+      {
+        question: 'Saat bermain kasti, gerakan Budi berlari dari pos satu ke pos dua termasuk gerak ..., sedangkan gerakan melempar bola ke pemukul termasuk gerak ...',
+        hint: 'Perhatikan apakah ada perpindahan tempat atau menggunakan bola.',
+        answerKey: 'Berlari = Gerak Lokomotor; Melempar bola = Gerak Manipulatif.',
+      },
+    ],
+  },
+];
+
+// Curated default student behavior / character logs for SD Negeri Tangerang 6
+export const DEFAULT_BEHAVIOR_LOGS: StudentBehaviorLog[] = [
+  {
+    ID: 'BEH-001',
+    SISWA_ID: 'SISWA-0002',
+    SISWA_NAMA: 'ABDUL RAZZAAQ ALFATTAAH',
+    NISN: '3166012414',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-28',
+    KATEGORI: 'GOTONG_ROYONG',
+    TIPE: 'POSITIF',
+    POIN: 15,
+    JUDUL: 'Inisiatif Membantu Teman saat Praktik P5',
+    CATATAN: 'Secara sukarela membantu membagikan bahan kerajinan jajanan pasar dan merapikan meja kerja kelompok setelah jam istirahat.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Apresiasi di depan kelas dan pemberian Bintang Karakter Gotong Royong',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-10-28T09:30:00.000Z',
+  },
+  {
+    ID: 'BEH-002',
+    SISWA_ID: 'SISWA-0002',
+    SISWA_NAMA: 'ABDUL RAZZAAQ ALFATTAAH',
+    NISN: '3166012414',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-11-01',
+    KATEGORI: 'KEDISIPLINAN',
+    TIPE: 'POSITIF',
+    POIN: 10,
+    JUDUL: 'Disiplin Waktu & Mengumpulkan Tugas Tepat Jadwal',
+    CATATAN: 'Konsisten hadir tepat pukul 06.45 WIB dan menjadi siswa pertama yang mengumpulkan LKPD Matematika Gasing secara rapi.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Pencatatan poin prestasi karakter disiplin',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-11-01T07:15:00.000Z',
+  },
+  {
+    ID: 'BEH-003',
+    SISWA_ID: 'SISWA-0001',
+    SISWA_NAMA: 'ABDILLAH PUTRA YAMA',
+    NISN: '3150148820',
+    KELAS: 'Kelas 5A',
+    TANGGAL: '2026-10-29',
+    KATEGORI: 'KEJUJURAN',
+    TIPE: 'POSITIF',
+    POIN: 20,
+    JUDUL: 'Integritas Tinggi Mengembalikan Barang Teman',
+    CATATAN: 'Menemukan kotak pensil dan uang saku milik teman di perpustakaan lalu segera menyerahkannya ke meja piket guru.',
+    GURU_ID: 'GURU-002',
+    GURU_NAMA: 'Siti Rahmawati, M.Pd.',
+    TINDAK_LANJUT: 'Pengumuman teladan kejujuran pada upacara bendera hari Senin',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-10-29T10:45:00.000Z',
+  },
+  {
+    ID: 'BEH-004',
+    SISWA_ID: 'SISWA-0003',
+    SISWA_NAMA: 'DIMAS PRASETYA',
+    NISN: '3160451123',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-11-02',
+    KATEGORI: 'KEDISIPLINAN',
+    TIPE: 'PERLU_PERHATIAN',
+    POIN: -5,
+    JUDUL: 'Terlambat Masuk Kelas & Lupa Membawa Buku Modul',
+    CATATAN: 'Datang terlambat 20 menit saat jam pertama dimulai dan tidak membawa buku tulis catatan IPAS selama 2 hari berturut-turut.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Bimbingan konseling wali kelas & pengingat jadwal malam melalui buku penghubung orang tua',
+    STATUS_TINDAK_LANJUT: 'DALAM_PANTAUAN',
+    CREATED_AT: '2026-11-02T07:35:00.000Z',
+  },
+  {
+    ID: 'BEH-005',
+    SISWA_ID: 'SISWA-0003',
+    SISWA_NAMA: 'DIMAS PRASETYA',
+    NISN: '3160451123',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-25',
+    KATEGORI: 'TANGGUNG_JAWAB',
+    TIPE: 'PERLU_PERHATIAN',
+    POIN: -5,
+    JUDUL: 'Kurang Fokus saat Diskusi Kelompok Numerasi',
+    CATATAN: 'Meninggalkan meja kelompok tanpa izin untuk mengobrol dengan teman di kelompok lain saat pengerjaan soal cerita.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Penempatan posisi duduk di barisan depan dekat meja guru untuk pendampingan fokus',
+    STATUS_TINDAK_LANJUT: 'DALAM_PANTAUAN',
+    CREATED_AT: '2026-10-25T11:00:00.000Z',
+  },
+  {
+    ID: 'BEH-006',
+    SISWA_ID: 'SISWA-0004',
+    SISWA_NAMA: 'SITI AISYAH NURUL',
+    NISN: '3160458891',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-11-01',
+    KATEGORI: 'KEPEMIMPINAN',
+    TIPE: 'POSITIF',
+    POIN: 15,
+    JUDUL: 'Tutor Sebaya Hebat dalam Literasi Membaca',
+    CATATAN: 'Membimbing teman sebangku yang mengalami kesulitan mengeja kosakata sulit pada modul Bahasa Indonesia dengan sangat sabar.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Diangkat sebagai Duta Baca Rombel Kelas 4B',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-11-01T08:40:00.000Z',
+  },
+  {
+    ID: 'BEH-007',
+    SISWA_ID: 'SISWA-0004',
+    SISWA_NAMA: 'SITI AISYAH NURUL',
+    NISN: '3160458891',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-27',
+    KATEGORI: 'KESANTUNAN',
+    TIPE: 'POSITIF',
+    POIN: 10,
+    JUDUL: 'Adab Berbicara Santun dan Menghargai Guru',
+    CATATAN: 'Selalu memberi salam 5S (Senyum, Sapa, Salam, Sopan, Santun) dan menyapa tenaga kebersihan serta satpam sekolah.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Pencatatan poin karakter kesantunan',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-10-27T07:10:00.000Z',
+  },
+  {
+    ID: 'BEH-008',
+    SISWA_ID: 'SISWA-0005',
+    SISWA_NAMA: 'RIZKY RAMADHAN',
+    NISN: '3160782390',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-30',
+    KATEGORI: 'KESANTUNAN',
+    TIPE: 'PERLU_PERHATIAN',
+    POIN: -5,
+    JUDUL: 'Menyela Penjelasan Guru dan Berbicara Keras',
+    CATATAN: 'Berulang kali memotong saat guru sedang menerangkan konsep perkalian dan mengejek jawaban teman yang keliru.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Pendekatan empati setelah jam pulang sekolah, diajak meminta maaf dan membuat komitmen menghargai orang lain',
+    STATUS_TINDAK_LANJUT: 'DALAM_PANTAUAN',
+    CREATED_AT: '2026-10-30T10:15:00.000Z',
+  },
+  {
+    ID: 'BEH-009',
+    SISWA_ID: 'SISWA-0006',
+    SISWA_NAMA: 'NADIA SAFITRI',
+    NISN: '3160129045',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-11-03',
+    KATEGORI: 'KEMANDIRIAN',
+    TIPE: 'POSITIF',
+    POIN: 15,
+    JUDUL: 'Kemandirian Tinggi dalam Eksplorasi Koding Scratch',
+    CATATAN: 'Berhasil membuat animasi dialog interaktif secara mandiri tanpa harus selalu diarahkan langkah demi langkah.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Diberikan kesempatan mempresentasikan karya kodingnya di depan layar proyektor',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-11-03T11:20:00.000Z',
+  },
+  {
+    ID: 'BEH-010',
+    SISWA_ID: 'SISWA-0007',
+    SISWA_NAMA: 'FAJAR HIDAYATULLAH',
+    NISN: '3160893321',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-31',
+    KATEGORI: 'TANGGUNG_JAWAB',
+    TIPE: 'POSITIF',
+    POIN: 10,
+    JUDUL: 'Menjaga Kebersihan Kelas dan Merapikan Pojok Baca',
+    CATATAN: 'Tanpa diminta, menyapu lantai setelah kegiatan seni rupa selesai dan menata buku-buku cerita kembali ke rak.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Diberi predikat Petugas Kebersihan Teladan Pekan Ini',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-10-31T12:00:00.000Z',
+  },
+  {
+    ID: 'BEH-011',
+    SISWA_ID: 'SISWA-0008',
+    SISWA_NAMA: 'ANISA RAHMAWATI',
+    NISN: '3160342211',
+    KELAS: 'Kelas 4B',
+    TANGGAL: '2026-10-26',
+    KATEGORI: 'TANGGUNG_JAWAB',
+    TIPE: 'PERLU_PERHATIAN',
+    POIN: -5,
+    JUDUL: 'Tugas Proyek P5 Tertinggal dan Belum Tuntas',
+    CATATAN: 'Lembar observasi wawancara pedagang jajanan tradisional belum diisi saat jadwal evaluasi tahap 2 dilaksanakan.',
+    GURU_ID: 'GURU-001',
+    GURU_NAMA: 'Nurul Hidayah, S.Pd.',
+    TINDAK_LANJUT: 'Diberikan waktu toleransi tambahan 2 hari dengan bimbingan khusus wali kelas saat jam istirahat',
+    STATUS_TINDAK_LANJUT: 'SELESAI',
+    CREATED_AT: '2026-10-26T09:00:00.000Z',
+  },
+];
 
 export const classroomService = new ClassroomService();
+

@@ -355,7 +355,7 @@ class AccountService {
   }
 
   public initAccounts(): void {
-    const seedKey = 'BB_ACCOUNTS_SEEDED_ALL_V6';
+    const seedKey = 'BB_ACCOUNTS_SEEDED_ALL_V7';
     const existingRaw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACCOUNTS) : null;
     let accounts: Account[] = [];
     try {
@@ -375,7 +375,7 @@ class AccountService {
       accounts.forEach((a) => existingMap.set(a.ID, a));
       DEFAULT_ACCOUNTS.forEach((def) => {
         if (!existingMap.has(def.ID)) {
-          accounts.push(def);
+          existingMap.set(def.ID, def);
         } else {
           // Update default account credentials & role
           const cur = existingMap.get(def.ID)!;

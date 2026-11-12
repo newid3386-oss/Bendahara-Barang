@@ -7,6 +7,7 @@ import {
   Target,
   Layers,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -25,6 +26,7 @@ import {
   Cell,
 } from 'recharts';
 import { classroomService } from '../../services/classroomService';
+import { pdfService } from '../../services/pdfService';
 import { P5Project } from '../../types/classroom';
 
 interface P5ProjectAnalyticsWidgetProps {
@@ -143,31 +145,43 @@ export const P5ProjectAnalyticsWidget: React.FC<P5ProjectAnalyticsWidgetProps> =
           </div>
         </div>
 
-        {/* Tab Controls */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto shrink-0">
+        {/* Tab Controls & PDF Export */}
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab('PROGRESS')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'PROGRESS'
+                  ? 'bg-white text-indigo-950 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TrendingUp size={13} />
+              Penyelesaian Kelas
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('DIMENSION')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'DIMENSION'
+                  ? 'bg-white text-indigo-950 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Target size={13} />
+              Karakter Dimensi P5
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => setActiveTab('PROGRESS')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'PROGRESS'
-                ? 'bg-white text-indigo-950 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => pdfService.generateExecutiveP5AndGradeTrendPdf()}
+            className="px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="Unduh Laporan Ringkasan Eksekutif P5 & Tren Nilai untuk Kepala Sekolah"
           >
-            <TrendingUp size={13} />
-            Penyelesaian Kelas
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('DIMENSION')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'DIMENSION'
-                ? 'bg-white text-indigo-950 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Target size={13} />
-            Karakter Dimensi P5
+            <FileText size={13} className="text-emerald-700" />
+            <span className="hidden sm:inline">Laporan Eksekutif (PDF)</span>
           </button>
         </div>
       </div>

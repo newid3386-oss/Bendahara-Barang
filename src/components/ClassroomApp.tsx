@@ -12,7 +12,8 @@ import {
   Grid, ChevronDown, HardDrive, SunMedium, Bug,
   Target, Sliders, Minus, Leaf, ZapOff,
   Upload, FileSpreadsheet, Layers, ListPlus, Loader2,
-  MoreVertical, CalendarCheck, BookOpenCheck, ArrowUpRight, ArrowDownRight
+  MoreVertical, CalendarCheck, BookOpenCheck, ArrowUpRight, ArrowDownRight,
+  Activity, Thermometer, Gauge
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ResponsiveContainer, BarChart, AreaChart, LineChart, RadarChart, ComposedChart, PieChart, Area, Line, Bar, Radar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell, Pie } from 'recharts';
@@ -29,8 +30,9 @@ import { ClassroomAIAssistantModal } from './classroom/ClassroomAIAssistantModal
 import { ClassroomAIChat } from './classroom/ClassroomAIChat';
 import { P5ProjectAnalyticsWidget } from './classroom/P5ProjectAnalyticsWidget';
 import { AutomatedGradeTrendAnalyticsWidget } from './classroom/AutomatedGradeTrendAnalyticsWidget';
+import { RealtimeClassroomStatsWidget } from './classroom/RealtimeClassroomStatsWidget';
 import { Account, StatusKelulusan, KebutuhanKhusus } from '../types/classroom';
-import { ClassroomCourse, ClassroomAssignment, ClassroomSubmission, ClassroomReport } from '../types/classroom';
+import { ClassroomCourse, ClassroomAssignment, ClassroomSubmission, ClassroomReport, GradeChangeLog } from '../types/classroom';
 import { ClassroomForumView } from './classroom/ClassroomForumView';
 import { ClassroomAttendanceView } from './classroom/ClassroomAttendanceView';
 import { ClassroomQuizCBTView } from './classroom/ClassroomQuizCBTView';
@@ -49,6 +51,7 @@ import { QuickGradeModal } from './classroom/QuickGradeModal';
 import { BulkQrGeneratorModal } from './classroom/BulkQrGeneratorModal';
 import { QRScannerModal, RecentScanItem } from './QRScannerModal';
 import { ScanSettingsModal } from './classroom/ScanSettingsModal';
+import { BatteryDiagnosticModal } from './classroom/BatteryDiagnosticModal';
 import { VoiceNoteRecorder } from './classroom/VoiceNoteRecorder';
 import { AIRemedialModulModal } from './classroom/AIRemedialModulModal';
 import { ParentPortalModal } from './classroom/ParentPortalModal';
@@ -68,7 +71,9 @@ import { EarlyWarningP5Modal } from './classroom/EarlyWarningP5Modal';
 import { MonthlyManagementReportDashboard } from './classroom/MonthlyManagementReportDashboard';
 import { P5ProjectTrackerWidget } from './classroom/P5ProjectTrackerWidget';
 import { ExportStudentReportModal } from './classroom/ExportStudentReportModal';
+import { BehaviorAnalysisWidget } from './classroom/BehaviorAnalysisWidget';
 import { ClassroomOverviewWidget } from './classroom/ClassroomOverviewWidget';
+import { RecentScans } from './classroom/RecentScans';
 import { ParticleCelebration } from './classroom/ParticleCelebration';
 import { ClassroomPeerReviewModal } from './classroom/ClassroomPeerReviewModal';
 import { BulkQRHistoryPrintModal } from './BulkQRHistoryPrintModal';
@@ -447,6 +452,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const [showEarlyWarningP5Modal, setShowEarlyWarningP5Modal] = useState(false);
   const [showCSVImportModal, setShowCSVImportModal] = useState(false);
   const [showBatchPDFModal, setShowBatchPDFModal] = useState(false);
+  const [globalReportStudent, setGlobalReportStudent] = useState<Account | null>(null);
   const [aiChatAssignment, setAiChatAssignment] = useState<ClassroomAssignment | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [celebratingMilestone, setCelebratingMilestone] = useState<{
@@ -507,10 +513,14 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const prevScansCountRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressActiveRef = useRef(false);
+  const [showHistoryQuickPreview, setShowHistoryQuickPreview] = useState(false);
+  const historyLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHistoryLongPressRef = useRef(false);
   const fabContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Custom Scan Goal (Target Pemindaian Absensi Per Kelas) & Settings Modal State
   const [showScanSettingsModal, setShowScanSettingsModal] = useState(false);
+  const [showBatteryDiagnosticModal, setShowBatteryDiagnosticModal] = useState(false);
   const [pauseOnInactivity, setPauseOnInactivity] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('sdn6_pause_on_inactivity_enabled');
@@ -548,6 +558,14 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
   const [customScanGoal, setCustomScanGoal] = useState<number | null>(() => {
     try {
       const cls = isGuru ? account?.KELAS || 'Kelas 1' : 'Kelas 1';
+      // First check per-class personalized dictionary
+      const rawDict = localStorage.getItem('sdn6_class_daily_goals_v1');
+      if (rawDict) {
+        const dict = JSON.parse(rawDict);
+        if (dict && typeof dict[cls] === 'number' && dict[cls] > 0) {
+          return dict[cls];
+        }
+      }
       const saved = localStorage.getItem(`sdn6_scan_goal_${cls}`) || localStorage.getItem('sdn6_custom_scan_goal');
       if (saved) {
         const val = parseInt(saved, 10);
@@ -861,6 +879,90 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     try { localStorage.setItem('sdn6_qr_camera_facing', newMode); } catch {}
   };
 
+  // Smart Auto-Pause with Face Detection State (Front Camera)
+  const [faceAutoPauseEnabled, setFaceAutoPauseEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sdn6_face_auto_pause_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleFaceAutoPause = () => {
+    const nextVal = !faceAutoPauseEnabled;
+    setFaceAutoPauseEnabled(nextVal);
+    try {
+      localStorage.setItem('sdn6_face_auto_pause_enabled', String(nextVal));
+    } catch {}
+  };
+
+  const [faceDetectionSensitivity, setFaceDetectionSensitivity] = useState<'low' | 'medium' | 'high'>(() => {
+    try {
+      const saved = localStorage.getItem('sdn6_face_detection_sensitivity');
+      if (saved === 'low' || saved === 'medium' || saved === 'high') return saved;
+    } catch {}
+    return 'medium';
+  });
+
+  const changeFaceDetectionSensitivity = (sens: 'low' | 'medium' | 'high') => {
+    setFaceDetectionSensitivity(sens);
+    try {
+      localStorage.setItem('sdn6_face_detection_sensitivity', sens);
+    } catch {}
+  };
+
+  // Auto Flashlight & Ambient Light Sensor Settings
+  const [autoFlashlightEnabled, setAutoFlashlightEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sdn6_auto_flashlight_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleAutoFlashlight = () => {
+    setAutoFlashlightEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sdn6_auto_flashlight_enabled', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const [ambientLightThreshold, setAmbientLightThreshold] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('sdn6_ambient_light_threshold');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    } catch {}
+    return 35;
+  });
+
+  const changeAmbientLightThreshold = (thresh: number) => {
+    setAmbientLightThreshold(thresh);
+    try {
+      localStorage.setItem('sdn6_ambient_light_threshold', String(thresh));
+    } catch {}
+  };
+
+  const [autoFlashlightScheduleMode, setAutoFlashlightScheduleMode] = useState<'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY'>(() => {
+    try {
+      const saved = localStorage.getItem('sdn6_auto_flashlight_schedule_mode');
+      if (saved === 'ALWAYS' || saved === 'LOW_LIGHT_ONLY' || saved === 'KBM_EVENING_ONLY') return saved;
+    } catch {}
+    return 'LOW_LIGHT_ONLY';
+  });
+
+  const changeAutoFlashlightScheduleMode = (mode: 'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY') => {
+    setAutoFlashlightScheduleMode(mode);
+    try {
+      localStorage.setItem('sdn6_auto_flashlight_schedule_mode', mode);
+    } catch {}
+  };
+
   const [isFabSuccessAnimating, setIsFabSuccessAnimating] = useState(false);
 
   const [showQuickNoteModal, setShowQuickNoteModal] = useState(false);
@@ -886,11 +988,18 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     });
   };
 
-  const handleScanSuccessAnimation = useCallback(() => {
+  const handleScanSuccessAnimation = useCallback((item?: any) => {
     setIsFabSuccessAnimating(true);
     triggerContainerBounce();
     loadRecentFabScans();
-    playFeedback('success');
+    // Differentiated haptic feedback based on scanned item type
+    if (item?.type === 'ASSIGNMENT' || item?.type === 'assignment') {
+      playFeedback('task_success'); // Getaran panjang untuk scan tugas berhasil
+    } else if (item?.type === 'STUDENT' || item?.type === 'student') {
+      playFeedback('attendance_success'); // Getaran ritmis ganda untuk absensi siswa
+    } else {
+      playFeedback('success');
+    }
     setTimeout(() => {
       setIsFabSuccessAnimating(false);
     }, 2200);
@@ -980,14 +1089,14 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         }
         setToastMessage({
           type: 'info',
-          title: '🌱 Mode Hemat Baterai Aktif',
-          message: 'Kecerahan kamera scanner diturunkan (65%) & laju frame dibatasi ke 1 FPS untuk menghemat daya baterai.',
+          title: '🌱 Mode Eco-Scan Aktif (15 FPS)',
+          message: 'Laju frame kamera scanner dibatasi ke 15 FPS dan analitik real-time dinonaktifkan untuk memperpanjang daya baterai.',
         });
       } else {
         setToastMessage({
           type: 'info',
-          title: '⚡ Mode Normal Aktif',
-          message: 'Scanner kembali ke performa penuh (60 FPS & kecerahan normal).',
+          title: '⚡ Mode Standar Aktif',
+          message: 'Scanner kembali ke performa penuh (30 FPS) dan seluruh analitik real-time diaktifkan.',
         });
       }
       setTimeout(() => {
@@ -1374,13 +1483,48 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       : accountService.getStudents();
   }, [sessionTargetClasses, isGuru, account.KELAS, refreshKey]);
 
+  // Total class size (kapasitas siswa aktif per rombel target)
+  const currentClassSize = useMemo(() => {
+    const rawCls = activeTargetClassCode?.trim() || (isGuru && account.KELAS ? account.KELAS : 'Kelas 1');
+    const students = accountService.getStudents(rawCls);
+    if (students.length > 0) return students.length;
+    if (classStudents.length > 0) return classStudents.length;
+    return 28;
+  }, [activeTargetClassCode, classStudents, isGuru, account.KELAS]);
+
+  // Synchronize custom scan goal whenever target class changes
+  useEffect(() => {
+    try {
+      const cls = activeTargetClassCode;
+      const rawDict = localStorage.getItem('sdn6_class_daily_goals_v1');
+      if (rawDict) {
+        const dict = JSON.parse(rawDict);
+        if (dict && typeof dict[cls] === 'number' && dict[cls] > 0) {
+          setCustomScanGoal(dict[cls]);
+          return;
+        }
+      }
+      const saved = localStorage.getItem(`sdn6_scan_goal_${cls}`);
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val > 0) {
+          setCustomScanGoal(val);
+          return;
+        }
+      }
+      setCustomScanGoal(null);
+    } catch (e) {
+      console.warn(e);
+    }
+  }, [activeTargetClassCode]);
+
   // Calculate active session scan count & goal (custom goal per class or auto from enrolled students)
   const sessionScanGoal = useMemo(() => {
     if (customScanGoal !== null && customScanGoal > 0) {
       return customScanGoal;
     }
-    return classStudents.length > 0 ? classStudents.length : 25;
-  }, [classStudents, customScanGoal]);
+    return currentClassSize;
+  }, [currentClassSize, customScanGoal]);
 
   // Handlers for Custom Scan Goal & Multi-Rombel Management
   const handleSaveCustomScanGoal = useCallback((newGoal: number, forClass: string, forTargetClasses?: string[]) => {
@@ -1399,15 +1543,24 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
       localStorage.setItem('sdn6_custom_scan_goal', validGoal.toString());
       localStorage.setItem('sdn6_scan_target_classes', JSON.stringify(finalClasses));
       localStorage.setItem('sdn6_custom_target_class', cls);
+      // Persist to class daily goals dictionary
+      const rawDict = localStorage.getItem('sdn6_class_daily_goals_v1');
+      const dict = rawDict ? JSON.parse(rawDict) : {};
+      dict[cls] = validGoal;
+      localStorage.setItem('sdn6_class_daily_goals_v1', JSON.stringify(dict));
     } catch (e) {
       console.warn(e);
     }
     setSessionTargetClasses(finalClasses);
     setCustomTargetClass(cls);
     setCustomScanGoal(validGoal);
-    setToastMessage(`Target scan (${cls}) ditetapkan: ${validGoal} siswa/scan`);
+    setToastMessage({
+      type: 'success',
+      title: 'Target Scan Harian Ditetapkan',
+      message: `Target scan untuk ${cls} berhasil diatur ke ${validGoal} scan (${Math.round((validGoal / currentClassSize) * 100)}% dari ${currentClassSize} siswa rombel).`,
+    });
     playFeedback('success');
-  }, [activeTargetClassCode]);
+  }, [activeTargetClassCode, currentClassSize]);
 
   const handleResetCustomScanGoal = useCallback((forClass: string) => {
     const cls = forClass || activeTargetClassCode;
@@ -1422,10 +1575,10 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     setCustomScanGoal(null);
     setSessionTargetClasses([]);
     setCustomTargetClass(null);
-    const defaultCount = classStudents.length > 0 ? classStudents.length : 25;
-    setToastMessage(`Target scan di-reset ke kuota default siswa (${defaultCount} scan)`);
+    const defaultCount = currentClassSize;
+    setToastMessage(`Target scan di-reset ke kuota kapasitas siswa rombel (${defaultCount} scan)`);
     playFeedback('click');
-  }, [activeTargetClassCode, classStudents]);
+  }, [activeTargetClassCode, currentClassSize]);
 
   const sessionScanCount = useMemo(() => {
     const sixHoursAgo = Date.now() - 6 * 3600 * 1000;
@@ -1436,6 +1589,11 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
     if (sessionScanGoal <= 0) return 0;
     return Math.min(100, Math.round((sessionScanCount / sessionScanGoal) * 100));
   }, [sessionScanCount, sessionScanGoal]);
+
+  const attendanceProgressAgainstClassSizePct = useMemo(() => {
+    if (currentClassSize <= 0) return 0;
+    return Math.min(100, Math.round((sessionScanCount / currentClassSize) * 100));
+  }, [sessionScanCount, currentClassSize]);
 
   // Handler for Printing / Exporting Scan History to PDF
   const handlePrintScanHistoryPDF = useCallback(async () => {
@@ -2225,6 +2383,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               submissions={isSiswa ? mySubmissions : allSubmissions}
               studentsCount={classStudents.length}
               onNavigate={setPage}
+              onOpenStudentReport={setGlobalReportStudent}
             />
           )}
           {page === 'forum' && (
@@ -2380,6 +2539,17 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         isOpen={showCloudModal}
         onClose={() => setShowCloudModal(false)}
       />
+
+      {/* Global Comprehensive Student Report Modal (Nilai, Presensi, Karakter & Catatan Guru) */}
+      {globalReportStudent && (
+        <ExportStudentReportModal
+          isOpen={Boolean(globalReportStudent)}
+          onClose={() => setGlobalReportStudent(null)}
+          student={globalReportStudent}
+          teacherName={isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.'}
+          teacherNip={isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003'}
+        />
+      )}
 
       {/* Role-Specific Classroom AI Assistant Modal (Siswa, Guru, Kepala Sekolah) */}
       <ClassroomAIAssistantModal
@@ -3528,7 +3698,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
           <AnimatePresence>
             {showArcMenu && (
               <div className="absolute inset-0 pointer-events-none z-30">
-                {/* CIRCULAR PROGRESS RING FOR ACTIVE SESSION SCAN GOAL */}
+                {/* CIRCULAR PROGRESS RING FOR ACTIVE SESSION SCAN GOAL & ROMBEL SIZE */}
                 <motion.div
                   id="fab-arc-progress-ring"
                   initial={{ scale: 0, opacity: 0, y: 10 }}
@@ -3541,7 +3711,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                     playFeedback('click');
                   }}
                   className="absolute -top-16 -left-12 sm:-left-16 p-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 hover:border-emerald-400 shadow-2xl flex items-center gap-2 pointer-events-auto group/ring cursor-pointer hover:scale-105 active:scale-95 transition-all z-40 select-none"
-                  title={`Sesi Aktif: ${sessionScanCount} dari target ${sessionScanGoal} scan (${progressPct}%). Klik untuk menetapkan target jumlah pemindaian (Scan Goal).`}
+                  title={`Sesi Aktif: ${sessionScanCount} dari target ${sessionScanGoal} scan (${progressPct}%). Rombel: ${currentClassSize} Siswa (${attendanceProgressAgainstClassSizePct}%). Klik untuk menetapkan target jumlah pemindaian (Scan Goal).`}
                 >
                   <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
                     <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
@@ -3576,6 +3746,77 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                     </div>
                     <div className="text-[9px] text-emerald-400 font-mono font-bold leading-tight">
                       {sessionScanCount}/{sessionScanGoal} Goal
+                    </div>
+                    <div className="text-[8px] text-slate-400 font-mono leading-tight">
+                      Rombel: {currentClassSize} Siswa ({attendanceProgressAgainstClassSizePct}%)
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* DEVICE BATTERY MONITORING INDICATOR IN FAB MENU */}
+                <motion.div
+                  id="fab-arc-battery-monitor"
+                  initial={{ scale: 0, opacity: 0, y: 10 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0, opacity: 0, y: 10 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 25, delay: 0.1 }}
+                  onClick={() => {
+                    setShowArcMenu(false);
+                    setShowScanSettingsModal(true);
+                    playFeedback('click');
+                  }}
+                  className={`absolute -top-16 right-0 sm:right-2 p-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border shadow-2xl flex items-center gap-2 pointer-events-auto group/battery cursor-pointer hover:scale-105 active:scale-95 transition-all z-40 select-none ${
+                    isLowBattery
+                      ? 'border-rose-500/70 bg-rose-950/40 text-rose-300 shadow-rose-900/50 animate-pulse'
+                      : isCharging
+                      ? 'border-teal-400/60 bg-slate-900/95 text-teal-300 shadow-teal-900/40'
+                      : 'border-slate-700 hover:border-slate-500 text-slate-200'
+                  }`}
+                  title={`Status Baterai: ${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : 'Terhubung'}${isCharging ? ' (Mengisi Daya)' : ''}. Ambang Peringatan: ${batteryAlertThreshold}%. Klik untuk konfigurasi daya & ambang baterai.`}
+                >
+                  <div className={`p-1.5 rounded-xl flex items-center justify-center shrink-0 ${
+                    isLowBattery
+                      ? 'bg-rose-500/20 text-rose-400'
+                      : isCharging
+                      ? 'bg-teal-500/20 text-teal-400'
+                      : (batteryLevel !== null && batteryLevel > 0.6)
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {isCharging ? (
+                      <BatteryCharging size={18} className="text-teal-400 animate-pulse" />
+                    ) : isLowBattery ? (
+                      <BatteryLow size={18} className="text-rose-400 animate-bounce" />
+                    ) : (batteryLevel !== null && batteryLevel > 0.6) ? (
+                      <BatteryFull size={18} className="text-emerald-400" />
+                    ) : (
+                      <BatteryMedium size={18} className="text-amber-400" />
+                    )}
+                  </div>
+                  <div className="pr-1 text-left">
+                    <div className="text-[10px] font-black text-white leading-tight flex items-center gap-1">
+                      <span>Baterai</span>
+                      {isCharging ? (
+                        <Zap size={9} className="text-teal-400 animate-pulse" />
+                      ) : isLowBattery ? (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-[10px] font-mono font-extrabold leading-tight ${
+                        isLowBattery
+                          ? 'text-rose-400'
+                          : isCharging
+                          ? 'text-teal-300'
+                          : 'text-slate-200'
+                      }`}>
+                        {batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '85%'}
+                      </span>
+                      {isLowBattery && (
+                        <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-rose-500/30 text-rose-300 border border-rose-500/40">
+                          &lt;{batteryAlertThreshold}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -3674,13 +3915,13 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                     </div>
                   )}
 
-                  {/* Search Footer Toolbar with Print History Shortcut & Atur Goal */}
+                  {/* Search Footer Toolbar with Print History Shortcut, Goal & Battery Indicator */}
                   <div className="pt-1.5 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      <span>Sesi: <strong className="text-emerald-300 font-mono">{sessionScanCount}/{sessionScanGoal}</strong></span>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                      <span className="truncate">Sesi: <strong className="text-emerald-300 font-mono">{sessionScanCount}/{sessionScanGoal}</strong> <span className="text-slate-500 font-mono">({currentClassSize} Siswa)</span></span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
@@ -3688,11 +3929,36 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                           setShowScanSettingsModal(true);
                           playFeedback('click');
                         }}
-                        className="text-[10px] font-bold text-teal-300 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-500/20 hover:bg-teal-600 border border-teal-500/40 transition cursor-pointer"
+                        className={`text-[10px] font-bold flex items-center gap-1 px-1.5 py-0.5 rounded-lg border transition cursor-pointer ${
+                          isLowBattery
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-600 hover:text-white animate-pulse'
+                            : isCharging
+                            ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 hover:bg-teal-600 hover:text-white'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+                        }`}
+                        title={`Baterai: ${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '85%'}${isCharging ? ' (Mengisi Daya)' : ''}. Ambang: ${batteryAlertThreshold}%. Klik untuk Pengaturan.`}
+                      >
+                        {isCharging ? (
+                          <BatteryCharging size={11} className="text-teal-400 shrink-0" />
+                        ) : isLowBattery ? (
+                          <BatteryLow size={11} className="text-rose-400 shrink-0 animate-bounce" />
+                        ) : (
+                          <Battery size={11} className="text-emerald-400 shrink-0" />
+                        )}
+                        <span>{batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '85%'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowArcMenu(false);
+                          setShowScanSettingsModal(true);
+                          playFeedback('click');
+                        }}
+                        className="text-[10px] font-bold text-teal-300 hover:text-white flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-teal-500/20 hover:bg-teal-600 border border-teal-500/40 transition cursor-pointer"
                         title="Atur Target Scan Goal Kelas"
                       >
                         <Target size={11} />
-                        <span>Atur Goal</span>
+                        <span>Goal</span>
                       </button>
                       <button
                         type="button"
@@ -3700,11 +3966,11 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                           setShowArcMenu(false);
                           handlePrintScanHistoryPDF();
                         }}
-                        className="text-[10px] font-bold text-rose-300 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-600 border border-rose-500/40 transition cursor-pointer"
+                        className="text-[10px] font-bold text-rose-300 hover:text-white flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-600 border border-rose-500/40 transition cursor-pointer"
                         title="Download PDF Rekapitulasi Scan"
                       >
                         <Printer size={11} />
-                        <span>Print Log</span>
+                        <span>Print</span>
                       </button>
                     </div>
                   </div>
@@ -3754,9 +4020,9 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             )}
           </AnimatePresence>
 
-          {/* Floating Session-Based Scan Counter Badge on FAB Container */}
+          {/* Floating Session-Based Scan Counter Badge on FAB Container with Real-Time Progress against Class Size */}
           <motion.div
-            key={`fab-session-counter-${sessionScanCount}`}
+            key={`fab-session-counter-${sessionScanCount}-${sessionScanGoal}-${currentClassSize}`}
             initial={{ scale: 0.75, y: 3 }}
             animate={{ scale: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 500, damping: 18 }}
@@ -3765,22 +4031,65 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               setShowScanSettingsModal(true);
               playFeedback('click');
             }}
-            className="absolute -top-3.5 left-2 sm:left-3 z-30 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/95 backdrop-blur-md border border-emerald-500/60 shadow-lg shadow-emerald-500/30 text-white text-[10px] font-black font-mono cursor-pointer hover:scale-105 active:scale-95 transition-all select-none hover:border-emerald-400 group/scounter"
-            title={`Sesi aktif ini: ${sessionScanCount} QR terpindai dari target ${sessionScanGoal} scan (${progressPct}%). Klik untuk membuka Pengaturan Scan Goal.`}
+            className={`absolute -top-3.5 left-1 sm:left-2 z-30 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full backdrop-blur-md shadow-lg text-[10px] font-black font-mono cursor-pointer hover:scale-105 active:scale-95 transition-all select-none group/scounter ${
+              progressPct >= 100
+                ? 'bg-gradient-to-r from-amber-500/90 via-emerald-600/90 to-teal-500/90 text-white border-2 border-amber-300 shadow-amber-500/50 animate-pulse'
+                : 'bg-slate-950/95 text-white border border-emerald-500/60 shadow-emerald-500/30 hover:border-emerald-400'
+            }`}
+            title={`Target Harian (${activeTargetClassCode}): ${sessionScanCount}/${sessionScanGoal} Scan (${progressPct}%). Rombel: ${currentClassSize} Siswa (${attendanceProgressAgainstClassSizePct}%). Baterai: ${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '85%'}. Klik untuk mengatur target scan harian per rombel.`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                sessionScanCount > 0 ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'
+                progressPct >= 100
+                  ? 'bg-amber-300 animate-ping'
+                  : sessionScanCount > 0
+                  ? 'bg-emerald-400 animate-ping'
+                  : 'bg-slate-500'
               }`}
             />
-            <QrCode size={10} className="text-emerald-400 shrink-0 group-hover/scounter:scale-110 transition-transform" />
-            <span className="text-emerald-300 font-bold">{sessionScanCount}</span>
-            <span className="text-slate-400 font-sans text-[9px] font-semibold">
-              {sessionScanGoal > 0 ? `/${sessionScanGoal} Scan` : 'Scan'}
+            {progressPct >= 100 ? (
+              <Sparkles size={11} className="text-amber-200 shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+            ) : (
+              <QrCode size={10} className="text-emerald-400 shrink-0 group-hover/scounter:scale-110 transition-transform" />
+            )}
+
+            <span className="text-[9px] font-sans font-extrabold text-slate-300 max-w-[68px] sm:max-w-[85px] truncate">
+              {activeTargetClassCode}
             </span>
-            {progressPct > 0 && (
-              <span className="hidden xs:inline text-[8px] px-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
-                {progressPct}%
+
+            <span className="text-slate-500 font-sans">•</span>
+
+            <span className={progressPct >= 100 ? 'text-amber-100 font-black' : 'text-emerald-300 font-bold'}>
+              {sessionScanCount}
+            </span>
+            <span className="text-slate-400 font-sans text-[9px] font-semibold">
+              /{sessionScanGoal}
+            </span>
+
+            {/* Class Size Attendance Context Indicator */}
+            <span className="text-[8px] text-slate-400 font-sans hidden sm:inline" title={`Total kapasitas rombel ${activeTargetClassCode}: ${currentClassSize} siswa. Kehadiran saat ini: ${attendanceProgressAgainstClassSizePct}%.`}>
+              ({currentClassSize} Siswa)
+            </span>
+
+            {/* Progress Percentage Badge */}
+            <span
+              className={`text-[8px] px-1 py-0.2 rounded font-bold border ${
+                progressPct >= 100
+                  ? 'bg-amber-400/30 text-amber-100 border-amber-300/50'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}
+            >
+              {progressPct}%
+            </span>
+
+            {/* Low Battery Warning Pulse in FAB Badge */}
+            {isLowBattery && (
+              <span
+                className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-rose-500/40 text-rose-200 border border-rose-400/60 animate-pulse text-[8px] font-bold"
+                title={`Baterai perangkat kritis (${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '<20%'}). Segera hubungkan charger!`}
+              >
+                <BatteryLow size={9} className="text-rose-200" />
+                <span>{batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '!'}</span>
               </span>
             )}
           </motion.div>
@@ -3801,26 +4110,52 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             animate={
               isFabSuccessAnimating
                 ? {
-                    scale: [1, 1.35, 0.94, 1.18, 0.97, 1.05, 1],
-                    rotate: [0, -4, 4, -2, 2, 0],
-                    backgroundColor: ['#3b82f6', '#10b981', '#fbbf24', '#059669', '#10b981'],
+                    // Physical haptic micro-jolt & motor vibration simulation
+                    scale: [1, 0.88, 1.34, 0.94, 1.16, 0.98, 1.05, 1],
+                    x: [0, -3.5, 3.5, -2.5, 2.5, -1, 1, 0],
+                    rotate: [0, -4, 4, -2.5, 2.5, -1, 1, 0],
+                    backgroundColor: [
+                      '#2563eb', // Vivid Blue kickoff
+                      '#059669', // Emerald
+                      '#10b981', // Bright Emerald
+                      '#34d399', // Mint highlight
+                      '#f59e0b', // Celebratory Gold flash
+                      '#059669', // Deep Emerald
+                      '#10b981'  // Settled Emerald
+                    ],
                     boxShadow: [
-                      '0px 0px 0px 0px rgba(16, 185, 129, 0.9)',
-                      '0px 0px 0px 18px rgba(16, 185, 129, 0.6)',
-                      '0px 0px 0px 32px rgba(52, 211, 153, 0.3)',
-                      '0px 0px 45px 8px rgba(52, 211, 153, 0.8)',
+                      '0px 0px 0px 0px rgba(16, 185, 129, 0.95)',
+                      '0px 0px 0px 14px rgba(52, 211, 153, 0.75)',
+                      '0px 0px 0px 28px rgba(16, 185, 129, 0.45)',
+                      '0px 0px 48px 12px rgba(52, 211, 153, 0.85)',
                       '0px 0px 0px 0px rgba(16, 185, 129, 0)'
                     ]
                   }
+                : isLowBattery
+                ? {
+                    // Organic rhythmic "breathing" pulsing effect for low battery awareness
+                    scale: [1, 1.07, 0.98, 1.05, 1],
+                    boxShadow: [
+                      '0px 0px 10px 2px rgba(225, 29, 72, 0.45)',
+                      '0px 0px 28px 7px rgba(244, 63, 94, 0.9)',
+                      '0px 0px 14px 3px rgba(239, 68, 68, 0.55)',
+                      '0px 0px 26px 6px rgba(245, 158, 11, 0.85)',
+                      '0px 0px 10px 2px rgba(225, 29, 72, 0.45)'
+                    ],
+                    x: 0,
+                    rotate: 0
+                  }
                 : showArcMenu
-                ? { scale: 1.05 }
+                ? { scale: 1.05, x: 0, rotate: 0 }
                 : (!isLowBattery && isWithinFiveMinutesOfClass)
-                ? { scale: [1, 1.04, 1] }
-                : { scale: 1 }
+                ? { scale: [1, 1.04, 1], x: 0, rotate: 0 }
+                : { scale: 1, x: 0, rotate: 0 }
             }
             transition={
               isFabSuccessAnimating
-                ? { duration: 0.85, ease: 'easeInOut' }
+                ? { duration: 0.92, ease: [0.22, 1, 0.36, 1] }
+                : isLowBattery
+                ? { repeat: Infinity, duration: 2.2, ease: 'easeInOut' }
                 : (!isLowBattery && isWithinFiveMinutesOfClass)
                 ? { repeat: Infinity, duration: 1.5, ease: 'easeInOut' }
                 : { type: 'spring', stiffness: 400, damping: 25 }
@@ -3829,6 +4164,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             className={`relative flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 z-10 ${
               isFabSuccessAnimating
                 ? 'bg-emerald-500 text-white ring-4 ring-emerald-300 ring-offset-2 ring-offset-slate-900 font-extrabold shadow-emerald-500/70'
+                : isLowBattery
+                ? 'bg-gradient-to-r from-rose-600 via-red-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white shadow-rose-600/60 border-2 border-rose-300 ring-4 ring-rose-500/70 focus:ring-rose-400 font-extrabold'
                 : showArcMenu
                 ? 'bg-gradient-to-r from-slate-800 to-slate-900 text-white ring-2 ring-emerald-400 border border-emerald-400/50 shadow-2xl'
                 : highContrast
@@ -3843,26 +4180,36 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
             aria-label="Pindai QR Scanner Cepat"
             aria-expanded={showArcMenu}
           >
-            {/* Concentric Haptic-like Ripple Shockwaves on Scan Success */}
+            {/* Multi-tier Concentric Haptic-like Ripple Shockwaves on Scan Success */}
             {isFabSuccessAnimating && (
               <>
+                {/* Wave 1: Immediate High-Energy Emerald Shockwave */}
                 <motion.span
-                  initial={{ scale: 0.8, opacity: 0.95 }}
-                  animate={{ scale: [0.8, 1.8, 2.6], opacity: [0.95, 0.45, 0] }}
-                  transition={{ duration: 0.85, ease: 'easeOut' }}
-                  className="absolute -inset-2 rounded-3xl border-2 border-emerald-400 pointer-events-none z-0"
+                  initial={{ scale: 0.75, opacity: 0.98 }}
+                  animate={{ scale: [0.75, 1.85, 2.75], opacity: [0.98, 0.5, 0] }}
+                  transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute -inset-2 rounded-3xl border-3 border-emerald-400 shadow-lg shadow-emerald-400/50 pointer-events-none z-0"
                 />
+                {/* Wave 2: Filled Glow Aura Ripple */}
                 <motion.span
-                  initial={{ scale: 0.6, opacity: 1 }}
-                  animate={{ scale: [0.6, 1.5, 2.2], opacity: [1, 0.5, 0] }}
-                  transition={{ duration: 0.7, ease: 'easeOut', delay: 0.08 }}
-                  className="absolute -inset-3 rounded-3xl bg-emerald-400/40 pointer-events-none z-0"
+                  initial={{ scale: 0.6, opacity: 0.9 }}
+                  animate={{ scale: [0.6, 1.55, 2.3], opacity: [0.9, 0.45, 0] }}
+                  transition={{ duration: 0.75, ease: 'easeOut', delay: 0.08 }}
+                  className="absolute -inset-3 rounded-3xl bg-emerald-400/35 pointer-events-none z-0"
                 />
+                {/* Wave 3: Expansive Outer Mint Echo */}
                 <motion.span
-                  initial={{ scale: 0.5, opacity: 0.85 }}
-                  animate={{ scale: [0.5, 2.0, 3.2], opacity: [0.85, 0.3, 0] }}
-                  transition={{ duration: 1.0, ease: 'easeOut', delay: 0.15 }}
-                  className="absolute -inset-4 rounded-3xl border border-teal-300/60 pointer-events-none z-0"
+                  initial={{ scale: 0.5, opacity: 0.8 }}
+                  animate={{ scale: [0.5, 2.1, 3.4], opacity: [0.8, 0.35, 0] }}
+                  transition={{ duration: 1.05, ease: 'easeOut', delay: 0.16 }}
+                  className="absolute -inset-4 rounded-3xl border-2 border-teal-300/70 pointer-events-none z-0"
+                />
+                {/* Wave 4: Celebratory Golden Shimmer Ring */}
+                <motion.span
+                  initial={{ scale: 0.9, opacity: 0.95 }}
+                  animate={{ scale: [0.9, 1.35, 1.7], opacity: [0.95, 0.3, 0] }}
+                  transition={{ duration: 0.65, ease: 'easeOut', delay: 0.22 }}
+                  className="absolute -inset-1 rounded-3xl border border-amber-300/80 pointer-events-none z-0"
                 />
               </>
             )}
@@ -3873,6 +4220,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               className={`absolute -inset-0.5 rounded-2xl transition-opacity duration-300 -z-10 ${
                 isFabSuccessAnimating
                   ? 'bg-emerald-400 opacity-100 blur-md animate-pulse'
+                  : isLowBattery
+                  ? 'bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 opacity-95 blur-md animate-pulse'
                   : showArcMenu
                   ? 'bg-emerald-400 opacity-70 blur-md animate-pulse'
                   : scheduleNudge.status === 'ACTIVE'
@@ -3892,6 +4241,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
                   isFabSuccessAnimating
                     ? 'bg-emerald-200 opacity-100 scale-150'
+                    : isLowBattery
+                    ? 'bg-rose-400 opacity-95 scale-125'
                     : scheduleNudge.status === 'ACTIVE'
                     ? 'bg-amber-400 opacity-95 scale-125'
                     : scheduleNudge.status === 'IMMINENT'
@@ -3905,6 +4256,8 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
                 className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white shadow-xs ${
                   isFabSuccessAnimating
                     ? 'bg-emerald-300 ring-2 ring-emerald-100'
+                    : isLowBattery
+                    ? 'bg-rose-600 ring-2 ring-rose-200 animate-pulse'
                     : scheduleNudge.status === 'ACTIVE'
                     ? 'bg-amber-500 ring-2 ring-amber-200'
                     : scheduleNudge.status === 'IMMINENT'
@@ -3918,9 +4271,17 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
 
             {isFabSuccessAnimating ? (
               <>
-                <CheckCircle2 className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.8] text-white animate-bounce" />
-                <span className="hidden sm:inline font-black text-xs tracking-wide text-white">
-                  Berhasil!
+                <motion.div
+                  initial={{ scale: 0, rotate: -30 }}
+                  animate={{ scale: [0, 1.4, 1], rotate: [0, 10, 0] }}
+                  transition={{ duration: 0.4 }}
+                  className="p-0.5 rounded-full bg-white/20"
+                >
+                  <CheckCircle2 className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[3] text-white" />
+                </motion.div>
+                <span className="font-black text-xs sm:text-sm tracking-wide text-white drop-shadow-md flex items-center gap-1">
+                  <span>Pindai Sukses!</span>
+                  <span className="text-[10px] text-emerald-200">✓</span>
                 </span>
               </>
             ) : showArcMenu ? (
@@ -3932,52 +4293,360 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
               </>
             ) : (
               <>
+                {isLowBattery && (
+                  <AlertTriangle size={15} className="text-amber-200 animate-bounce shrink-0" />
+                )}
+                
+                {/* Real-time Battery Indicator Badge directly next to the scanner icon */}
+                {(() => {
+                  const isCriticalBattery = !isCharging && (batteryLevel !== null ? batteryLevel <= 0.10 : false);
+                  return (
+                    <div
+                      id="fab-scanner-realtime-battery-badge"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowBatteryDiagnosticModal(true);
+                        playFeedback('click');
+                      }}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-mono font-bold shrink-0 transition-all border cursor-pointer hover:scale-105 active:scale-95 group/batbadge select-none ${
+                        isCriticalBattery
+                          ? 'bg-red-950 text-red-100 border-2 border-red-500 shadow-md shadow-red-600/70 animate-pulse ring-2 ring-red-500/50'
+                          : isLowBattery
+                          ? 'bg-rose-950/85 text-rose-200 border-rose-400/80 shadow-xs shadow-rose-500/50 animate-pulse'
+                          : isCharging
+                          ? 'bg-teal-950/85 text-teal-200 border-teal-400/60 shadow-xs shadow-teal-500/30'
+                          : isBatterySaverMode
+                          ? 'bg-emerald-950/80 text-emerald-200 border-emerald-400/60 ring-1 ring-emerald-400/30'
+                          : (batteryLevel !== null && batteryLevel > 0.6)
+                          ? 'bg-emerald-950/70 text-emerald-200 border-emerald-500/40'
+                          : 'bg-slate-950/70 text-slate-200 border-white/20'
+                      }`}
+                      title={
+                        isCriticalBattery
+                          ? `⚠️ BATERAI KRITIS: ${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '<10%'}! Klik untuk diagnostik hardware & kesehatan baterai.`
+                          : `Status Baterai Real-Time: ${batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '100%'}${isCharging ? ' (Mengisi Daya ⚡)' : ''}${isLowBattery ? ' (Baterai Lemah ⚠️)' : ''}. Klik untuk membuka Diagnostik Hardware (Tegangan, Siklus, Suhu).`
+                      }
+                    >
+                      {isCriticalBattery ? (
+                        <AlertTriangle size={12} className="text-red-400 animate-bounce shrink-0" />
+                      ) : isCharging ? (
+                        <BatteryCharging size={12} className="text-teal-300 animate-pulse shrink-0" />
+                      ) : isLowBattery ? (
+                        <BatteryLow size={12} className="text-rose-300 animate-bounce shrink-0" />
+                      ) : (batteryLevel !== null && batteryLevel > 0.6) ? (
+                        <BatteryFull size={12} className="text-emerald-300 shrink-0" />
+                      ) : (
+                        <BatteryMedium size={12} className="text-amber-300 shrink-0" />
+                      )}
+                      <span className={`text-[10px] tracking-tight ${isCriticalBattery ? 'font-black text-red-200' : ''}`}>
+                        {batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '100%'}
+                      </span>
+                      {isCriticalBattery ? (
+                        <span className="text-[8px] bg-red-600 text-white font-extrabold px-1 rounded uppercase tracking-wider animate-ping">
+                          !
+                        </span>
+                      ) : isCharging ? (
+                        <span className="text-[9px] text-teal-300 animate-pulse">⚡</span>
+                      ) : (
+                        <Activity size={10} className="text-slate-400 group-hover/batbadge:text-indigo-300 transition-colors shrink-0" />
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <Scan className="w-5 h-5 sm:w-5 sm:h-5 shrink-0 stroke-[2.2]" />
                 <span className="hidden sm:inline font-bold text-xs tracking-wide">
                   Scan QR
                 </span>
 
-                {/* Session Scan Counter Badge inside Button */}
+                {/* SVG Progress Circle Badge Visualizing Session Scan Count against Daily Goal directly on the FAB */}
                 <div
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 transition-all bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-xs"
-                  title={`Jumlah QR terpindai pada sesi aktif ini: ${sessionScanCount} scan`}
+                  id="fab-session-scan-progress-circle"
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-xl bg-slate-950/85 text-emerald-300 border border-emerald-500/40 shadow-xs shrink-0 select-none cursor-pointer hover:border-emerald-300 transition-colors"
+                  title={`Target Harian Sesi: ${sessionScanCount} dari ${sessionScanGoal} scan (${progressPct}%). Lingkaran progres SVG menunjukkan persentase pemindaian terhadap target.`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowScanSettingsModal(true);
+                    playFeedback('click');
+                  }}
                 >
-                  <QrCode size={10} className="text-emerald-400 shrink-0" />
-                  <span>{sessionScanCount}</span>
-                  <span className="hidden lg:inline text-[9px] font-sans font-bold text-emerald-400/80">Scan</span>
-                </div>
-
-                {/* Real-time Battery Status Badge inside FAB */}
-                <div className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 transition-all ${
-                  isCharging 
-                    ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30'
-                    : isLowBattery
-                    ? 'bg-rose-950/70 text-rose-300 border border-rose-500/30 animate-pulse'
-                    : isBatterySaverMode
-                    ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-400/50 ring-1 ring-emerald-400/30'
-                    : 'bg-slate-900/40 text-slate-200 border border-white/10'
-                }`}>
-                  {isCharging ? (
-                    <BatteryCharging size={11} className="text-emerald-400 animate-pulse" />
-                  ) : isLowBattery ? (
-                    <BatteryLow size={11} className="text-rose-400" />
-                  ) : isBatterySaverMode ? (
-                    <Leaf size={11} className="text-emerald-300 fill-emerald-400" />
-                  ) : (
-                    <Battery size={11} className="text-slate-300" />
-                  )}
-                  <span>{batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '100%'}</span>
-                  {isBatterySaverMode && (
-                    <span className="hidden xs:inline text-[9px] bg-emerald-500/30 text-emerald-200 px-1 rounded uppercase font-sans font-black">
-                      ECO
+                  <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5 -rotate-90" viewBox="0 0 24 24">
+                      {/* Track background circle */}
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="9"
+                        className="stroke-slate-800"
+                        strokeWidth="2.5"
+                        fill="transparent"
+                      />
+                      {/* Dynamic progress circle using stroke dasharray and dashoffset */}
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="9"
+                        className={`transition-all duration-500 ease-out ${
+                          progressPct >= 100
+                            ? 'stroke-amber-300 filter drop-shadow-[0_0_3px_#fde047]'
+                            : isLowBattery
+                            ? 'stroke-rose-400 filter drop-shadow-[0_0_2px_#fb7185]'
+                            : 'stroke-emerald-400 filter drop-shadow-[0_0_2px_#34d399]'
+                        }`}
+                        strokeWidth="2.5"
+                        strokeDasharray={56.55}
+                        strokeDashoffset={Math.max(0, 56.55 - (Math.min(100, progressPct) / 100) * 56.55)}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className={`absolute text-[7px] font-mono font-black ${progressPct >= 100 ? 'text-amber-200' : 'text-emerald-300'}`}>
+                      {progressPct >= 100 ? '✓' : `${progressPct}%`}
                     </span>
-                  )}
+                  </div>
+
+                  <div className="flex items-baseline gap-0.5 font-mono text-[10px] leading-tight">
+                    <span className={`font-black ${progressPct >= 100 ? 'text-amber-300' : 'text-emerald-200'}`}>
+                      {sessionScanCount}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-semibold">/{sessionScanGoal}</span>
+                    <span className="hidden xl:inline text-[8px] font-sans text-emerald-400/80 font-bold ml-0.5">Goal</span>
+                  </div>
                 </div>
               </>
             )}
           </motion.button>
-        </motion.div>
-      </div>
+
+          {/* Action Toolbar within #classroom-qr-fab-container: Eco-Scan Toggle, Diagnostic Icon, and History Button */}
+          <div className="relative ml-2 flex items-center gap-1.5">
+            {/* Toggle Eco-Scan Button (15 FPS & Disable Non-Essential Analytics) */}
+            <motion.button
+              id="btn-toggle-eco-scan"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleBatterySaverMode();
+              }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              className={`relative flex items-center gap-1.5 px-2.5 py-2 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400 z-10 group/eco-btn select-none shadow-xl ${
+                isBatterySaverMode
+                  ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-900 text-emerald-100 border-emerald-400/90 shadow-emerald-950/70 ring-2 ring-emerald-500/50'
+                  : ((batteryLevel !== null && batteryLevel <= 0.20) || isLowBattery)
+                  ? 'bg-gradient-to-r from-rose-950 via-red-950 to-amber-950 text-rose-100 border-2 border-rose-400 shadow-rose-950/70 animate-pulse ring-2 ring-amber-400/80 font-black'
+                  : 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-slate-300 hover:text-white border-slate-700/80 hover:border-emerald-500/50 shadow-slate-950/50'
+              }`}
+              title={
+                ((batteryLevel !== null && batteryLevel <= 0.20) || isLowBattery)
+                  ? '⚠️ BATERAI <20%: Klik Toggle Eco-Scan untuk membatasi kamera ke 15 FPS dan menonaktifkan analitik non-esensial!'
+                  : isBatterySaverMode
+                  ? '🌱 Mode Eco-Scan Aktif: Kamera dibatasi ke 15 FPS & analitik real-time dinonaktifkan untuk menghemat daya. Klik untuk kembali ke 30 FPS.'
+                  : 'Toggle Eco-Scan: Batasi frame rate kamera ke 15 FPS & nonaktifkan analitik real-time saat baterai <20%.'
+              }
+              aria-label="Toggle Eco-Scan"
+              aria-pressed={isBatterySaverMode}
+            >
+              <Leaf
+                size={16}
+                className={`${
+                  isBatterySaverMode
+                    ? 'text-emerald-300 fill-emerald-400 rotate-[-12deg]'
+                    : ((batteryLevel !== null && batteryLevel <= 0.20) || isLowBattery)
+                    ? 'text-amber-300 animate-bounce'
+                    : 'text-slate-400 group-hover/eco-btn:text-emerald-400'
+                } transition-transform duration-200 shrink-0`}
+              />
+              <span className="font-extrabold text-xs tracking-tight">
+                {isBatterySaverMode ? 'Eco 15fps' : 'Eco-Scan'}
+              </span>
+              {((batteryLevel !== null && batteryLevel <= 0.20) || isLowBattery) && !isBatterySaverMode && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/40 text-amber-200 text-[8px] font-black border border-amber-300/60 uppercase tracking-wider animate-pulse hidden md:inline shrink-0">
+                  &lt;20% Saran
+                </span>
+              )}
+            </motion.button>
+
+            {/* Clickable Battery Diagnostic Icon Button within #classroom-qr-fab-container */}
+            <motion.button
+              id="btn-battery-diagnostic-trigger"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowBatteryDiagnosticModal(true);
+                playFeedback('click');
+              }}
+              whileHover={{ scale: 1.1, rotate: 3 }}
+              whileTap={{ scale: 0.92 }}
+              className={`relative flex items-center justify-center p-2.5 sm:px-3 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400 z-10 group/diag-btn shadow-xl select-none ${
+                isLowBattery
+                  ? 'bg-rose-950/80 hover:bg-rose-900/90 text-rose-200 border-rose-500/60 shadow-rose-950/50 animate-pulse'
+                  : 'bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 hover:from-slate-800 hover:to-indigo-900 text-indigo-200 hover:text-white border-indigo-500/40 hover:border-indigo-400 shadow-indigo-950/50'
+              }`}
+              title="Diagnostik Baterai Hardware Scanner: Tegangan Sel (Voltage), Siklus Pengisian, Temperatur Sensor CMOS, & Efisiensi KBM"
+              aria-label="Buka Diagnostik Baterai Hardware"
+            >
+              <Activity size={16} className="text-indigo-400 group-hover/diag-btn:text-indigo-200 group-hover/diag-btn:scale-110 animate-pulse transition-transform duration-200 shrink-0" />
+              <span className="hidden xl:inline font-bold text-xs tracking-wide ml-1.5">
+                Diagnostik
+              </span>
+              <span className="ml-1 text-[9px] font-mono px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 hidden md:inline">
+                {batteryLevel !== null ? `${Math.round(batteryLevel * 100)}%` : '85%'}
+              </span>
+            </motion.button>
+
+            {/* Miniature 'History' Shortcut Button with Long-Press Quick Preview Popover */}
+            <div className="relative flex items-center">
+            {/* Quick Preview Popover of the last 3 scanned item titles triggered on long-press */}
+            <AnimatePresence>
+              {showHistoryQuickPreview && (
+                <motion.div
+                  id="popover-history-quick-preview"
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className="absolute bottom-full right-0 mb-3 w-64 p-3 rounded-2xl bg-slate-900/98 backdrop-blur-xl border border-indigo-500/60 shadow-2xl z-50 text-white select-none space-y-2 pointer-events-auto"
+                >
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-indigo-300">
+                      <History size={13} className="text-indigo-400" />
+                      <span>3 Pindaian Terakhir</span>
+                    </div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                      Pratinjau
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {recentFabScans.length > 0 ? (
+                      recentFabScans.slice(0, 3).map((item, idx) => (
+                        <div
+                          key={`quick-prev-${item.id || item.code}-${idx}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowHistoryQuickPreview(false);
+                            setShowLastScanModal(true);
+                            playFeedback('click');
+                          }}
+                          className="p-1.5 rounded-xl bg-slate-950/70 hover:bg-indigo-950/50 border border-slate-800 hover:border-indigo-500/50 transition cursor-pointer flex items-center justify-between gap-2 group/prev"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[8px] font-black px-1 rounded uppercase ${
+                                item.type === 'STUDENT' ? 'bg-emerald-500/20 text-emerald-300' :
+                                item.type === 'ASSIGNMENT' ? 'bg-blue-500/20 text-blue-300' :
+                                item.type === 'ASSET' ? 'bg-amber-500/20 text-amber-300' :
+                                'bg-slate-800 text-slate-300'
+                              }`}>
+                                {item.type}
+                              </span>
+                              <p className="text-[11px] font-bold text-slate-200 truncate group-hover/prev:text-indigo-200">
+                                {item.title || item.code}
+                              </p>
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-mono block truncate">
+                              {item.code}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-slate-500 font-mono shrink-0">
+                            {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-2 text-center text-[10px] text-slate-400">
+                        Belum ada riwayat pindaian.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-1 border-t border-slate-800 text-center">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowHistoryQuickPreview(false);
+                        setShowLastScanModal(true);
+                        playFeedback('click');
+                      }}
+                      className="text-[10px] font-extrabold text-indigo-400 hover:text-indigo-200 flex items-center justify-center gap-1 w-full py-0.5 cursor-pointer"
+                    >
+                      <span>Buka Inspektor Lengkap</span>
+                      <ChevronRight size={11} />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <motion.button
+              id="btn-classroom-qr-fab-history"
+              type="button"
+              onMouseDown={() => {
+                isHistoryLongPressRef.current = false;
+                historyLongPressTimerRef.current = setTimeout(() => {
+                  isHistoryLongPressRef.current = true;
+                  setShowHistoryQuickPreview(true);
+                  playFeedback('click');
+                }, 450);
+              }}
+              onMouseUp={() => {
+                if (historyLongPressTimerRef.current) {
+                  clearTimeout(historyLongPressTimerRef.current);
+                  historyLongPressTimerRef.current = null;
+                }
+              }}
+              onMouseLeave={() => {
+                if (historyLongPressTimerRef.current) {
+                  clearTimeout(historyLongPressTimerRef.current);
+                  historyLongPressTimerRef.current = null;
+                }
+              }}
+              onTouchStart={() => {
+                isHistoryLongPressRef.current = false;
+                historyLongPressTimerRef.current = setTimeout(() => {
+                  isHistoryLongPressRef.current = true;
+                  setShowHistoryQuickPreview(true);
+                  playFeedback('click');
+                }, 450);
+              }}
+              onTouchEnd={() => {
+                if (historyLongPressTimerRef.current) {
+                  clearTimeout(historyLongPressTimerRef.current);
+                  historyLongPressTimerRef.current = null;
+                }
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isHistoryLongPressRef.current) {
+                  // If long press triggered, don't open modal immediately
+                  isHistoryLongPressRef.current = false;
+                  return;
+                }
+                setShowHistoryQuickPreview(false);
+                setShowLastScanModal(true);
+                playFeedback('click');
+              }}
+              whileHover={{ scale: 1.1, rotate: -3 }}
+              whileTap={{ scale: 0.92 }}
+              className="relative flex items-center justify-center p-2.5 sm:px-3 sm:py-2.5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 hover:from-slate-800 hover:to-indigo-900 text-indigo-200 hover:text-white border border-indigo-500/40 hover:border-indigo-400 shadow-xl shadow-indigo-950/50 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400 z-10 group/history-btn"
+              title={`Riwayat Pindaian Terakhir (${recentFabScans.length} item tersimpan). Klik untuk membuka LastScanInspectorModal langsung, atau tahan/long-press untuk pratinjau 3 item terakhir.`}
+              aria-label="Buka Riwayat Pindaian Terakhir"
+            >
+              <History size={16} className="text-indigo-400 group-hover/history-btn:text-indigo-200 group-hover/history-btn:rotate-[-15deg] transition-transform duration-200 shrink-0" />
+              <span className="hidden md:inline font-bold text-xs tracking-wide ml-1.5">
+                Riwayat
+              </span>
+              {recentFabScans.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-indigo-300 border border-indigo-400/40 text-[9px] font-mono font-black shrink-0">
+                  {recentFabScans.length}
+                </span>
+              )}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
 
       {/* STUDENT FEEDBACK NOTIFICATIONS MODAL */}
       {showFeedbackModal && (
@@ -4029,6 +4698,7 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         isOpen={showLastScanModal}
         onClose={() => setShowLastScanModal(false)}
         lastScan={recentFabScans[0] || null}
+        scanHistory={recentFabScans}
         savedVoiceNotes={savedVoiceNotes}
         onOpenQuickVoiceNote={(item) => {
           setQuickNoteItem(item);
@@ -4065,6 +4735,11 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         isBatterySaverMode={isBatterySaverMode}
         scanGoal={sessionScanGoal}
         sessionScanCount={sessionScanCount}
+        faceAutoPauseEnabled={faceAutoPauseEnabled}
+        faceDetectionSensitivity={faceDetectionSensitivity}
+        autoFlashlightEnabled={autoFlashlightEnabled}
+        ambientLightThreshold={ambientLightThreshold}
+        autoFlashlightScheduleMode={autoFlashlightScheduleMode}
         onOpenScanSettings={() => {
           setShowGlobalQrScanner(false);
           setShowScanSettingsModal(true);
@@ -4114,6 +4789,30 @@ export const ClassroomApp: React.FC<ClassroomAppProps> = ({ onLogout }) => {
         onTogglePauseOnInactivity={() => setPauseOnInactivity((prev) => !prev)}
         inactivityTimeoutSeconds={inactivityTimeoutSeconds}
         onChangeInactivityTimeoutSeconds={(sec) => setInactivityTimeoutSeconds(sec)}
+        faceAutoPauseEnabled={faceAutoPauseEnabled}
+        onToggleFaceAutoPause={toggleFaceAutoPause}
+        faceDetectionSensitivity={faceDetectionSensitivity}
+        onChangeFaceDetectionSensitivity={changeFaceDetectionSensitivity}
+        autoFlashlightEnabled={autoFlashlightEnabled}
+        onToggleAutoFlashlight={toggleAutoFlashlight}
+        ambientLightThreshold={ambientLightThreshold}
+        onChangeAmbientLightThreshold={changeAmbientLightThreshold}
+        autoFlashlightScheduleMode={autoFlashlightScheduleMode}
+        onChangeAutoFlashlightScheduleMode={changeAutoFlashlightScheduleMode}
+      />
+
+      {/* BATTERY HARDWARE DIAGNOSTIC & HEALTH MODAL */}
+      <BatteryDiagnosticModal
+        isOpen={showBatteryDiagnosticModal}
+        onClose={() => setShowBatteryDiagnosticModal(false)}
+        batteryLevel={batteryLevel}
+        isCharging={isCharging}
+        isLowBattery={isLowBattery}
+        isBatterySaverMode={isBatterySaverMode}
+        onToggleBatterySaverMode={toggleBatterySaverMode}
+        isLowBatterySimulated={isLowBatterySimulated}
+        onToggleSimulateLowBattery={handleToggleSimulateLowBattery}
+        batteryAlertThreshold={batteryAlertThreshold}
       />
 
       {/* QUICK VOICE NOTE MODAL FOR FAB SCANNED ITEM */}
@@ -4459,6 +5158,11 @@ const TeacherClassLockModal: React.FC<{
 // ==========================================
 // WEEKLY GRADE TRENDS RECHARTS COMPONENT
 // ==========================================
+// ==========================================
+// WEEKLY & CHRONOLOGICAL CLASS GRADE TRENDS WITH DATE RANGE FILTER & CSV EXPORT
+// ==========================================
+export type ClassGradeTrendDateRange = '7D' | '30D' | 'CUSTOM' | 'ALL';
+
 const WeeklyGradeTrendsChart: React.FC<{
   account: Account;
 }> = ({ account }) => {
@@ -4468,11 +5172,148 @@ const WeeklyGradeTrendsChart: React.FC<{
   const [metricView, setMetricView] = useState<'GABUNGAN' | 'TUGAS' | 'KUIS'>('GABUNGAN');
   const [showPrediction, setShowPrediction] = useState<boolean>(true);
 
+  // Date Range Filtering States (Last 7 days, Last 30 days, Custom, All)
+  const [dateFilter, setDateFilter] = useState<ClassGradeTrendDateRange>('30D');
+  const [customStartDate, setCustomStartDate] = useState<string>('2026-10-15');
+  const [customEndDate, setCustomEndDate] = useState<string>('2026-11-15');
+  const [csvDownloadSuccess, setCsvDownloadSuccess] = useState<boolean>(false);
+
   const targetClass = isGuru ? account.KELAS || 'Kelas 1' : selectedKelas;
   const trendData = classroomService.getWeeklyClassGradeTrends(targetClass);
 
-  const extendedTrendData = useMemo(() => {
-    const base = trendData.map((d) => ({ ...d, isPredicted: false }));
+  // Synthesize calendar-anchored dates for all 8 academic weeks (Semester Ganjil 2026)
+  const baseWeeksWithDates = useMemo(() => {
+    const dates = [
+      '2026-09-22', // Minggu 1
+      '2026-09-29', // Minggu 2
+      '2026-10-06', // Minggu 3
+      '2026-10-13', // Minggu 4
+      '2026-10-20', // Minggu 5
+      '2026-10-27', // Minggu 6
+      '2026-11-03', // Minggu 7
+      '2026-11-10', // Minggu 8
+    ];
+    return trendData.map((d, idx) => ({
+      ...d,
+      date: dates[idx] || `2026-11-${String(idx + 1).padStart(2, '0')}`,
+      formattedDate: new Date(dates[idx] || '2026-11-10').toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }),
+      isPredicted: false,
+    }));
+  }, [trendData]);
+
+  // High-resolution daily checkpoints for "Last 7 days" view
+  const last7DaysData = useMemo(() => {
+    const lastWeekData = baseWeeksWithDates[baseWeeksWithDates.length - 1];
+    const baseTugas = lastWeekData ? lastWeekData.rataRataTugas : 90;
+    const baseKuis = lastWeekData ? lastWeekData.rataRataKuis : 91;
+
+    const points = [
+      {
+        minggu: 'Kamis (5 Nov)',
+        mingguKe: 8,
+        date: '2026-11-05',
+        formattedDate: '5 Nov 2026',
+        rataRataTugas: Math.max(60, baseTugas - 3),
+        rataRataKuis: Math.max(60, baseKuis - 3),
+        rataRataGabungan: Math.round((baseTugas - 3 + baseKuis - 3) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 18,
+        status: 'Sangat Baik',
+        isPredicted: false,
+      },
+      {
+        minggu: 'Jumat (6 Nov)',
+        mingguKe: 8,
+        date: '2026-11-06',
+        formattedDate: '6 Nov 2026',
+        rataRataTugas: Math.max(60, baseTugas - 2),
+        rataRataKuis: Math.max(60, baseKuis - 1),
+        rataRataGabungan: Math.round((baseTugas - 2 + baseKuis - 1) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 22,
+        status: 'Sangat Baik',
+        isPredicted: false,
+      },
+      {
+        minggu: 'Senin (9 Nov)',
+        mingguKe: 8,
+        date: '2026-11-09',
+        formattedDate: '9 Nov 2026',
+        rataRataTugas: Math.max(60, baseTugas - 1),
+        rataRataKuis: baseKuis,
+        rataRataGabungan: Math.round((baseTugas - 1 + baseKuis) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 25,
+        status: 'Sangat Baik',
+        isPredicted: false,
+      },
+      {
+        minggu: 'Selasa (10 Nov)',
+        mingguKe: 8,
+        date: '2026-11-10',
+        formattedDate: '10 Nov 2026',
+        rataRataTugas: baseTugas,
+        rataRataKuis: baseKuis,
+        rataRataGabungan: Math.round((baseTugas + baseKuis) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 28,
+        status: 'Sangat Baik',
+        isPredicted: false,
+      },
+      {
+        minggu: 'Rabu (11 Nov)',
+        mingguKe: 8,
+        date: '2026-11-11',
+        formattedDate: '11 Nov 2026',
+        rataRataTugas: Math.min(100, baseTugas + 1),
+        rataRataKuis: Math.min(100, baseKuis + 1),
+        rataRataGabungan: Math.round((baseTugas + 1 + baseKuis + 1) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 30,
+        status: 'Sangat Baik',
+        isPredicted: false,
+      },
+    ];
+
+    if (showPrediction) {
+      points.push({
+        minggu: 'Kamis (12 Nov - Prediksi)',
+        mingguKe: 8,
+        date: '2026-11-12',
+        formattedDate: '12 Nov 2026',
+        rataRataTugas: Math.min(100, baseTugas + 2),
+        rataRataKuis: Math.min(100, baseKuis + 2),
+        rataRataGabungan: Math.round((baseTugas + 2 + baseKuis + 2) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 32,
+        status: 'Sangat Baik',
+        isPredicted: true,
+      });
+      points.push({
+        minggu: 'Jumat (13 Nov - Prediksi)',
+        mingguKe: 8,
+        date: '2026-11-13',
+        formattedDate: '13 Nov 2026',
+        rataRataTugas: Math.min(100, baseTugas + 2),
+        rataRataKuis: Math.min(100, baseKuis + 3),
+        rataRataGabungan: Math.round((baseTugas + 2 + baseKuis + 3) / 2),
+        kkm: 75,
+        jumlahTugasDikumpul: 34,
+        status: 'Sangat Baik',
+        isPredicted: true,
+      });
+    }
+
+    return points;
+  }, [baseWeeksWithDates, showPrediction]);
+
+  // Extended Trend with Future Predictions (Weeks 9 & 10)
+  const fullTrendWithPredictions = useMemo(() => {
+    const base = baseWeeksWithDates;
     if (base.length < 2) return base;
 
     const n = base.length;
@@ -4483,24 +5324,62 @@ const WeeklyGradeTrendsChart: React.FC<{
 
     const predWeek9 = {
       minggu: 'Minggu 9 (Prediksi)',
+      mingguKe: 9,
+      date: '2026-11-17',
+      formattedDate: '17 Nov 2026',
       rataRataTugas: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataTugas + slopeTugas))),
       rataRataKuis: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataKuis + slopeKuis))),
       rataRataGabungan: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataGabungan + slopeGabungan))),
       kkm: 75,
+      jumlahTugasDikumpul: lastWeek.jumlahTugasDikumpul + 2,
+      status: 'Sangat Baik',
       isPredicted: true,
     };
 
     const predWeek10 = {
       minggu: 'Minggu 10 (Prediksi)',
+      mingguKe: 10,
+      date: '2026-11-24',
+      formattedDate: '24 Nov 2026',
       rataRataTugas: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataTugas + slopeTugas * 2))),
       rataRataKuis: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataKuis + slopeKuis * 2))),
       rataRataGabungan: Math.min(100, Math.max(50, Math.round(lastWeek.rataRataGabungan + slopeGabungan * 2))),
       kkm: 75,
+      jumlahTugasDikumpul: lastWeek.jumlahTugasDikumpul + 4,
+      status: 'Sangat Baik',
       isPredicted: true,
     };
 
     return showPrediction ? [...base, predWeek9, predWeek10] : base;
-  }, [trendData, showPrediction]);
+  }, [baseWeeksWithDates, showPrediction]);
+
+  // Active dataset filtered by selected date range: 7D, 30D, CUSTOM, ALL
+  const activeDisplayData = useMemo(() => {
+    if (dateFilter === '7D') {
+      return last7DaysData;
+    }
+
+    if (dateFilter === '30D') {
+      // Last 30 days window: from 2026-10-12 to 2026-11-11 (+ predictions if enabled)
+      const cutoffDate = '2026-10-12';
+      return fullTrendWithPredictions.filter((item) => {
+        if (item.isPredicted) return showPrediction;
+        return item.date >= cutoffDate;
+      });
+    }
+
+    if (dateFilter === 'CUSTOM') {
+      const start = customStartDate || '2026-09-01';
+      const end = customEndDate || '2026-11-30';
+      const filtered = fullTrendWithPredictions.filter((item) => {
+        return item.date >= start && item.date <= end;
+      });
+      return filtered.length > 0 ? filtered : fullTrendWithPredictions.slice(-3);
+    }
+
+    // Default 'ALL': full 8 weeks + predictions
+    return fullTrendWithPredictions;
+  }, [dateFilter, last7DaysData, fullTrendWithPredictions, showPrediction, customStartDate, customEndDate]);
 
   // Identify students at risk of falling below KKM (<75) in the next 2 weeks
   const predictedAtRiskStudents = useMemo(() => {
@@ -4524,16 +5403,104 @@ const WeeklyGradeTrendsChart: React.FC<{
       .filter((item) => item.isAtRisk);
   }, [targetClass]);
 
-  const currentAvg = trendData[trendData.length - 1]?.rataRataGabungan || 88;
-  const firstAvg = trendData[0]?.rataRataGabungan || 79;
+  // KPI Calculations dynamically reflecting active date range
+  const nonPredictedItems = activeDisplayData.filter((d) => !d.isPredicted);
+  const currentAvg = (nonPredictedItems.length > 0 ? nonPredictedItems[nonPredictedItems.length - 1] : activeDisplayData[activeDisplayData.length - 1])?.rataRataGabungan || 88;
+  const firstAvg = (nonPredictedItems.length > 0 ? nonPredictedItems[0] : activeDisplayData[0])?.rataRataGabungan || 79;
   const trendDiff = (currentAvg - firstAvg).toFixed(1);
   const isPositive = parseFloat(trendDiff) >= 0;
 
+  // Handler for Exporting Current Grade Trend Data to Excel CSV
+  const handleExportCsv = () => {
+    try {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const filename = `Tren_Nilai_Kelas_${targetClass.replace(/\s+/g, '_')}_${dateFilter}_${dateStr}.csv`;
+
+      const filterLabel =
+        dateFilter === '7D'
+          ? '7 Hari Terakhir (Harian)'
+          : dateFilter === '30D'
+          ? '30 Hari Terakhir'
+          : dateFilter === 'CUSTOM'
+          ? `Kustom (${customStartDate} s/d ${customEndDate})`
+          : 'Semua Periode Akademik';
+
+      const rows: string[][] = [
+        ['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6 (NPSN: 20606498)'],
+        ['# LAPORAN TREN NILAI RATA-RATA KELAS (EXCEL EXPORT)'],
+        [`# Kelas: ${targetClass}`],
+        [`# Filter Periode: ${filterLabel}`],
+        [`# Tampilan Metrik: ${metricView === 'GABUNGAN' ? 'Gabungan (Tugas & Kuis)' : metricView === 'TUGAS' ? 'Rata-Rata Tugas' : 'Rata-Rata Kuis CBT'}`],
+        [`# Model Prediksi AI: ${showPrediction ? 'Diaktifkan (+2 Periode)' : 'Nonaktif'}`],
+        [`# Tanggal Ekspor: ${now.toLocaleString('id-ID')}`],
+        [],
+        [
+          'Periode / Label',
+          'Tanggal Acuan',
+          'Rata-Rata Tugas',
+          'Rata-Rata Kuis CBT',
+          'Rata-Rata Gabungan',
+          'Batas KKM',
+          'Jumlah Tugas Terkumpul',
+          'Status Ketuntasan',
+          'Kategori Data',
+        ],
+      ];
+
+      activeDisplayData.forEach((d) => {
+        rows.push([
+          d.minggu,
+          d.date || '-',
+          String(d.rataRataTugas),
+          String(d.rataRataKuis),
+          String(d.rataRataGabungan),
+          String(d.kkm || 75),
+          String(d.jumlahTugasDikumpul || '-'),
+          d.rataRataGabungan >= 75 ? 'Tuntas (Di Atas KKM)' : 'Perlu Bimbingan (< KKM)',
+          d.isPredicted ? 'Prediksi Model AI' : 'Data Historis Aktual',
+        ]);
+      });
+
+      const csvContent =
+        '\uFEFF' +
+        rows
+          .map((r) =>
+            r
+              .map((cell) => {
+                const str = cell === undefined || cell === null ? '' : String(cell);
+                if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes(';')) {
+                  return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+              })
+              .join(',')
+          )
+          .join('\r\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setCsvDownloadSuccess(true);
+      setTimeout(() => setCsvDownloadSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error exporting class trend CSV:', err);
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+      {/* ─── Header Section & Primary Controls ──────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700 font-bold">
               <TrendingUp size={16} />
             </span>
@@ -4543,12 +5510,22 @@ const WeeklyGradeTrendsChart: React.FC<{
             <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[10px] font-extrabold border border-indigo-200">
               {targetClass}
             </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">
+              {dateFilter === '7D'
+                ? '📅 7 Hari Terakhir'
+                : dateFilter === '30D'
+                ? '📅 30 Hari Terakhir'
+                : dateFilter === 'CUSTOM'
+                ? `📅 ${customStartDate} s/d ${customEndDate}`
+                : '📅 Semua Pekan'}
+            </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Grafik perkembangan nilai rata-rata tugas & kuis CBT dengan analisis regresi tren hingga Minggu 10
+            Grafik perkembangan nilai tugas & kuis CBT dengan analisis regresi tren dan filter periode akademik
           </p>
         </div>
 
+        {/* Action Controls: Predictions, Class Selector, Metric View & CSV Export */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowPrediction(!showPrediction)}
@@ -4557,16 +5534,17 @@ const WeeklyGradeTrendsChart: React.FC<{
                 ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-xs'
                 : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
             }`}
+            title="Aktifkan proyeksi tren nilai AI untuk 2 pekan ke depan"
           >
             <Sparkles size={14} />
-            <span>{showPrediction ? 'Prediksi 2 Mgg Aktif' : '+Tampilkan Prediksi'}</span>
+            <span>{showPrediction ? 'Prediksi AI Aktif' : '+Tampilkan Prediksi'}</span>
           </button>
 
           {isKepsek && (
             <select
               value={selectedKelas}
               onChange={(e) => setSelectedKelas(e.target.value)}
-              className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 text-slate-700 focus:outline-indigo-600"
+              className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 text-slate-700 focus:outline-indigo-600 cursor-pointer"
             >
               {['Kelas 1', 'Kelas 2', 'Kelas 3', 'Kelas 4', 'Kelas 5', 'Kelas 6'].map((k) => (
                 <option key={k} value={k}>
@@ -4576,10 +5554,11 @@ const WeeklyGradeTrendsChart: React.FC<{
             </select>
           )}
 
+          {/* Metric View Segmented Control */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setMetricView('GABUNGAN')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                 metricView === 'GABUNGAN'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -4589,27 +5568,187 @@ const WeeklyGradeTrendsChart: React.FC<{
             </button>
             <button
               onClick={() => setMetricView('TUGAS')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                 metricView === 'TUGAS'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Rata-rata Tugas
+              Tugas
             </button>
             <button
               onClick={() => setMetricView('KUIS')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                 metricView === 'KUIS'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Rata-rata Kuis
+              Kuis CBT
+            </button>
+          </div>
+
+          {/* Download CSV Button for Class Grade Trend */}
+          <button
+            type="button"
+            id="btn-download-csv-class-trend"
+            onClick={handleExportCsv}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+              csvDownloadSuccess
+                ? 'bg-emerald-600 text-white border-emerald-500'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+            }`}
+            title="Download CSV: Ekspor Data Tren Nilai Saat Ini ke Format Excel"
+          >
+            {csvDownloadSuccess ? (
+              <>
+                <Check size={14} className="text-white" />
+                <span>CSV Diunduh!</span>
+              </>
+            ) : (
+              <>
+                <Download size={14} className="text-emerald-700" />
+                <span>Download CSV</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── DATE RANGE FILTER BAR: Last 7 days, Last 30 days, Custom ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 pl-1">
+            <Calendar size={14} className="text-indigo-600" />
+            <span>Filter Periode:</span>
+          </span>
+
+          <div id="filter-daterange-container" className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs">
+            <button
+              type="button"
+              id="btn-daterange-7d"
+              onClick={() => setDateFilter('7D')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                dateFilter === '7D'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Fokuskan tren pada aktivitas dan penilaian 7 hari terakhir"
+            >
+              Last 7 days
+            </button>
+            <button
+              type="button"
+              id="btn-daterange-30d"
+              onClick={() => setDateFilter('30D')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                dateFilter === '30D'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Fokuskan tren pada 30 hari terakhir (4 pekan berjalan)"
+            >
+              Last 30 days
+            </button>
+            <button
+              type="button"
+              id="btn-daterange-custom"
+              onClick={() => setDateFilter('CUSTOM')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                dateFilter === 'CUSTOM'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Tentukan rentang tanggal tanggal mulai dan tanggal akhir secara fleksibel"
+            >
+              Custom
+            </button>
+            <button
+              type="button"
+              id="btn-daterange-all"
+              onClick={() => setDateFilter('ALL')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                dateFilter === 'ALL'
+                  ? 'bg-slate-800 text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Tampilkan seluruh data tren semester (Minggu 1 s/d Minggu 8)"
+            >
+              Semua
             </button>
           </div>
         </div>
+
+        <div className="text-[11px] text-slate-500 font-medium">
+          Menampilkan <strong className="text-slate-800">{activeDisplayData.length} titik data</strong> periode
+        </div>
       </div>
+
+      {/* ─── Expandable Custom Date Range Selector (When Custom Active) ── */}
+      {dateFilter === 'CUSTOM' && (
+        <div className="flex flex-wrap items-center gap-3 p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs">
+          <span className="font-extrabold text-indigo-950 flex items-center gap-1.5">
+            <Calendar size={14} className="text-indigo-600" />
+            <span>Pilih Rentang Akademik Kustom:</span>
+          </span>
+
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] font-bold text-slate-600">Dari:</label>
+            <input
+              type="date"
+              id="input-custom-start-date"
+              value={customStartDate}
+              onChange={(e) => setCustomStartDate(e.target.value)}
+              className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 text-xs font-bold focus:outline-indigo-600 shadow-2xs"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] font-bold text-slate-600">Sampai:</label>
+            <input
+              type="date"
+              id="input-custom-end-date"
+              value={customEndDate}
+              onChange={(e) => setCustomEndDate(e.target.value)}
+              className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 text-xs font-bold focus:outline-indigo-600 shadow-2xs"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:ml-auto">
+            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Preset Cepat:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomStartDate('2026-10-01');
+                setCustomEndDate('2026-10-31');
+              }}
+              className="px-2 py-1 rounded-md bg-white border border-indigo-200 text-indigo-700 text-[10px] font-black hover:bg-indigo-100 cursor-pointer shadow-2xs"
+            >
+              Oktober (PTS)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomStartDate('2026-11-01');
+                setCustomEndDate('2026-11-15');
+              }}
+              className="px-2 py-1 rounded-md bg-white border border-indigo-200 text-indigo-700 text-[10px] font-black hover:bg-indigo-100 cursor-pointer shadow-2xs"
+            >
+              November (Pekan Ini)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomStartDate('2026-09-15');
+                setCustomEndDate('2026-11-30');
+              }}
+              className="px-2 py-1 rounded-md bg-white border border-indigo-200 text-indigo-700 text-[10px] font-black hover:bg-indigo-100 cursor-pointer shadow-2xs"
+            >
+              1 Semester Penuh
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Proactive Alert Notification Banner for Teacher */}
       {predictedAtRiskStudents.length > 0 && (
@@ -4649,7 +5788,7 @@ const WeeklyGradeTrendsChart: React.FC<{
       {/* Recharts Chart Area */}
       <div className="h-64 w-full pt-2">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={extendedTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <ComposedChart data={activeDisplayData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="colorTugas" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
@@ -4677,6 +5816,9 @@ const WeeklyGradeTrendsChart: React.FC<{
                           </span>
                         )}
                       </div>
+                      <div className="text-[11px] text-slate-300">
+                        Tanggal Acuan: <span className="font-bold text-white">{data.formattedDate || data.date || '-'}</span>
+                      </div>
                       <div className="text-indigo-300">
                         Rata-Rata Tugas: <span className="font-extrabold text-white">{data.rataRataTugas}</span>
                       </div>
@@ -4687,7 +5829,7 @@ const WeeklyGradeTrendsChart: React.FC<{
                         Rata-Rata Gabungan: <span className="font-extrabold text-white">{data.rataRataGabungan}</span>
                       </div>
                       <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-800 flex items-center justify-between gap-3">
-                        <span>KKM: {data.kkm}</span>
+                        <span>KKM: {data.kkm || 75}</span>
                         <span className={data.rataRataGabungan >= 75 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
                           {data.rataRataGabungan >= 75 ? '✓ Di Atas KKM' : '⚠ Perlu Bimbingan'}
                         </span>
@@ -4746,7 +5888,9 @@ const WeeklyGradeTrendsChart: React.FC<{
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
         <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Nilai Terakhir (Minggu 8)</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">
+              Rata-Rata Periode Ini ({dateFilter === '7D' ? '7H' : dateFilter === '30D' ? '30H' : 'Kustom'})
+            </span>
             <div className="text-lg font-black text-indigo-900 mt-0.5">{currentAvg} / 100</div>
           </div>
           <span className="p-2 rounded-xl bg-indigo-100 text-indigo-700">
@@ -4756,7 +5900,7 @@ const WeeklyGradeTrendsChart: React.FC<{
 
         <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Tren Perkembangan</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Pertumbuhan Periode</span>
             <div
               className={`text-lg font-black mt-0.5 flex items-center gap-1 ${
                 isPositive ? 'text-emerald-700' : 'text-rose-700'
@@ -5345,7 +6489,8 @@ const DashboardView: React.FC<{
   studentsCount: number;
   onNavigate: (p: ClassPage) => void;
   onRefresh?: () => void;
-}> = ({ account, courses, assignments, reports, submissions, studentsCount, onNavigate, onRefresh }) => {
+  onOpenStudentReport?: (student: Account) => void;
+}> = ({ account, courses, assignments, reports, submissions, studentsCount, onNavigate, onRefresh, onOpenStudentReport }) => {
   const isSiswa = account.ROLE === 'SISWA';
   const isGuru = account.ROLE === 'GURU';
   const isKepsek = account.ROLE === 'KEPALA SEKOLAH';
@@ -5640,10 +6785,44 @@ const DashboardView: React.FC<{
       {/* P5 PROJECT CHARACTER ANALYTICS WIDGET */}
       <P5ProjectAnalyticsWidget />
 
+      {/* REAL-TIME CLASSROOM STATS WIDGET (RECHARTS) */}
+      <RealtimeClassroomStatsWidget
+        account={account}
+        currentClass={account.KELAS || 'Kelas 4B'}
+        onNavigateToAssignments={() => onNavigate('assignments')}
+        onNavigateToAttendance={() => onNavigate('attendance')}
+      />
+
       {/* AUTOMATED GRADE TREND & WEEKLY PERFORMANCE ANALYTICS WIDGET */}
       <AutomatedGradeTrendAnalyticsWidget
         onNavigateToClassroom={() => onNavigate('gradebook')}
       />
+
+      {/* RECENT SCANS COMPONENT: SCROLLABLE LIST OF 10 RECENT QR SCANS */}
+      <RecentScans
+        onOpenScanner={() => onNavigate('attendance')}
+      />
+
+      {/* WIDGET ANALISIS PERILAKU & CATATAN KARAKTER */}
+      {!isSiswa && (
+        <BehaviorAnalysisWidget
+          currentClass={account.KELAS || 'Kelas 4B'}
+          currentUser={account}
+          onOpenComprehensiveReport={(studentId) => {
+            const st = accountService.getAccounts().find((a) => a.ID === studentId);
+            if (st) {
+              onOpenStudentReport?.(st);
+            } else {
+              const compData = classroomService.getStudentComprehensiveReportData(studentId);
+              pdfService.generateIndividualStudentComprehensivePdf(
+                compData,
+                account.NAMA,
+                account.NIP || '19850412 201101 2 003'
+              );
+            }
+          }}
+        />
+      )}
 
       {/* ─── D3.JS CLASSROOM OVERVIEW WIDGET ───────────────────── */}
       <ClassroomOverviewWidget selectedClass={account.KELAS || 'Semua Kelas'} />
@@ -6294,6 +7473,9 @@ const StudentAssignmentQrModal: React.FC<{
     }
   }, [scanErrors, autoScrollDebug]);
 
+  // Window cache for duplicate scan prevention and differentiated haptic triggers
+  const recentScansWindowRef = useRef<{ code: string; timestamp: number }[]>([]);
+
   // Grade Input for Quick Grading Modal
   const [quickGradeModal, setQuickGradeModal] = useState<{ assignment: ClassroomAssignment; submission?: ClassroomSubmission } | null>(null);
   const [quickGradeValue, setQuickGradeValue] = useState<number>(85);
@@ -6580,9 +7762,29 @@ const StudentAssignmentQrModal: React.FC<{
         suggestion: 'Pastikan optik scanner bersih dan arahkan tepat ke tengah kode QR dengan jarak 10-15 cm.',
       };
       setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-      try { playFeedback('error'); } catch {}
+      try { playFeedback('scan_error'); } catch {}
       setScanToast({ message: 'Input QR code tidak boleh kosong.', type: 'error' });
       setTimeout(() => setScanToast(null), 3000);
+      return;
+    }
+
+    // Check for duplicate rapid scans within 15 seconds
+    const now = Date.now();
+    const isDuplicate = recentScansWindowRef.current.some(
+      (s) => s.code.toLowerCase() === trimmed.toLowerCase() && now - s.timestamp < 15000
+    );
+    if (isDuplicate) {
+      const errEntry = {
+        id: `err-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+        code: trimmed.slice(0, 45),
+        reason: 'Peringatan duplikasi: Kode QR ini baru saja berhasil dipindai dalam 15 detik terakhir.',
+        suggestion: 'Jauhkan kode QR fisik setelah konfirmasi getaran agar tidak terpindai berulang kali.',
+      };
+      setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
+      try { playFeedback('duplicate_warning'); } catch {}
+      setScanToast({ message: '⚠️ Kode QR Ini Sudah Dipindai Sebelumnya (Duplikat)', type: 'error' });
+      setTimeout(() => setScanToast(null), 3500);
       return;
     }
 
@@ -6603,7 +7805,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Pastikan seluruh area QR tercakup dalam lensa kamera tanpa pantulan cahaya yang memotong baris bawah.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-        try { playFeedback('error'); } catch {}
+        try { playFeedback('scan_error'); } catch {}
         setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
         setTimeout(() => setScanToast(null), 4000);
         return;
@@ -6611,7 +7813,7 @@ const StudentAssignmentQrModal: React.FC<{
 
       // 2. Check bracket count
       const openBrackets = (trimmed.match(/\[/g) || []).length;
-      const closeBrackets = (trimmed.match(/\]/g) || []).length;
+      const closeBrackets = (trimmed.match(/\}/g) || []).length;
       if (openBrackets !== closeBrackets) {
         const detail = `Ketidakseimbangan kurung siku ([: ${openBrackets}, ]: ${closeBrackets}) - array JSON tidak tertutup.`;
         const errEntry = {
@@ -6622,7 +7824,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Periksa generator kode QR untuk memastikan penutupan array kurung siku valid.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-        try { playFeedback('error'); } catch {}
+        try { playFeedback('scan_error'); } catch {}
         setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
         setTimeout(() => setScanToast(null), 4000);
         return;
@@ -6641,7 +7843,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Hindari karakter khusus atau tanda petik manual di dalam teks payload QR.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-        try { playFeedback('error'); } catch {}
+        try { playFeedback('scan_error'); } catch {}
         setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
         setTimeout(() => setScanToast(null), 4000);
         return;
@@ -6658,7 +7860,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Hapus tanda koma terakhir sebelum tanda kurung penutup pada format JSON.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-        try { playFeedback('error'); } catch {}
+        try { playFeedback('scan_error'); } catch {}
         setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
         setTimeout(() => setScanToast(null), 4000);
         return;
@@ -6680,7 +7882,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Periksa kebersihan cetakan stiker QR atau lakukan regenerasi kode QR tugas.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
           setTimeout(() => setScanToast(null), 4000);
           return;
@@ -6696,7 +7898,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Gunakan objek JSON dengan pasangan kunci-nilai (key-value).',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
           setTimeout(() => setScanToast(null), 4000);
           return;
@@ -6712,7 +7914,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Enkapsulasi data penugasan dalam objek JSON tunggal { ... }.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
           setTimeout(() => setScanToast(null), 4000);
           return;
@@ -6729,7 +7931,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Pastikan format data "assignmentId" bertipe string.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
           setTimeout(() => setScanToast(null), 4000);
           return;
@@ -6745,7 +7947,7 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Pastikan format data "studentId" bertipe string.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
           setTimeout(() => setScanToast(null), 4000);
           return;
@@ -6769,7 +7971,7 @@ const StudentAssignmentQrModal: React.FC<{
           suggestion: 'Pastikan lembar tugas fisik tidak tertukar antarsiswa sebelum memindai.',
         };
         setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-        try { playFeedback('error'); } catch {}
+        try { playFeedback('scan_error'); } catch {}
         setScanToast({ message: `QR milik siswa lain: ${parsed.studentName || parsed.studentId}`, type: 'error' });
         setTimeout(() => setScanToast(null), 3500);
         return;
@@ -6787,12 +7989,18 @@ const StudentAssignmentQrModal: React.FC<{
             suggestion: 'Periksa kesesuaian tugas pada daftar kurikulum atau buat penugasan baru.',
           };
           setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-          try { playFeedback('error'); } catch {}
+          try { playFeedback('scan_error'); } catch {}
           setScanToast({ message: `Tugas "${parsed.assignmentId}" tidak ditemukan.`, type: 'error' });
           setTimeout(() => setScanToast(null), 3500);
           return;
         }
       }
+
+      // Save to recent scans window for duplicate prevention
+      recentScansWindowRef.current = [
+        { code: trimmed, timestamp: now },
+        ...recentScansWindowRef.current.slice(0, 30),
+      ];
 
       setScannedPayload(parsed);
       const logEntry = {
@@ -6801,7 +8009,8 @@ const StudentAssignmentQrModal: React.FC<{
         status: parsed.status || 'SUBMITTED',
       };
       setScanLogs((prev) => [logEntry, ...prev.slice(0, 7)]);
-      playFeedback('success');
+      // Differentiated haptic feedback: long vibration for task/assignment scan success
+      playFeedback('task_success');
       setScanToast({ message: `QR Code Berhasil Dipindai: ${parsed.assignmentTitle || 'Tugas Siswa'}`, type: 'success' });
       setTimeout(() => setScanToast(null), 3000);
     } catch (e: any) {
@@ -6814,7 +8023,7 @@ const StudentAssignmentQrModal: React.FC<{
         suggestion: 'Periksa kondisi fisik cetakan QR stiker tugas, hindari lipatan, atau gunakan input manual ID tugas.',
       };
       setScanErrors((prev) => [errEntry, ...prev.slice(0, 19)]);
-      try { playFeedback('error'); } catch {}
+      try { playFeedback('scan_error'); } catch {}
       setScanToast({ message: `⚠️ QR Malformed: ${detail}`, type: 'error' });
       setTimeout(() => setScanToast(null), 3500);
     }
@@ -7751,6 +8960,706 @@ export interface TrendDateFilter {
   endDate?: string;
 }
 
+// ==========================================
+// GRADE PERFORMANCE TREND CHART COMPONENT
+// Visualizes chronological evolution of student average grades with responsive trend arrows
+// ==========================================
+export type GradeTrendDateRange = 'ALL' | '30D' | '7D';
+
+interface GradePerformanceTrendChartProps {
+  studentId: string;
+  studentName: string;
+  submissions: ClassroomSubmission[];
+  kkmThreshold?: number;
+  onQuickGradeClick?: () => void;
+  canGrade?: boolean;
+  selectedRange?: GradeTrendDateRange;
+  onRangeChange?: (range: GradeTrendDateRange) => void;
+}
+
+const GradePerformanceTrendChart: React.FC<GradePerformanceTrendChartProps> = React.memo(({
+  studentId,
+  studentName,
+  submissions,
+  kkmThreshold = 75,
+  onQuickGradeClick,
+  canGrade = false,
+  selectedRange,
+  onRangeChange,
+}) => {
+  const [internalRange, setInternalRange] = useState<GradeTrendDateRange>('ALL');
+  const [activeStep, setActiveStep] = useState<number | null>(null);
+
+  const activeRange = selectedRange || internalRange;
+
+  const handleRangeSelect = (r: GradeTrendDateRange) => {
+    setInternalRange(r);
+    onRangeChange?.(r);
+  };
+
+  // Filter submissions by date range
+  const filteredSubmissions = useMemo(() => {
+    if (activeRange === 'ALL') return submissions;
+    const now = Date.now();
+    const dayMs = 86400000;
+    const daysLimit = activeRange === '7D' ? 7 : 30;
+    return submissions.filter((sub) => {
+      const ts = new Date(sub.SUBMITTED_AT || sub.GRADED_AT || 0).getTime();
+      if (!ts) return true;
+      return now - ts <= daysLimit * dayMs;
+    });
+  }, [submissions, activeRange]);
+
+  // Chronologically sorted graded submissions within selected range
+  const chronologicalGraded = useMemo(() => {
+    return filteredSubmissions
+      .filter((sub) => sub.STATUS === 'GRADED' && typeof sub.NILAI === 'number')
+      .sort((a, b) => new Date(a.SUBMITTED_AT || a.GRADED_AT || 0).getTime() - new Date(b.SUBMITTED_AT || b.GRADED_AT || 0).getTime());
+  }, [filteredSubmissions]);
+
+  // Compute chronological rolling / cumulative average
+  const trendSteps = useMemo(() => {
+    if (chronologicalGraded.length >= 2) {
+      let cumulativeSum = 0;
+      return chronologicalGraded.map((sub, idx) => {
+        const score = sub.NILAI as number;
+        cumulativeSum += score;
+        const cumAvg = Math.round((cumulativeSum / (idx + 1)) * 10) / 10;
+        const prevAvg = idx === 0 ? cumAvg : Math.round(((cumulativeSum - score) / idx) * 10) / 10;
+        const delta = idx === 0 ? 0 : Math.round((cumAvg - prevAvg) * 10) / 10;
+        const direction: 'up' | 'down' | 'stable' = delta > 0.1 ? 'up' : delta < -0.1 ? 'down' : 'stable';
+        return {
+          step: idx + 1,
+          taskName: sub.ASSIGNMENT_ID.replace('ASG-', 'Tugas '),
+          score,
+          cumAvg,
+          delta,
+          direction,
+          date: sub.SUBMITTED_AT ? sub.SUBMITTED_AT.slice(0, 10) : `T${idx + 1}`,
+          isSimulated: false,
+        };
+      });
+    }
+
+    if (chronologicalGraded.length === 1) {
+      const score = chronologicalGraded[0].NILAI as number;
+      const baseScore = Math.max(55, Math.min(100, score - 6));
+      return [
+        {
+          step: 1,
+          taskName: 'Baseline Awal',
+          score: baseScore,
+          cumAvg: baseScore,
+          delta: 0,
+          direction: 'stable' as const,
+          date: 'Awal',
+          isSimulated: true,
+        },
+        {
+          step: 2,
+          taskName: chronologicalGraded[0].ASSIGNMENT_ID.replace('ASG-', 'Tugas 1'),
+          score,
+          cumAvg: Math.round(((baseScore + score) / 2) * 10) / 10,
+          delta: Math.round(((score - baseScore) / 2) * 10) / 10,
+          direction: score > baseScore ? 'up' as const : score < baseScore ? 'down' as const : 'stable' as const,
+          date: 'Tugas 1',
+          isSimulated: false,
+        },
+      ];
+    }
+
+    // Deterministic progression for new / non-graded students based on student ID char codes and activeRange
+    const charCodeSum = studentId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const rangeOffset = activeRange === '7D' ? 2 : activeRange === '30D' ? 1 : 0;
+    const s1 = 70 + ((charCodeSum + rangeOffset * 3) % 14);
+    const d1 = (((charCodeSum + rangeOffset) * 3) % 9) - 3;
+    const s2 = Math.min(100, Math.max(60, s1 + d1));
+    const d2 = (((charCodeSum + rangeOffset) * 7) % 9) - 2;
+    const s3 = Math.min(100, Math.max(62, s2 + d2));
+    const rawScores = activeRange === '7D' ? [s2, s3] : [s1, s2, s3];
+    let run = 0;
+    return rawScores.map((score, idx) => {
+      run += score;
+      const cumAvg = Math.round((run / (idx + 1)) * 10) / 10;
+      const prevAvg = idx === 0 ? cumAvg : Math.round(((run - score) / idx) * 10) / 10;
+      const delta = idx === 0 ? 0 : Math.round((cumAvg - prevAvg) * 10) / 10;
+      const direction: 'up' | 'down' | 'stable' = delta > 0.1 ? 'up' : delta < -0.1 ? 'down' : 'stable';
+      return {
+        step: idx + 1,
+        taskName: `Tugas ${idx + 1}`,
+        score,
+        cumAvg,
+        delta,
+        direction,
+        date: activeRange === '7D' ? `H-${2 - idx}` : `T${idx + 1}`,
+        isSimulated: true,
+      };
+    });
+  }, [chronologicalGraded, studentId, activeRange]);
+
+  const firstAvg = trendSteps[0]?.cumAvg ?? 75;
+  const latestAvg = trendSteps[trendSteps.length - 1]?.cumAvg ?? 75;
+  const netDelta = Math.round((latestAvg - firstAvg) * 10) / 10;
+  const netDirection: 'up' | 'down' | 'stable' = netDelta > 0.1 ? 'up' : netDelta < -0.1 ? 'down' : 'stable';
+
+  // SVG dimensions & coordinate calculations
+  const svgWidth = 148;
+  const svgHeight = 36;
+  const padX = 8;
+  const padY = 5;
+
+  const minAvg = Math.min(kkmThreshold - 6, ...trendSteps.map((s) => s.cumAvg));
+  const maxAvg = Math.max(kkmThreshold + 6, ...trendSteps.map((s) => s.cumAvg));
+  const range = maxAvg - minAvg || 10;
+
+  const points = trendSteps.map((s, idx) => {
+    const x = padX + (idx / Math.max(1, trendSteps.length - 1)) * (svgWidth - padX * 2);
+    const y = svgHeight - padY - ((s.cumAvg - minAvg) / range) * (svgHeight - padY * 2);
+    return { x, y, ...s };
+  });
+
+  const polylinePoints = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPoints = `${points[0].x.toFixed(1)},${svgHeight} ${polylinePoints} ${points[points.length - 1].x.toFixed(1)},${svgHeight}`;
+
+  // KKM baseline Y
+  const kkmY = svgHeight - padY - ((kkmThreshold - minAvg) / range) * (svgHeight - padY * 2);
+
+  const strokeColor = netDirection === 'up' ? '#10b981' : netDirection === 'down' ? '#f43f5e' : '#3b82f6';
+  const fillColor = netDirection === 'up' ? '#10b981' : netDirection === 'down' ? '#f43f5e' : '#3b82f6';
+
+  const handleDownloadStudentCSV = () => {
+    try {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const filename = `Tren_Performa_${studentName.replace(/\s+/g, '_')}_${activeRange}_${dateStr}.csv`;
+
+      const rows: string[][] = [
+        ['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6'],
+        ['# LAPORAN TREN PERFORMA NILAI INDIVIDUAL SISWA (EXCEL EXPORT)'],
+        [`# Nama Siswa: ${studentName}`],
+        [`# ID Siswa: ${studentId}`],
+        [`# Rentang Waktu: ${activeRange === 'ALL' ? 'Semua Riwayat' : activeRange === '30D' ? '30 Hari Terakhir' : '7 Hari Terakhir'}`],
+        [`# Batas KKM: ${kkmThreshold}`],
+        [`# Nilai Kumulatif Saat Ini: ${latestAvg}`],
+        [`# Tanggal Unduh: ${now.toLocaleString('id-ID')}`],
+        [],
+        ['Urutan', 'Nama Tugas / Penilaian', 'Tanggal Pelaksanaan', 'Nilai Siswa', 'Rata-Rata Kumulatif', 'Perubahan (Delta)', 'Arah Tren', 'Status KKM'],
+      ];
+
+      trendSteps.forEach((s) => {
+        rows.push([
+          `Langkah ${s.step}`,
+          s.taskName,
+          s.date || '-',
+          String(s.score),
+          String(s.cumAvg),
+          s.delta >= 0 ? `+${s.delta}` : String(s.delta),
+          s.direction === 'up' ? 'Naik' : s.direction === 'down' ? 'Turun' : 'Stabil',
+          s.cumAvg >= kkmThreshold ? 'Tuntas KKM' : 'Remedial (< 75)',
+        ]);
+      });
+
+      const csvContent =
+        '\uFEFF' +
+        rows
+          .map((r) =>
+            r
+              .map((cell) => {
+                const str = cell === undefined || cell === null ? '' : String(cell);
+                if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes(';')) {
+                  return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+              })
+              .join(',')
+          )
+          .join('\r\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error downloading student grade CSV:', err);
+    }
+  };
+
+  return (
+    <div
+      onClick={(e) => {
+        if (onQuickGradeClick) {
+          e.stopPropagation();
+          onQuickGradeClick();
+        }
+      }}
+      className={`flex flex-col items-start bg-slate-50/90 hover:bg-slate-100/90 p-2 rounded-xl border border-slate-200/90 transition-all duration-200 min-w-[185px] max-w-[225px] select-none ${
+        onQuickGradeClick ? 'cursor-pointer hover:border-indigo-300 shadow-3xs' : 'cursor-default'
+      }`}
+      title={`Grade Performance Trend (${studentName}): Rata-rata kronologis (${activeRange}) ${trendSteps.map((s) => `${s.taskName}: ${s.cumAvg}`).join(' ➔ ')}${onQuickGradeClick ? ' — Klik untuk Beri Nilai' : ''}`}
+    >
+      {/* Component Title & Current Cumulative Average with Interactive Date Range Filter & Responsive Trend Arrow */}
+      <div className="w-full flex items-center justify-between gap-1 text-[10px] pb-1 border-b border-slate-200/70 mb-1">
+        <div className="flex items-center gap-1 min-w-0">
+          <span className="font-extrabold text-slate-700 tracking-tight flex items-center gap-1 shrink-0">
+            <TrendingUp size={11} className={netDirection === 'up' ? 'text-emerald-600' : netDirection === 'down' ? 'text-rose-600' : 'text-blue-600'} />
+            <span className="hidden sm:inline">Trend</span>
+          </span>
+
+          {/* Interactive Date Range Filter Buttons */}
+          <div
+            className="flex items-center gap-0.5 bg-slate-200/80 p-0.5 rounded-md shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(['ALL', '30D', '7D'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRangeSelect(r);
+                }}
+                className={`px-1 py-0.2 rounded text-[7.5px] font-bold transition-all cursor-pointer ${
+                  activeRange === r
+                    ? 'bg-white text-indigo-700 shadow-2xs font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title={`Filter rentang: ${r === 'ALL' ? 'Semua Riwayat' : r === '30D' ? '30 Hari Terakhir' : '7 Hari Terakhir'}`}
+              >
+                {r === 'ALL' ? 'Semua' : r === '30D' ? '30H' : '7H'}
+              </button>
+            ))}
+
+            {/* Miniature Download CSV Button for Student Grade Performance */}
+            <button
+              type="button"
+              id={`btn-download-student-grade-csv-${studentId}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownloadStudentCSV();
+              }}
+              className="px-1 py-0.2 rounded text-[7.5px] font-bold text-slate-500 hover:text-indigo-700 hover:bg-white transition cursor-pointer flex items-center gap-0.5"
+              title="Download CSV: Ekspor Data Tren Siswa Ini ke Excel"
+            >
+              <Download size={9} />
+              <span className="hidden md:inline">CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 font-mono font-black shrink-0">
+          <motion.span
+            key={`val-${activeRange}-${latestAvg}`}
+            initial={{ opacity: 0.4, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className={`text-[11px] ${latestAvg >= kkmThreshold ? 'text-emerald-700' : 'text-rose-700'}`}
+          >
+            {latestAvg}
+          </motion.span>
+          <motion.span
+            key={`delta-${activeRange}-${netDelta}`}
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold ${
+              netDirection === 'up'
+                ? 'bg-emerald-100 text-emerald-800'
+                : netDirection === 'down'
+                ? 'bg-rose-100 text-rose-800'
+                : 'bg-blue-100 text-blue-800'
+            }`}
+            title={`Perubahan rata-rata kumulatif (${activeRange}): ${netDelta > 0 ? `+${netDelta}` : netDelta} poin`}
+          >
+            {netDirection === 'up' ? (
+              <ArrowUpRight size={10} className="stroke-[3]" />
+            ) : netDirection === 'down' ? (
+              <ArrowDownRight size={10} className="stroke-[3]" />
+            ) : (
+              <Minus size={10} className="stroke-[3]" />
+            )}
+            <span>{netDelta > 0 ? `+${netDelta}` : netDelta}</span>
+          </motion.span>
+        </div>
+      </div>
+
+      {/* Micro SVG Visualization with Framer Motion Animated Transition on Date Range Filter Change */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={`${studentId}-${activeRange}`}
+          initial={{ opacity: 0, scale: 0.95, y: 3 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: -3 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+          className="relative w-full h-[36px] overflow-visible my-0.5"
+        >
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full h-full overflow-visible"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id={`perf-grad-${studentId}-${activeRange}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={fillColor} stopOpacity={0.28} />
+                <stop offset="100%" stopColor={fillColor} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+
+            {/* KKM 75 Reference Line */}
+            {kkmY >= 2 && kkmY <= svgHeight - 2 && (
+              <line
+                x1={padX}
+                y1={kkmY}
+                x2={svgWidth - padX}
+                y2={kkmY}
+                stroke="#cbd5e1"
+                strokeDasharray="2,2"
+                strokeWidth="0.8"
+              />
+            )}
+
+            {/* Trend Area Gradient with Motion Animation */}
+            <motion.polygon
+              key={`area-${activeRange}`}
+              points={areaPoints}
+              fill={`url(#perf-grad-${studentId}-${activeRange})`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            />
+
+            {/* Chronological Polyline with Framer Motion stroke path length animation */}
+            <motion.polyline
+              key={`poly-${activeRange}`}
+              points={polylinePoints}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0, opacity: 0.4 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+            />
+
+            {/* Chronological Step Points with Hover Interactive Target */}
+            {points.map((p, idx) => {
+              const isLatest = idx === points.length - 1;
+              const isHovered = activeStep === idx;
+              return (
+                <g key={idx}>
+                  <motion.circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={isHovered ? 4.5 : isLatest ? 3.5 : 2.2}
+                    fill={isLatest ? '#ffffff' : strokeColor}
+                    stroke={strokeColor}
+                    strokeWidth={isLatest ? 2 : 1}
+                    className="cursor-pointer transition-all duration-150"
+                    onMouseEnter={() => setActiveStep(idx)}
+                    onMouseLeave={() => setActiveStep(null)}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.2, delay: idx * 0.04 }}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Floating Step Tooltip on Hover */}
+          {activeStep !== null && points[activeStep] && (
+            <div
+              className="absolute -top-7 z-30 pointer-events-none transform -translate-x-1/2 bg-slate-900 text-white text-[9px] font-mono px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap border border-slate-700"
+              style={{
+                left: `${(points[activeStep].x / svgWidth) * 100}%`,
+              }}
+            >
+              {points[activeStep].taskName}: {points[activeStep].score} (Avg: {points[activeStep].cumAvg})
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Chronological Stepper Row with Responsive Mini Arrow Icons and Framer Motion Enter */}
+      <div className="w-full flex items-center justify-between gap-1 pt-1 mt-0.5 text-[9px] text-slate-500 font-mono overflow-x-auto no-scrollbar">
+        {trendSteps.slice(-3).map((st, i) => (
+          <motion.span
+            key={`${i}-${st.date}-${activeRange}`}
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15, delay: i * 0.04 }}
+            className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[8px] font-bold shrink-0 ${
+              st.direction === 'up'
+                ? 'text-emerald-700 bg-emerald-50/90 border border-emerald-200/70'
+                : st.direction === 'down'
+                ? 'text-rose-700 bg-rose-50/90 border border-rose-200/70'
+                : 'text-slate-600 bg-slate-100/90 border border-slate-200/70'
+            }`}
+            title={`${st.taskName}: Skor ${st.score} | Rata-rata Kumulatif ${st.cumAvg} (${st.delta >= 0 ? `+${st.delta}` : st.delta})`}
+          >
+            {st.direction === 'up' ? (
+              <ArrowUpRight size={8} className="stroke-[3] text-emerald-600" />
+            ) : st.direction === 'down' ? (
+              <ArrowDownRight size={8} className="stroke-[3] text-rose-600" />
+            ) : (
+              <Minus size={8} className="stroke-[2.5] text-slate-400" />
+            )}
+            <span>{st.date}: {st.cumAvg}</span>
+          </motion.span>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// ==========================================
+// STUDENT GRADE CHANGE TRACKER & TOOLTIP COMPONENT
+// Tracks and displays recent grade modification history in a sleek mini-tooltip
+// ==========================================
+interface StudentGradeChangeTrackerProps {
+  student: Account;
+  submissions: ClassroomSubmission[];
+  canGrade?: boolean;
+  onQuickGradeClick?: () => void;
+}
+
+const StudentGradeChangeTracker: React.FC<StudentGradeChangeTrackerProps> = React.memo(({
+  student,
+  submissions,
+  canGrade = false,
+  onQuickGradeClick,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const changeLogs = useMemo(() => {
+    return classroomService.getGradeChangeLogs(student.ID);
+  }, [student.ID, submissions]);
+
+  const latestChange = changeLogs[0] || null;
+
+  // Format relative time helper
+  const formatTimeAgo = (timeStr?: string) => {
+    if (!timeStr) return '-';
+    try {
+      const d = new Date(timeStr.replace(' ', 'T'));
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffMins < 1) return 'Baru saja';
+      if (diffMins < 60) return `${diffMins} mnt lalu`;
+      if (diffHours < 24) return `${diffHours} jam lalu`;
+      if (diffDays === 1) return 'Kemarin';
+      return `${diffDays} hari lalu`;
+    } catch {
+      return timeStr;
+    }
+  };
+
+  return (
+    <div className="relative inline-block" ref={containerRef}>
+      {/* Interactive Change Tracking Trigger Button */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen((prev) => !prev);
+        }}
+        onMouseEnter={() => setIsOpen(true)}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black border transition-all cursor-pointer select-none active:scale-95 ${
+          latestChange
+            ? 'bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-300 shadow-3xs ring-1 ring-amber-400/30'
+            : 'bg-slate-50 hover:bg-slate-100 text-slate-500 border-slate-200'
+        }`}
+        title="Klik atau arahkan kursor untuk melihat riwayat perubahan nilai terakhir siswa ini"
+      >
+        <History size={10} className={latestChange ? 'text-amber-600' : 'text-slate-400'} />
+        <span>
+          {latestChange
+            ? latestChange.OLD_NILAI !== undefined
+              ? `Revisi ${latestChange.OLD_NILAI}➔${latestChange.NEW_NILAI}`
+              : `Nilai: ${latestChange.NEW_NILAI}`
+            : 'Riwayat Ubah'}
+        </span>
+        {latestChange && (
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+        )}
+      </button>
+
+      {/* Floating Tooltip Panel with Grade History Details */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.95 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            onMouseLeave={() => setIsOpen(false)}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-0 bottom-full mb-2 z-50 w-80 max-w-[92vw] p-3.5 rounded-2xl bg-slate-900/95 backdrop-blur-md text-white text-left shadow-2xl border border-slate-700/80 animate-in fade-in"
+          >
+            {/* Tooltip Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <History size={13} />
+                </div>
+                <div>
+                  <h5 className="text-[11px] font-black text-white leading-tight">Riwayat Perubahan Nilai Terakhir</h5>
+                  <p className="text-[9px] text-slate-400">{student.NAMA}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-md transition"
+              >
+                <X size={12} />
+              </button>
+            </div>
+
+            {/* Latest Change Callout */}
+            {latestChange ? (
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 space-y-1.5">
+                  <div className="flex items-center justify-between gap-1 text-[10px]">
+                    <span className="font-extrabold text-amber-300 truncate max-w-[170px]">
+                      {latestChange.ASSIGNMENT_TITLE || 'Tugas Pembelajaran'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 shrink-0 font-mono">
+                      {formatTimeAgo(latestChange.CHANGED_AT)}
+                    </span>
+                  </div>
+
+                  {/* Score Transition Badge */}
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {latestChange.OLD_NILAI !== undefined ? (
+                      <div className="flex items-center gap-1.5 font-mono">
+                        <span className="text-slate-400 text-xs line-through">{latestChange.OLD_NILAI}</span>
+                        <span className="text-slate-400 text-xs">➔</span>
+                        <span className="text-white text-sm font-black">{latestChange.NEW_NILAI}</span>
+                        <span
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                            latestChange.DIFF && latestChange.DIFF > 0
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : latestChange.DIFF && latestChange.DIFF < 0
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                          }`}
+                        >
+                          {latestChange.DIFF && latestChange.DIFF > 0 ? (
+                            <ArrowUpRight size={10} className="stroke-[3]" />
+                          ) : latestChange.DIFF && latestChange.DIFF < 0 ? (
+                            <ArrowDownRight size={10} className="stroke-[3]" />
+                          ) : (
+                            <Minus size={10} className="stroke-[2.5]" />
+                          )}
+                          <span>{latestChange.DIFF && latestChange.DIFF > 0 ? `+${latestChange.DIFF}` : latestChange.DIFF} poin</span>
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-black text-emerald-400 font-mono">
+                        Penilaian Awal: {latestChange.NEW_NILAI}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Metadata: Teacher & Reason */}
+                  <div className="text-[10px] space-y-0.5 pt-1 border-t border-slate-700/60 text-slate-300">
+                    <div className="flex items-center gap-1 text-[9px] text-slate-400">
+                      <span>👤 Oleh:</span>
+                      <span className="text-slate-200 font-semibold">{latestChange.CHANGED_BY}</span>
+                      <span>•</span>
+                      <span>🕒 {latestChange.CHANGED_AT}</span>
+                    </div>
+                    {latestChange.REASON && (
+                      <p className="text-[10px] text-amber-200/90 italic leading-snug">
+                        "{latestChange.REASON}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Additional Past History (if multiple edits) */}
+                {changeLogs.length > 1 && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
+                      Riwayat Sebelumnya ({changeLogs.length - 1}):
+                    </span>
+                    <div className="space-y-1 max-h-24 overflow-y-auto no-scrollbar">
+                      {changeLogs.slice(1, 4).map((log, idx) => (
+                        <div
+                          key={log.ID || idx}
+                          className="flex items-center justify-between gap-1 text-[9px] p-1.5 rounded-lg bg-slate-800/60 border border-slate-700/40"
+                        >
+                          <span className="text-slate-300 truncate max-w-[140px]">
+                            {log.ASSIGNMENT_TITLE}
+                          </span>
+                          <span className="font-mono text-slate-200 font-bold shrink-0">
+                            {log.OLD_NILAI !== undefined ? `${log.OLD_NILAI}➔${log.NEW_NILAI}` : log.NEW_NILAI}
+                          </span>
+                          <span className="text-[8px] text-slate-400 shrink-0">
+                            {formatTimeAgo(log.CHANGED_AT)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-3 text-center space-y-1 text-slate-400">
+                <p className="text-[10px] leading-relaxed">
+                  Belum ada riwayat revisi nilai manual untuk siswa ini. Nilai saat ini adalah hasil asesmen awal tugas.
+                </p>
+              </div>
+            )}
+
+            {/* Quick Grade Action Shortcut */}
+            {canGrade && onQuickGradeClick && (
+              <div className="pt-2.5 mt-2 border-t border-slate-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onQuickGradeClick();
+                  }}
+                  className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
+                >
+                  <Sparkles size={11} />
+                  <span>Ubah / Beri Nilai Baru</span>
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+});
+
 // ============ MEMOIZED STUDENT ROW CARD FOR HIGH PERFORMANCE RENDERING ============
 interface StudentRowCardProps {
   student: Account;
@@ -8060,6 +9969,14 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
               <span>Tren {isTrendVisible ? 'ON' : 'OFF'}</span>
             </button>
 
+            {/* Fitur Pelacakan Perubahan Nilai dengan Tooltip Riwayat Terakhir */}
+            <StudentGradeChangeTracker
+              student={s}
+              submissions={studentSubmissions}
+              canGrade={canManage}
+              onQuickGradeClick={canManage && onQuickGradeClick ? () => onQuickGradeClick(s) : undefined}
+            />
+
             {/* Quick Grade Trend Visual Arrow Overlay Badge with Color-Coded Glow & Animated Transition */}
             {isTrendVisible && (
               <AnimatePresence mode="wait">
@@ -8144,14 +10061,36 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
             )}
           </div>
 
-          {/* Compact Badges Preview */}
-          <div className="mt-2 pt-2 border-t border-slate-100">
+          {/* Compact Badges Preview & Mobile Grade Performance Trend */}
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
             <StudentBadgesWidget siswaId={s.ID} siswaNama={s.NAMA} compact={true} />
+            <div className="block lg:hidden w-full sm:w-auto mt-1 sm:mt-0">
+              <GradePerformanceTrendChart
+                studentId={s.ID}
+                studentName={s.NAMA}
+                submissions={studentSubmissions}
+                kkmThreshold={75}
+                onQuickGradeClick={canManage && onQuickGradeClick ? () => onQuickGradeClick(s) : undefined}
+                canGrade={canManage}
+              />
+            </div>
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2 shrink-0 justify-between sm:justify-end flex-wrap">
+        {/* Dedicated Desktop Grade Performance Trend Chart Component */}
+        <div className="hidden lg:flex shrink-0">
+          <GradePerformanceTrendChart
+            studentId={s.ID}
+            studentName={s.NAMA}
+            submissions={studentSubmissions}
+            kkmThreshold={75}
+            onQuickGradeClick={canManage && onQuickGradeClick ? () => onQuickGradeClick(s) : undefined}
+            canGrade={canManage}
+          />
+        </div>
+
         {/* Dedicated Progress Trend Column with Color-Coded Background, Ambient Glow & Fluid Transitions */}
         <div
           className={`hidden md:flex flex-col items-center justify-center w-[140px] px-2.5 py-1.5 rounded-2xl border text-center transition-all duration-300 shrink-0 cursor-help ${
@@ -8292,9 +10231,9 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
                 }
               : undefined
           }
-          className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl mr-1 relative transition-all duration-300 ${
+          className={`flex items-center gap-2 sm:gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl mr-1 relative transition-all duration-300 ${
             isBelumTuntas
-              ? 'bg-rose-50/90 border-2 border-rose-400/90 text-rose-950 shadow-[0_0_14px_rgba(244,63,94,0.35)] ring-2 ring-rose-400/40 animate-pulse'
+              ? 'bg-rose-50/90 border-2 border-rose-400/90 text-rose-950 shadow-[0_0_14px_rgba(244,63,94,0.35)] ring-2 ring-rose-400/40'
               : 'bg-slate-50/90 border border-slate-200/80'
           }`}
         >
@@ -8334,7 +10273,20 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
                 </span>
               )}
             </div>
-            <div className="text-xs font-bold flex items-center gap-1">
+            <div className="text-xs font-bold flex items-center gap-1.5">
+              {/* Pulsing Remedial Warning Icon if student average score < 75 */}
+              {isBelumTuntas && (
+                <span
+                  id={`remedial-pulse-warning-${s.ID}`}
+                  className="relative inline-flex items-center justify-center shrink-0 cursor-help"
+                  title={`⚠️ Peringatan Remedial: Nilai rata-rata ananda ${avgScore} (< 75)! Butuh bimbingan remedial segera.`}
+                >
+                  <span className="animate-ping absolute inline-flex h-3.5 w-3.5 rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 text-rose-700 border border-rose-300 shadow-2xs">
+                    <AlertTriangle size={10} className="stroke-[3] text-rose-600 animate-pulse" />
+                  </span>
+                </span>
+              )}
               <span
                 className={`font-black ${
                   isTuntasKkm
@@ -8357,8 +10309,8 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
               </span>
             </div>
 
-            {/* KKM Ketuntasan Indicator Pill */}
-            <div className="mt-0.5">
+            {/* KKM Ketuntasan Indicator Pill & Change Tracker */}
+            <div className="mt-1 flex items-center justify-end gap-1.5 flex-wrap">
               {typeof avgScore === 'number' ? (
                 isTuntasKkm ? (
                   <span
@@ -8389,6 +10341,14 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
                   Belum Dinilai
                 </span>
               )}
+
+              {/* Pelacakan Perubahan Nilai Terakhir */}
+              <StudentGradeChangeTracker
+                student={s}
+                submissions={studentSubmissions}
+                canGrade={canManage}
+                onQuickGradeClick={canManage && onQuickGradeClick ? () => onQuickGradeClick(s) : undefined}
+              />
             </div>
           </div>
           <div className="pl-2 border-l border-slate-200">
@@ -8507,6 +10467,24 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
                   </div>
                 </button>
 
+                {/* 4. Cetak Laporan Komprehensif Shortcut */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onExportPdf(s);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-900 text-xs font-bold flex items-center gap-2.5 transition cursor-pointer group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Printer size={14} />
+                  </div>
+                  <div>
+                    <div className="leading-tight font-extrabold text-slate-900 group-hover:text-teal-900">Cetak Laporan Komprehensif</div>
+                    <div className="text-[10px] text-slate-400 font-normal">Kop sekolah, nilai, presensi & karakter</div>
+                  </div>
+                </button>
+
                 <div className="my-1.5 border-t border-slate-100" />
 
                 {/* Quick Grade Shortcut */}
@@ -8567,15 +10545,15 @@ const StudentRowCard: React.FC<StudentRowCardProps> = React.memo(({
         <button
           onClick={() => onExportPdf(s)}
           disabled={exportingStudentId === s.ID}
-          className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          title="Ekspor Rapor Perkembangan Siswa Standar A4 dengan Visual Header & Catatan Wali Kelas"
+          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-50 to-emerald-50 hover:from-teal-100 hover:to-emerald-100 text-teal-900 border border-teal-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+          title="Cetak Laporan Ringkasan Komprehensif Resmi (Nilai, Presensi, Karakter & Catatan Guru) Ber-Kop Sekolah"
         >
           {exportingStudentId === s.ID ? (
-            <RefreshCw size={12} className="animate-spin text-purple-700" />
+            <RefreshCw size={12} className="animate-spin text-teal-700" />
           ) : (
-            <FileText size={12} className="text-purple-700" />
+            <Printer size={12} className="text-teal-700" />
           )}
-          <span>{exportingStudentId === s.ID ? 'Cetak...' : 'Rapor A4 PDF'}</span>
+          <span>{exportingStudentId === s.ID ? 'Cetak...' : 'Laporan Komprehensif (PDF)'}</span>
         </button>
 
         {canManage && onEditStudent && (
@@ -10258,43 +12236,67 @@ const StudentsListView: React.FC<{
                 Filter Aktif ({filteredStudents.length} Siswa)
               </span>
             )}
-            {/* Tombol Filter Prioritas Remedial Instan di atas daftar siswa */}
-            <button
-              type="button"
-              onClick={() => {
-                setFilterKkm((prev) => (prev === 'BELUM_TUNTAS' || prev === 'PALING_REMEDIAL' ? 'SEMUA' : 'BELUM_TUNTAS'));
-                try { playFeedback('click'); } catch {}
-              }}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 ${
-                filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
-                  ? 'bg-rose-700 hover:bg-rose-800 text-white border border-rose-700 shadow-md ring-2 ring-rose-400/50'
-                  : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 hover:border-rose-400'
-              }`}
-              title={
-                filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
-                  ? 'Klik untuk membatalkan filter dan menampilkan semua siswa'
-                  : 'Sembunyikan semua siswa tuntas dan hanya tampilkan siswa yang memerlukan bimbingan tambahan (< 75)'
-              }
+            {/* UI Toggle Filter KKM: Filter cepat siswa Tuntas (>= 75) atau Belum Tuntas (< 75) tanpa membuka dropdown */}
+            <div
+              id="toggle-filter-kkm"
+              className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-200/90 border border-slate-300 shadow-2xs flex-wrap"
+              title="UI Toggle Filter KKM: Tampilkan cepat siswa Tuntas (>= 75) atau Belum Tuntas (< 75) tanpa membuka dropdown"
             >
-              <AlertTriangle
-                size={13}
-                className={
-                  filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
-                    ? 'text-white animate-bounce'
-                    : 'text-rose-600'
-                }
-              />
-              <span>
-                {filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL'
-                  ? `Prioritas Remedial Aktif (${filteredStudents.length} Siswa)`
-                  : `Prioritas Remedial (${kkmCounts.belumTuntas} Siswa Butuh Bimbingan)`}
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 px-1.5 flex items-center gap-1">
+                <Sliders size={11} className="text-indigo-600" />
+                <span>Toggle Filter KKM:</span>
               </span>
-              {(filterKkm === 'BELUM_TUNTAS' || filterKkm === 'PALING_REMEDIAL') && (
-                <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded-full font-bold ml-0.5">
-                  Tuntas Disembunyikan ✕
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                id="toggle-kkm-semua"
+                onClick={() => {
+                  setFilterKkm('SEMUA');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  filterKkm === 'SEMUA'
+                    ? 'bg-slate-900 text-white shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Tampilkan semua siswa tanpa filter KKM"
+              >
+                Semua ({totalCount})
+              </button>
+              <button
+                type="button"
+                id="toggle-kkm-tuntas"
+                onClick={() => {
+                  setFilterKkm('TUNTAS');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  filterKkm === 'TUNTAS'
+                    ? 'bg-emerald-600 text-white shadow-xs font-black ring-1 ring-emerald-400'
+                    : 'text-emerald-800 bg-emerald-50/90 hover:bg-emerald-100 border border-emerald-300'
+                }`}
+                title="Filter cepat: Tampilkan hanya siswa TUNTAS (Nilai rata-rata ≥ 75)"
+              >
+                <Check size={12} strokeWidth={3} className={filterKkm === 'TUNTAS' ? 'text-white' : 'text-emerald-700'} />
+                <span>Tuntas (≥ 75): {kkmCounts.tuntas}</span>
+              </button>
+              <button
+                type="button"
+                id="toggle-kkm-belum-tuntas"
+                onClick={() => {
+                  setFilterKkm('BELUM_TUNTAS');
+                  try { playFeedback('click'); } catch {}
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  filterKkm === 'BELUM_TUNTAS'
+                    ? 'bg-rose-700 text-white shadow-xs font-black ring-2 ring-rose-400/50'
+                    : 'text-rose-800 bg-rose-50/90 hover:bg-rose-100 border border-rose-300'
+                }`}
+                title="Filter cepat: Tampilkan hanya siswa BELUM TUNTAS (Nilai rata-rata < 75) yang membutuhkan bantuan remedial"
+              >
+                <AlertTriangle size={12} className={filterKkm === 'BELUM_TUNTAS' ? 'text-white animate-pulse' : 'text-rose-600'} />
+                <span>Belum Tuntas (&lt; 75): {kkmCounts.belumTuntas}</span>
+              </button>
+            </div>
 
             {filterKkm !== 'SEMUA' && (
               <span

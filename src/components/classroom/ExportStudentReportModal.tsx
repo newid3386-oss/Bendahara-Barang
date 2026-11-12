@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Printer,
@@ -19,6 +19,7 @@ import {
   Download,
   Volume2,
   VolumeX,
+  AlertTriangle,
 } from 'lucide-react';
 import { Account, ClassroomSubmission } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
@@ -57,8 +58,14 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
   const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isExportingP5, setIsExportingP5] = useState<boolean>(false);
+  const [isExportingComprehensive, setIsExportingComprehensive] = useState<boolean>(false);
   const [exportedSuccess, setExportedSuccess] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+
+  // Comprehensive student report data including character/behavior logs from database
+  const comprehensiveData = useMemo(() => {
+    return classroomService.getStudentComprehensiveReportData(student.ID, encouragementNote);
+  }, [student.ID, encouragementNote]);
 
   const handleVoiceRead = () => {
     if (!('speechSynthesis' in window)) {
@@ -71,7 +78,7 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
       return;
     }
 
-    const textToRead = `Laporan Rapor Perkembangan Siswa ${student.NAMA}, ${kelas}. Nilai rata-rata akhir: ${report.nilaiAkhir}, Predikat ${report.predikat}. Kehadiran: ${attendanceStats.percentage} persen. Catatan Wali Kelas: ${encouragementNote}`;
+    const textToRead = `Laporan Ringkasan Komprehensif Perkembangan Siswa ${student.NAMA}, ${kelas}. Nilai akhir: ${report.nilaiAkhir}, Predikat ${report.predikat}. Kehadiran: ${attendanceStats.percentage} persen. Catatan Karakter: ${comprehensiveData.behaviorHighlights?.positiveNotes[0] || 'Baik'}. Catatan Wali Kelas: ${encouragementNote}`;
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
     utterance.lang = 'id-ID';
@@ -87,6 +94,26 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
   const isPassed = report.nilaiAkhir >= 75;
   const kelulusan = student.STATUS_KELULUSAN || 'AKTIF';
   const statusBadgeLabel = kelulusan === 'LULUS' ? 'LULUS' : isPassed ? 'TUNTAS (≥75)' : 'REMEDIAL';
+
+  const handleDownloadComprehensivePdf = async () => {
+    setIsExportingComprehensive(true);
+    try {
+      await pdfService.generateIndividualStudentComprehensivePdf(
+        {
+          ...comprehensiveData,
+          teacherNotes: encouragementNote,
+        },
+        teacherName,
+        teacherNip
+      );
+      setExportedSuccess(true);
+      setTimeout(() => setExportedSuccess(false), 3500);
+    } catch (err) {
+      console.error('Gagal mengekspor Laporan Komprehensif PDF:', err);
+    } finally {
+      setIsExportingComprehensive(false);
+    }
+  };
 
   const handleDownloadPdf = async () => {
     setIsExporting(true);
@@ -176,18 +203,19 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
             </button>
             <button
               type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExporting}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50"
+              onClick={handleDownloadComprehensivePdf}
+              disabled={isExportingComprehensive}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-400 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50 ring-2 ring-teal-300/40"
+              title="Cetak Laporan Ringkasan Komprehensif Resmi (Nilai, Presensi, Karakter, dan Catatan Guru) Ber-Kop Sekolah"
             >
-              <Download size={15} />
-              {isExporting ? 'Proses PDF...' : 'Unduh File PDF'}
+              <FileText size={15} />
+              {isExportingComprehensive ? 'Menyiapkan PDF...' : 'Cetak Laporan Komprehensif (PDF)'}
             </button>
             <button
               type="button"
               onClick={handleDownloadP5Pdf}
               disabled={isExportingP5}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50"
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/30 font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
               title="Unduh Lembaran Rapor P5 Resmi berbasis Kurikulum Merdeka"
             >
               <Award size={15} />
@@ -206,7 +234,7 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
         {/* Top Notification Toast */}
         {exportedSuccess && (
           <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-2 shrink-0 print:hidden">
-            <CheckCircle2 size={16} /> Rapor PDF Berhasil Diterbitkan dan Diunduh!
+            <CheckCircle2 size={16} /> Laporan Ringkasan Komprehensif PDF Berhasil Diterbitkan dan Diunduh!
           </div>
         )}
 
@@ -389,53 +417,86 @@ export const ExportStudentReportModal: React.FC<ExportStudentReportModalProps> =
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-medium">
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center font-bold">1</td>
-                        <td className="p-2.5 font-bold text-slate-900">Pendidikan Pancasila & Kewarganegaraan</td>
-                        <td className="p-2.5 text-center font-black text-teal-900">{report.nilaiAkhir}</td>
-                        <td className="p-2.5 text-center font-black text-emerald-800">{report.predikat}</td>
-                        <td className="p-2.5 text-slate-700 text-[11px]">
-                          Sangat memahami penerapan nilai Pancasila dan gotong royong di lingkungan sekolah.
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center font-bold">2</td>
-                        <td className="p-2.5 font-bold text-slate-900">Bahasa Indonesia (Literasi Reading/Writing)</td>
-                        <td className="p-2.5 text-center font-black text-teal-900">{report.nilaiTugas}</td>
-                        <td className="p-2.5 text-center font-black text-emerald-800">{report.predikat}</td>
-                        <td className="p-2.5 text-slate-700 text-[11px]">
-                          Mampu mengidentifikasi ide pokok narasi dan menyusun karangan secara ekspresif.
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center font-bold">3</td>
-                        <td className="p-2.5 font-bold text-slate-900">Matematika & Numerasi Gasing</td>
-                        <td className="p-2.5 text-center font-black text-teal-900">{report.nilaiKuis}</td>
-                        <td className="p-2.5 text-center font-black text-emerald-800">{report.predikat}</td>
-                        <td className="p-2.5 text-slate-700 text-[11px]">
-                          Terampil dalam perhitungan matematika cepat dan penyelesaian soal cerita kontekstual.
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center font-bold">4</td>
-                        <td className="p-2.5 font-bold text-slate-900">Ilmu Pengetahuan Alam & Sosial (IPAS)</td>
-                        <td className="p-2.5 text-center font-black text-teal-900">{Math.max(68, report.nilaiAkhir - 2)}</td>
-                        <td className="p-2.5 text-center font-black text-emerald-800">{report.predikat === 'A' ? 'B' : report.predikat}</td>
-                        <td className="p-2.5 text-slate-700 text-[11px]">
-                          Memahami siklus alam, keanekaragaman flora fauba lokal, serta ekosistem lingkungan.
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center font-bold">5</td>
-                        <td className="p-2.5 font-bold text-slate-900">Koding & STEM Literasi Digital SD</td>
-                        <td className="p-2.5 text-center font-black text-teal-900">{Math.min(100, report.nilaiAkhir + 4)}</td>
-                        <td className="p-2.5 text-center font-black text-emerald-800">A</td>
-                        <td className="p-2.5 text-slate-700 text-[11px]">
-                          Sangat antusias mengoperasikan modul koding visual Scratch dan pengerjaan kuis interaktif.
-                        </td>
-                      </tr>
+                      {(comprehensiveData.subjectGrades || []).map((sub) => (
+                        <tr key={sub.no} className="hover:bg-slate-50">
+                          <td className="p-2 text-center font-bold">{sub.no}</td>
+                          <td className="p-2 font-bold text-slate-900">{sub.mapel}</td>
+                          <td className="p-2 text-center font-black text-teal-900">{sub.nilaiAkhir}</td>
+                          <td className="p-2 text-center font-black text-emerald-800">{sub.predikat}</td>
+                          <td className="p-2 text-slate-700 text-[11px] leading-relaxed">
+                            <span className="font-bold text-slate-800 mr-1.5">[{sub.status} KKM {sub.kkm}]</span>
+                            {sub.deskripsi}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* 5. ATTENDANCE & CHARACTER BEHAVIOR NOTES SUMMARY */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Presensi Breakdown */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                  <div className="flex items-center justify-between text-xs font-black text-slate-900 border-b border-slate-100 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar size={13} className="text-emerald-600" /> Rekapitulasi Presensi
+                    </span>
+                    <span className="text-emerald-700 font-black">{attendanceStats.percentage}% Kehadiran</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] pt-1">
+                    <div className="p-1.5 bg-emerald-50 rounded-lg">
+                      <span className="text-slate-400 font-bold block">Hadir</span>
+                      <strong className="text-emerald-800 text-xs">{attendanceStats.hadir} hari</strong>
+                    </div>
+                    <div className="p-1.5 bg-blue-50 rounded-lg">
+                      <span className="text-slate-400 font-bold block">Sakit</span>
+                      <strong className="text-blue-800 text-xs">{attendanceStats.sakit} hari</strong>
+                    </div>
+                    <div className="p-1.5 bg-amber-50 rounded-lg">
+                      <span className="text-slate-400 font-bold block">Izin</span>
+                      <strong className="text-amber-800 text-xs">{attendanceStats.izin} hari</strong>
+                    </div>
+                    <div className="p-1.5 bg-rose-50 rounded-lg">
+                      <span className="text-slate-400 font-bold block">Alpa</span>
+                      <strong className="text-rose-800 text-xs">{attendanceStats.alpa} hari</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Catatan Karakter & Perilaku */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                  <div className="flex items-center justify-between text-xs font-black text-slate-900 border-b border-slate-100 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Heart size={13} className="text-rose-600" /> Catatan Karakter & Perilaku
+                    </span>
+                    <span className="text-[10px] font-black uppercase text-teal-800 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
+                      Predikat: {comprehensiveData.behaviorHighlights?.overallCharacterGrade || 'BAIK'}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-700 space-y-1 pt-1">
+                    <div className="flex items-start gap-1.5">
+                      <Sparkles size={12} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <span className="text-emerald-950 font-medium">
+                        {comprehensiveData.behaviorHighlights?.positiveNotes[0] || 'Menunjukkan sikap disiplin dan gotong royong aktif di kelas.'}
+                      </span>
+                    </div>
+
+                    {comprehensiveData.behaviorHighlights?.needsAttentionNotes &&
+                    comprehensiveData.behaviorHighlights.needsAttentionNotes.length > 0 &&
+                    !comprehensiveData.behaviorHighlights.needsAttentionNotes[0].includes('Tidak ada catatan') ? (
+                      <div className="flex items-start gap-1.5 text-rose-950 font-medium bg-rose-50 p-1.5 rounded-lg border border-rose-200">
+                        <AlertTriangle size={12} className="text-rose-600 shrink-0 mt-0.5" />
+                        <span>Fokus Pembinaan: {comprehensiveData.behaviorHighlights.needsAttentionNotes[0]}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-[10px] text-teal-700 font-semibold pt-0.5">
+                        <Award size={11} className="text-teal-600" />
+                        <span>Lencana: {(comprehensiveData.behaviorHighlights?.characterBadges || ['⭐ Berakhlak Mulia']).join(' • ')}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

@@ -42,6 +42,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Prevent browser from caching Vite dev dependencies with immutable headers
+app.use((req, res, next) => {
+  if (req.url.includes('/.vite/deps/')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // ─── IN-MEMORY API RATE LIMITER (DoS & Brute Force Defense) ───
 interface RateLimitEntry {
   count: number;

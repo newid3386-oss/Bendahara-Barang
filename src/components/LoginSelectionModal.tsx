@@ -147,6 +147,7 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
     let foundUser: User | null = null;
 
     // Check role aliases for SIPERSEDA
+    const isAdminQuery = clean === 'admin' || clean === 'administrator' || clean === 'superadmin' || clean === 'admin website';
     const isOperatorQuery = clean === 'operator' || clean === 'pengurus barang' || clean === 'gudang';
     const isKepsekQuery = clean === 'kepsek' || clean === 'kepala sekolah' || clean === 'kuasa pengguna barang';
     const isBendaharaQuery = clean === 'bendahara' || clean === 'bos' || clean === 'bop';
@@ -154,6 +155,7 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
     const matchedUser = allUsers.find((u) => {
       if ((u.STATUS || 'AKTIF').toUpperCase() !== 'AKTIF') return false;
 
+      if (isAdminQuery && (u.ROLE === 'OPERATOR' || u.ID.includes('ADM') || u.EMAIL.includes('admin'))) return true;
       if (isOperatorQuery && u.ROLE === 'OPERATOR') return true;
       if (isKepsekQuery && u.ROLE === 'KEPALA SEKOLAH') return true;
       if (isBendaharaQuery && u.ROLE === 'BENDAHARA') return true;
@@ -182,6 +184,7 @@ export const LoginSelectionModal: React.FC<LoginSelectionModalProps> = ({
       const matchedAcc = allAccounts.find((a) => {
         if (a.STATUS !== 'AKTIF') return false;
 
+        if (isAdminQuery && (a.ROLE === 'ADMIN' || a.SISTEM === 'ADMIN')) return true;
         if (isOperatorQuery && (a.ROLE === 'OPERATOR' || a.ROLE === 'STAFF TU')) return true;
         if (isKepsekQuery && a.ROLE === 'KEPALA SEKOLAH') return true;
         if (isBendaharaQuery && ((a.ROLE as string) === 'BENDAHARA' || ((a as any).JABATAN || '').toLowerCase().includes('bendahara'))) return true;

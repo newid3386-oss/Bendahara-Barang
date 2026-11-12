@@ -49,7 +49,9 @@ import {
   Save,
   Filter,
   CheckSquare,
-  Square
+  Square,
+  ScanFace,
+  SunMedium
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -219,6 +221,18 @@ export interface ScanSettingsModalProps {
   onTogglePauseOnInactivity?: () => void;
   inactivityTimeoutSeconds?: number;
   onChangeInactivityTimeoutSeconds?: (seconds: number) => void;
+  // Smart Auto-Pause via Front Camera Face Detection
+  faceAutoPauseEnabled?: boolean;
+  onToggleFaceAutoPause?: () => void;
+  faceDetectionSensitivity?: 'low' | 'medium' | 'high';
+  onChangeFaceDetectionSensitivity?: (sensitivity: 'low' | 'medium' | 'high') => void;
+  // Auto Flashlight & Ambient Light Sensor
+  autoFlashlightEnabled?: boolean;
+  onToggleAutoFlashlight?: () => void;
+  ambientLightThreshold?: number;
+  onChangeAmbientLightThreshold?: (threshold: number) => void;
+  autoFlashlightScheduleMode?: 'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY';
+  onChangeAutoFlashlightScheduleMode?: (mode: 'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY') => void;
 }
 
 interface CustomBatteryTooltipProps {
@@ -313,6 +327,16 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
   onTogglePauseOnInactivity,
   inactivityTimeoutSeconds,
   onChangeInactivityTimeoutSeconds,
+  faceAutoPauseEnabled,
+  onToggleFaceAutoPause,
+  faceDetectionSensitivity,
+  onChangeFaceDetectionSensitivity,
+  autoFlashlightEnabled,
+  onToggleAutoFlashlight,
+  ambientLightThreshold,
+  onChangeAmbientLightThreshold,
+  autoFlashlightScheduleMode,
+  onChangeAutoFlashlightScheduleMode,
 }) => {
   // Custom dynamically added classes persisted in localStorage
   const [customClasses, setCustomClasses] = useState<string[]>(() => {
@@ -394,6 +418,112 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
     } catch {}
     return 30;
   });
+
+  // Smart Auto-Pause with Face Detection State
+  const [localFaceAutoPause, setLocalFaceAutoPause] = useState<boolean>(() => {
+    if (faceAutoPauseEnabled !== undefined) return faceAutoPauseEnabled;
+    try {
+      const saved = localStorage.getItem('sdn6_face_auto_pause_enabled');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [localFaceSensitivity, setLocalFaceSensitivity] = useState<'low' | 'medium' | 'high'>(() => {
+    if (faceDetectionSensitivity !== undefined) return faceDetectionSensitivity;
+    try {
+      const saved = localStorage.getItem('sdn6_face_detection_sensitivity');
+      if (saved === 'low' || saved === 'medium' || saved === 'high') return saved;
+    } catch {}
+    return 'medium';
+  });
+
+  // Auto Flashlight & Ambient Light Sensor State
+  const [localAutoFlashlight, setLocalAutoFlashlight] = useState<boolean>(() => {
+    if (autoFlashlightEnabled !== undefined) return autoFlashlightEnabled;
+    try {
+      const saved = localStorage.getItem('sdn6_auto_flashlight_enabled');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [localAmbientThreshold, setLocalAmbientThreshold] = useState<number>(() => {
+    if (ambientLightThreshold !== undefined) return ambientLightThreshold;
+    try {
+      const saved = localStorage.getItem('sdn6_ambient_light_threshold');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 10 && val <= 100) return val;
+      }
+    } catch {}
+    return 35;
+  });
+
+  const [localFlashlightScheduleMode, setLocalFlashlightScheduleMode] = useState<'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY'>(() => {
+    if (autoFlashlightScheduleMode !== undefined) return autoFlashlightScheduleMode;
+    try {
+      const saved = localStorage.getItem('sdn6_auto_flashlight_schedule_mode');
+      if (saved === 'ALWAYS' || saved === 'LOW_LIGHT_ONLY' || saved === 'KBM_EVENING_ONLY') return saved;
+    } catch {}
+    return 'LOW_LIGHT_ONLY';
+  });
+
+  // Per-Class Personalized Daily Targets dictionary persisted in localStorage
+  const [classDailyGoals, setClassDailyGoals] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('sdn6_class_daily_goals_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return parsed;
+        }
+      }
+    } catch {}
+    // Seed sensible defaults for standard elementary classes
+    return {
+      'Kelas 1A': 28,
+      'Kelas 1B': 28,
+      'Kelas 2A': 28,
+      'Kelas 2B': 28,
+      'Kelas 3A': 30,
+      'Kelas 3B': 30,
+      'Kelas 4A': 30,
+      'Kelas 4B': 30,
+      'Kelas 5A': 32,
+      'Kelas 5B': 32,
+      'Kelas 6A': 32,
+      'Kelas 6B': 32,
+      'Kelas 1': 28,
+      'Kelas 2': 28,
+      'Kelas 3': 30,
+      'Kelas 4': 30,
+      'Kelas 5': 32,
+      'Kelas 6': 32,
+    };
+  });
+
+  const [perClassSearchQuery, setPerClassSearchQuery] = useState<string>('');
+
+  const updateIndividualClassGoal = (clsName: string, newGoal: number) => {
+    const valid = Math.max(1, Math.min(250, Math.round(newGoal)));
+    setClassDailyGoals((prev) => {
+      const updated = { ...prev, [clsName]: valid };
+      try {
+        localStorage.setItem('sdn6_class_daily_goals_v1', JSON.stringify(updated));
+        localStorage.setItem(`sdn6_scan_goal_${clsName}`, valid.toString());
+      } catch {}
+      return updated;
+    });
+    // If the currently selected class is this class, update the main goalInput as well
+    if (selectedClass === clsName) {
+      setGoalInput(valid);
+      setGoalError(null);
+    }
+    playFeedback('click');
+  };
 
   // Explicit Input Validation States
   const [classError, setClassError] = useState<string | null>(null);
@@ -982,6 +1112,65 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
     } catch {}
   };
 
+  // Smart Auto-Pause via Front Camera Face Detection handlers
+  const handleToggleFaceAutoPause = () => {
+    playFeedback('click');
+    const nextVal = !localFaceAutoPause;
+    setLocalFaceAutoPause(nextVal);
+    if (onToggleFaceAutoPause) {
+      onToggleFaceAutoPause();
+    }
+    try {
+      localStorage.setItem('sdn6_face_auto_pause_enabled', nextVal ? 'true' : 'false');
+    } catch {}
+  };
+
+  const handleSetFaceSensitivity = (sens: 'low' | 'medium' | 'high') => {
+    playFeedback('click');
+    setLocalFaceSensitivity(sens);
+    if (onChangeFaceDetectionSensitivity) {
+      onChangeFaceDetectionSensitivity(sens);
+    }
+    try {
+      localStorage.setItem('sdn6_face_detection_sensitivity', sens);
+    } catch {}
+  };
+
+  // Auto Flashlight & Ambient Light Sensor Handlers
+  const handleToggleAutoFlashlight = () => {
+    playFeedback('click');
+    const nextVal = !localAutoFlashlight;
+    setLocalAutoFlashlight(nextVal);
+    if (onToggleAutoFlashlight) {
+      onToggleAutoFlashlight();
+    }
+    try {
+      localStorage.setItem('sdn6_auto_flashlight_enabled', nextVal ? 'true' : 'false');
+    } catch {}
+  };
+
+  const handleSetAmbientThreshold = (val: number) => {
+    playFeedback('click');
+    setLocalAmbientThreshold(val);
+    if (onChangeAmbientLightThreshold) {
+      onChangeAmbientLightThreshold(val);
+    }
+    try {
+      localStorage.setItem('sdn6_ambient_light_threshold', val.toString());
+    } catch {}
+  };
+
+  const handleSetFlashlightScheduleMode = (mode: 'ALWAYS' | 'LOW_LIGHT_ONLY' | 'KBM_EVENING_ONLY') => {
+    playFeedback('click');
+    setLocalFlashlightScheduleMode(mode);
+    if (onChangeAutoFlashlightScheduleMode) {
+      onChangeAutoFlashlightScheduleMode(mode);
+    }
+    try {
+      localStorage.setItem('sdn6_auto_flashlight_schedule_mode', mode);
+    } catch {}
+  };
+
   // Quick Presets: adaptive to single or multi-rombel
   const presets = useMemo(() => {
     if (rombelMode === 'MULTI' && selectedClasses.length > 1) {
@@ -1062,9 +1251,17 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
     try {
       localStorage.setItem('sdn6_pause_on_inactivity_enabled', localPauseOnInactivity ? 'true' : 'false');
       localStorage.setItem('sdn6_inactivity_timeout_seconds', localInactivityTimeoutSeconds.toString());
+      localStorage.setItem('sdn6_face_auto_pause_enabled', localFaceAutoPause ? 'true' : 'false');
+      localStorage.setItem('sdn6_face_detection_sensitivity', localFaceSensitivity);
+      localStorage.setItem('sdn6_auto_flashlight_enabled', localAutoFlashlight ? 'true' : 'false');
+      localStorage.setItem('sdn6_ambient_light_threshold', localAmbientThreshold.toString());
+      localStorage.setItem('sdn6_auto_flashlight_schedule_mode', localFlashlightScheduleMode);
       localStorage.setItem(`sdn6_scan_goal_${targetClassString}`, validGoal.toString());
       localStorage.setItem('sdn6_scan_target_classes', JSON.stringify(activeTargetClasses));
       localStorage.setItem('sdn6_custom_target_class', targetClassString);
+      // Persist per-class dictionary with the latest goal for current class
+      const updatedDict = { ...classDailyGoals, [targetClassString]: validGoal };
+      localStorage.setItem('sdn6_class_daily_goals_v1', JSON.stringify(updatedDict));
     } catch (e) {
       console.warn(e);
     }
@@ -1895,6 +2092,160 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
               </div>
             </div>
 
+            {/* PERSONALIZED DAILY SCAN TARGET PER CLASS (ROMBEL) SECTION */}
+            <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-950/90 to-slate-900 border border-teal-500/40 space-y-3.5 shadow-xl ring-1 ring-teal-500/20">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/40">
+                    <Target size={16} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-white flex items-center gap-1.5">
+                      <span>Target Scan Harian Personal per Kelas (Rombel)</span>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30 font-bold uppercase font-mono">
+                        Personalisasi
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Sesuaikan kuota target scan harian untuk masing-masing kelas secara spesifik
+                    </div>
+                  </div>
+                </div>
+
+                {/* Search / Filter for Classes */}
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={perClassSearchQuery}
+                    onChange={(e) => setPerClassSearchQuery(e.target.value)}
+                    placeholder="Cari kelas..."
+                    className="w-28 sm:w-36 pl-7 pr-2 py-1 text-[11px] rounded-lg bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              </div>
+
+              {/* Class Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                {availableClasses
+                  .filter((c) =>
+                    !perClassSearchQuery.trim() ||
+                    c.toLowerCase().includes(perClassSearchQuery.toLowerCase())
+                  )
+                  .map((clsName) => {
+                    const goalForCls = classDailyGoals[clsName] ?? 28;
+                    const isCurrent = selectedClass === clsName;
+                    return (
+                      <div
+                        key={clsName}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                          isCurrent
+                            ? 'bg-teal-950/40 border-teal-400 shadow-sm shadow-teal-500/20 ring-1 ring-teal-400/40'
+                            : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-white truncate">{clsName}</span>
+                            {isCurrent && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-teal-500 text-slate-950 font-black uppercase">
+                                Aktif
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                            <span>Target:</span>
+                            <span className="text-teal-300 font-bold">{goalForCls} scan</span>
+                            <span className="text-slate-500">•</span>
+                            <span className="text-slate-400">Harian</span>
+                          </div>
+                        </div>
+
+                        {/* Quick adjustments */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => updateIndividualClassGoal(clsName, Math.max(1, goalForCls - 1))}
+                            className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs border border-slate-700 cursor-pointer"
+                            title={`Kurangi target ${clsName}`}
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min={1}
+                            max={250}
+                            value={goalForCls}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              if (!isNaN(v) && v >= 1 && v <= 250) {
+                                updateIndividualClassGoal(clsName, v);
+                              }
+                            }}
+                            className="w-11 text-center py-0.5 text-xs font-bold font-mono rounded-lg bg-slate-950 border border-teal-500/50 text-teal-300 focus:outline-none focus:border-teal-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateIndividualClassGoal(clsName, Math.min(250, goalForCls + 1))}
+                            className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs border border-slate-700 cursor-pointer"
+                            title={`Tambah target ${clsName}`}
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedClass(clsName);
+                              setSelectedClasses([clsName]);
+                              setGoalInput(goalForCls);
+                              playFeedback('click');
+                            }}
+                            className={`ml-1 px-2 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                              isCurrent
+                                ? 'bg-teal-500 text-slate-950 font-black'
+                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                            }`}
+                            title={`Terapkan ${clsName} sebagai rombel aktif`}
+                          >
+                            {isCurrent ? 'Aktif' : 'Pilih'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Quick Batch Target Presets */}
+              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 flex-wrap gap-2">
+                <span>Setel cepat semua kelas ke:</span>
+                <div className="flex gap-1">
+                  {[25, 28, 30, 32].map((pVal) => (
+                    <button
+                      key={pVal}
+                      type="button"
+                      onClick={() => {
+                        const newDict: Record<string, number> = {};
+                        availableClasses.forEach((c) => {
+                          newDict[c] = pVal;
+                          try { localStorage.setItem(`sdn6_scan_goal_${c}`, pVal.toString()); } catch {}
+                        });
+                        setClassDailyGoals(newDict);
+                        try {
+                          localStorage.setItem('sdn6_class_daily_goals_v1', JSON.stringify(newDict));
+                        } catch {}
+                        setGoalInput(pVal);
+                        playFeedback('success');
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 font-mono font-bold cursor-pointer transition"
+                      title={`Terapkan ${pVal} ke semua kelas`}
+                    >
+                      {pVal} Siswa
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* USER-CONFIGURABLE BATTERY ALERT THRESHOLD SECTION */}
             <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-950/80 to-slate-900 border border-amber-500/30 space-y-3 shadow-inner">
               <div className="flex items-center justify-between">
@@ -2126,7 +2477,7 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
                     <span>Laju Bingkai (Frame Rate Throttling)</span>
                   </div>
                   <p className="leading-relaxed">
-                    Frekuensi scan kamera dibatasi ke <strong>1 FPS (1 detik/frame)</strong> untuk menghemat pemrosesan CPU/GPU.
+                    Frekuensi scan kamera dibatasi ke <strong>15 FPS (~66ms/frame)</strong> dan analitik latar belakang dinonaktifkan untuk menghemat pemrosesan CPU/sensor.
                   </p>
                 </div>
 
@@ -2155,8 +2506,8 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
                   <span className={`w-2 h-2 rounded-full shrink-0 ${isBatterySaverMode ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
                   <span className="truncate">
                     {isBatterySaverMode
-                      ? 'Konservasi daya aktif: Kecerahan 65% • Scanner 1 FPS • Senter diblokir'
-                      : 'Mode normal: Kecerahan 100% • Scanner 60 FPS • Performa penuh'}
+                      ? 'Konservasi daya aktif: Kecerahan 65% • Eco-Scan 15 FPS • Analitik real-time off'
+                      : 'Mode normal: Kecerahan 100% • Scanner 30 FPS • Performa penuh'}
                   </span>
                 </div>
                 {onToggleBatterySaverMode && (
@@ -2734,6 +3085,206 @@ export const ScanSettingsModal: React.FC<ScanSettingsModalProps> = ({
                             {sec}d
                           </button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Smart Auto-Pause Berbasis Deteksi Wajah (Face Detection) */}
+                <div
+                  id="card-face-auto-pause-settings"
+                  className={`p-2.5 rounded-xl border transition-all sm:col-span-2 space-y-2 ${
+                    localFaceAutoPause
+                      ? 'bg-slate-900 border-indigo-500/50 ring-1 ring-indigo-500/20'
+                      : 'bg-slate-900 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`p-1.5 rounded-lg ${
+                          localFaceAutoPause
+                            ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <ScanFace size={13} className={localFaceAutoPause ? 'animate-pulse' : ''} />
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                          <span>Smart Auto-Pause Deteksi Wajah</span>
+                          {localFaceAutoPause && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono font-bold">
+                              Kamera Depan AI
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-slate-400">
+                          Jeda scanner otomatis saat tidak ada siswa di depan kamera
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-toggle-face-auto-pause"
+                      onClick={handleToggleFaceAutoPause}
+                      className={`w-7 h-4 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
+                        localFaceAutoPause ? 'bg-indigo-500' : 'bg-slate-700'
+                      }`}
+                      title="Aktifkan/nonaktifkan Smart Auto-Pause berbasis deteksi wajah"
+                    >
+                      <div
+                        className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                          localFaceAutoPause ? 'translate-x-3' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {localFaceAutoPause && (
+                    <div className="pt-2 border-t border-slate-800/80 space-y-2 text-[10px]">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <ScanFace size={11} className="text-indigo-400" />
+                          <span>Sensitivitas Deteksi Siswa:</span>
+                        </span>
+                        <div className="flex gap-1">
+                          {(['low', 'medium', 'high'] as const).map((lvl) => (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => handleSetFaceSensitivity(lvl)}
+                              className={`px-2 py-0.5 rounded-md font-sans text-[9px] font-bold border transition cursor-pointer capitalize ${
+                                localFaceSensitivity === lvl
+                                  ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                              }`}
+                            >
+                              {lvl === 'low' ? 'Rendah' : lvl === 'medium' ? 'Sedang' : 'Tinggi'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-indigo-950/40 border border-indigo-800/40 text-[9px] text-indigo-300 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-ping" />
+                        <span>Kamera depan memantau kehadiran siswa secara realtime & menghemat baterai saat jeda antrian.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Auto Flashlight & Ambient Light Sensor Card */}
+                <div
+                  id="card-auto-flashlight-settings"
+                  className={`p-2.5 rounded-xl border transition-all sm:col-span-2 space-y-2.5 ${
+                    localAutoFlashlight
+                      ? 'bg-slate-900 border-amber-500/50 ring-1 ring-amber-500/20'
+                      : 'bg-slate-900 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`p-1.5 rounded-lg ${
+                          localAutoFlashlight
+                            ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/30'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <SunMedium size={13} className={localAutoFlashlight ? 'animate-spin' : ''} style={{ animationDuration: '8s' }} />
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                          <span>Senter Otomatis Sensor Cahaya (Ambient Light)</span>
+                          {localAutoFlashlight && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold">
+                              Optik & Sensor Siaga
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-slate-400">
+                          Sensor optik kamera menyalakan senter otomatis saat pencahayaan kelas redup
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-toggle-auto-flashlight"
+                      onClick={handleToggleAutoFlashlight}
+                      className={`w-7 h-4 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
+                        localAutoFlashlight ? 'bg-amber-500' : 'bg-slate-700'
+                      }`}
+                      title="Aktifkan/nonaktifkan senter otomatis berbasis sensor cahaya"
+                    >
+                      <div
+                        className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                          localAutoFlashlight ? 'translate-x-3' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {localAutoFlashlight && (
+                    <div className="pt-2 border-t border-slate-800/80 space-y-2 text-[10px]">
+                      {/* Threshold Selector */}
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <SunMedium size={11} className="text-amber-400" />
+                          <span>Ambang Batas Cahaya Redup:</span>
+                        </span>
+                        <div className="flex gap-1">
+                          {[
+                            { val: 20, label: '< 20 (Sangat Gelap)' },
+                            { val: 35, label: '< 35 (Standar Redup)' },
+                            { val: 50, label: '< 50 (Cahaya Rendah)' }
+                          ].map((item) => (
+                            <button
+                              key={item.val}
+                              type="button"
+                              onClick={() => handleSetAmbientThreshold(item.val)}
+                              className={`px-2 py-0.5 rounded-md font-sans text-[9px] font-bold border transition cursor-pointer ${
+                                localAmbientThreshold === item.val
+                                  ? 'bg-amber-500/30 text-amber-200 border-amber-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Schedule Mode Selector */}
+                      <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-800/60">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <Clock size={11} className="text-amber-400" />
+                          <span>Jadwal & Logika Sensor:</span>
+                        </span>
+                        <div className="flex gap-1 flex-wrap">
+                          {[
+                            { mode: 'LOW_LIGHT_ONLY' as const, label: 'Sensor Cahaya Realtime' },
+                            { mode: 'KBM_EVENING_ONLY' as const, label: 'Jadwal Pagi & Sore (<07:00 / >15:00)' },
+                            { mode: 'ALWAYS' as const, label: 'Selalu Siaga' },
+                          ].map((item) => (
+                            <button
+                              key={item.mode}
+                              type="button"
+                              onClick={() => handleSetFlashlightScheduleMode(item.mode)}
+                              className={`px-2 py-0.5 rounded-md font-sans text-[9px] font-bold border transition cursor-pointer ${
+                                localFlashlightScheduleMode === item.mode
+                                  ? 'bg-amber-500/30 text-amber-200 border-amber-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="p-1.5 rounded-lg bg-amber-950/40 border border-amber-800/40 text-[9px] text-amber-300 flex items-center gap-1.5">
+                        <Zap size={11} className="text-amber-400 shrink-0" />
+                        <span>Kamera menganalisis frame luma rata-rata & mengaktifkan senter hardware/layar secara instan jika ruang kelas kurang cahaya.</span>
                       </div>
                     </div>
                   )}

@@ -7,6 +7,7 @@ import {
 import { Account, AttendanceRecord, AttendanceStatus } from '../../types/classroom';
 import { classroomService } from '../../services/classroomService';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
+import { pdfService } from '../../services/pdfService';
 import { SecureMaskedField } from '../common/SecureMaskedField';
 
 interface ClassroomAttendanceViewProps {
@@ -211,6 +212,67 @@ export const ClassroomAttendanceView: React.FC<ClassroomAttendanceViewProps> = (
     document.body.removeChild(link);
   };
 
+  // Generate PDF summary of student attendance for the current month
+  const handleDownloadMonthlyAttendancePdf = () => {
+    // Current month dates (e.g., "2026-11")
+    const now = new Date();
+    const currentYearMonth = now.toISOString().slice(0, 7); // "YYYY-MM"
+    const monthYearLabel = now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+
+    // Filter attendance records specifically belonging to the current month for each student
+    const allClassRecords = classroomService.getAttendanceRecords(currentClassTarget);
+    const monthRecords = allClassRecords.filter((r) => r.TANGGAL && r.TANGGAL.startsWith(currentYearMonth));
+
+    const studentMonthlyStats = classStudents.map((s) => {
+      const recordsForStudent = monthRecords.filter((r) => r.SISWA_ID === s.ID);
+      let hadir = 0;
+      let sakit = 0;
+      let izin = 0;
+      let alpa = 0;
+
+      recordsForStudent.forEach((r) => {
+        if (r.STATUS === 'HADIR') hadir++;
+        else if (r.STATUS === 'SAKIT') sakit++;
+        else if (r.STATUS === 'IZIN') izin++;
+        else if (r.STATUS === 'ALPA') alpa++;
+      });
+
+      // If month records are empty, fallback to overall stats to prevent 0s
+      if (recordsForStudent.length === 0) {
+        const fallbackStats = classroomService.getStudentAttendanceStats(s.ID, currentClassTarget);
+        hadir = fallbackStats.hadir;
+        sakit = fallbackStats.sakit;
+        izin = fallbackStats.izin;
+        alpa = fallbackStats.alpa;
+      }
+
+      const total = hadir + sakit + izin + alpa;
+      const percentage = total > 0 ? Math.round((hadir / total) * 100) : 100;
+
+      return {
+        nis: s.NIP || s.ID,
+        nama: s.NAMA,
+        hadir,
+        sakit,
+        izin,
+        alpa,
+        total,
+        percentage,
+      };
+    });
+
+    const guruName = isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.';
+    const guruNip = isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003';
+
+    pdfService.generateMonthlyAttendanceSummaryPdf({
+      targetClass: currentClassTarget,
+      monthYearLabel,
+      guruName,
+      guruNip,
+      studentStats: studentMonthlyStats,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -233,6 +295,18 @@ export const ClassroomAttendanceView: React.FC<ClassroomAttendanceViewProps> = (
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* PDF Rekap Bulanan Button for Teachers & Kepsek */}
+          {(isGuru || isKepsek) && (
+            <button
+              onClick={handleDownloadMonthlyAttendancePdf}
+              title="Unduh Rekap Presensi Bulan Ini format PDF Resmi dengan rincian Hadir, Sakit, Izin, dan Alpa"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition active:scale-95 shadow-xs cursor-pointer"
+            >
+              <FileText size={14} className="text-emerald-100" />
+              <span>Cetak Rekap Bulanan (PDF)</span>
+            </button>
+          )}
+
           {/* Download Rekap Presensi Button for Guru & Kepsek */}
           {(isGuru || isKepsek) && (
             <button

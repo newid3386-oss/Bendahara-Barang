@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { db } from './localStorageService';
 import { qrService } from './qrService';
 import { classroomService } from './classroomService';
-import { Account } from '../types/classroom';
+import { Account, MonthlyClassExecutivePdfOptions, ComprehensiveStudentReportData } from '../types/classroom';
 import type { MonthlyManagementReportData } from './monthlyManagementService';
 
 export interface BeritaAcaraOptions {
@@ -1652,6 +1652,307 @@ export class PdfService {
   }
 
   /**
+   * Creates a comprehensive individual student report document (A4 with Kop Sekolah, Nilai, Kehadiran, Catatan Guru & Karakter)
+   */
+  public async createIndividualStudentComprehensiveDoc(
+    report: ComprehensiveStudentReportData,
+    guruName: string = 'Nurul Hidayah, S.Pd.',
+    guruNip: string = '19850412 201101 2 003',
+    kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+    kepsekNip: string = '19740520 199803 2 004'
+  ): Promise<jsPDF> {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const leftMargin = 14;
+    const usableWidth = pageWidth - 28;
+
+    // 1. Kop Surat Resmi Dual-Logo
+    let currentY = this.addKopSurat(doc, pageWidth, { show: true, alignment: 'dual_logo' });
+    currentY += 3;
+
+    // 2. Document Title Banner
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.roundedRect(leftMargin, currentY, usableWidth, 10, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('LAPORAN RINGKASAN KOMPREHENSIF PERKEMBANGAN SISWA', pageWidth / 2, currentY + 4.5, { align: 'center' });
+    doc.setFontSize(7.5);
+    doc.setTextColor(52, 211, 153); // emerald-400
+    doc.text(`Tahun Ajaran ${report.tahunPelajaran || '2026/2027'} • Semester ${report.semester || 'Ganjil'} • Kurikulum Merdeka Belajar`, pageWidth / 2, currentY + 8, { align: 'center' });
+    currentY += 13;
+
+    // 3. Student Identity Box
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(leftMargin, currentY, usableWidth, 17, 1.5, 1.5, 'FD');
+
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+
+    // Left Column
+    doc.setFont('helvetica', 'normal');
+    doc.text('Nama Peserta Didik', leftMargin + 3, currentY + 4.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`: ${report.siswaNama}`, leftMargin + 32, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('NIS / NISN', leftMargin + 3, currentY + 9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`: ${report.nip || report.siswaId} / ${report.nisn || '-'}`, leftMargin + 32, currentY + 9);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Kelas / Rombel', leftMargin + 3, currentY + 13.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`: ${report.kelas}`, leftMargin + 32, currentY + 13.5);
+
+    // Right Column
+    const colRightX = leftMargin + usableWidth / 2 + 10;
+    doc.setFont('helvetica', 'normal');
+    doc.text('Wali Kelas / Guru', colRightX, currentY + 4.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`: ${guruName}`, colRightX + 26, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Status Ketuntasan KKM', colRightX, currentY + 9);
+    const isTuntas = report.nilaiAkhir >= 75;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(isTuntas ? 22 : 225, isTuntas ? 101 : 29, isTuntas ? 52 : 72);
+    doc.text(`: ${report.kkmStatus || (isTuntas ? 'TUNTAS (>= 75)' : 'BELUM TUNTAS (< 75)')}`, colRightX + 26, currentY + 9);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Predikat / Nilai Akhir', colRightX, currentY + 13.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`: Grade ${report.predikat} (Skor: ${report.nilaiAkhir})`, colRightX + 26, currentY + 13.5);
+
+    currentY += 20;
+
+    // 4. Academic Grades Table
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('A. REKAPITULASI CAPAIAN NILAI MATA PELAJARAN', leftMargin, currentY);
+    currentY += 3;
+
+    const subjectTableRows = (report.subjectGrades || []).map((sub) => [
+      sub.no.toString(),
+      sub.mapel,
+      sub.kkm.toString(),
+      sub.tugas.toString(),
+      sub.kuis.toString(),
+      sub.nilaiAkhir.toString(),
+      sub.predikat,
+      sub.status === 'TUNTAS' ? 'TUNTAS' : 'REMEDIAL',
+      sub.deskripsi,
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['No', 'Mata Pelajaran', 'KKM', 'Tugas', 'Kuis', 'NA', 'Grd', 'Status', 'Deskripsi Capaian Kompetensi Siswa']],
+      body: subjectTableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [22, 101, 52], // emerald-800
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 7,
+        textColor: [51, 65, 85],
+        cellPadding: 1.5,
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 7 },
+        1: { cellWidth: 46, fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: 10 },
+        3: { halign: 'center', cellWidth: 11 },
+        4: { halign: 'center', cellWidth: 11 },
+        5: { halign: 'center', cellWidth: 11, fontStyle: 'bold' },
+        6: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+        7: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+        8: { cellWidth: 'auto' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 7) {
+          const val = String(data.cell.raw);
+          if (val === 'TUNTAS') {
+            data.cell.styles.textColor = [22, 101, 52];
+          } else {
+            data.cell.styles.textColor = [190, 18, 60];
+          }
+        }
+      },
+      margin: { left: leftMargin, right: leftMargin },
+    });
+
+    // @ts-expect-error autoTable adds lastAutoTable
+    currentY = doc.lastAutoTable.finalY + 4;
+
+    // 5. Attendance & Character Highlights Row (Side-by-side)
+    const attWidth = 52;
+    const charWidth = usableWidth - attWidth - 4;
+
+    // Attendance Box (Left)
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(leftMargin, currentY, attWidth, 25, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(22, 101, 52);
+    doc.text('B. REKAPITULASI PRESENSI', leftMargin + 3, currentY + 4.5);
+
+    const att = report.attendanceBreakdown || { hadir: 54, sakit: 1, izin: 1, alpa: 0, totalHari: 56 };
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.2);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Hadir : ${att.hadir} hari`, leftMargin + 3, currentY + 9.5);
+    doc.text(`Sakit : ${att.sakit} hari`, leftMargin + 3, currentY + 13.5);
+    doc.text(`Izin  : ${att.izin} hari`, leftMargin + 3, currentY + 17.5);
+    doc.text(`Alpa  : ${att.alpa} hari`, leftMargin + 3, currentY + 21.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`Kehadiran: ${report.presensiPct}%`, leftMargin + 25, currentY + 11.5);
+
+    // Character & Behavior Box (Right)
+    const charX = leftMargin + attWidth + 4;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(charX, currentY, charWidth, 25, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    const charGrade = report.behaviorHighlights?.overallCharacterGrade || 'BAIK';
+    doc.text(`C. CATATAN KARAKTER & PERILAKU SISWA (Predikat: ${charGrade})`, charX + 3, currentY + 4.5);
+
+    const posNotes = report.behaviorHighlights?.positiveNotes || ['Menunjukkan disiplin belajar dan sopan santun.'];
+    const attNotes = report.behaviorHighlights?.needsAttentionNotes || [];
+
+    const charTextY = currentY + 9;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(22, 101, 52);
+    doc.text('Perilaku Positif / Terpuji:', charX + 3, charTextY);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    const splitPos = doc.splitTextToSize(posNotes[0] || 'Aktif berpartisipasi dan gotong royong.', charWidth - 6);
+    doc.text(splitPos, charX + 3, charTextY + 3.8);
+
+    if (attNotes.length > 0 && attNotes[0] && !attNotes[0].includes('Tidak ada catatan')) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(190, 18, 60);
+      doc.text('Perhatian Khusus / Pembinaan:', charX + 3, charTextY + 9.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      const splitAtt = doc.splitTextToSize(attNotes[0], charWidth - 6);
+      doc.text(splitAtt, charX + 3, charTextY + 13.2);
+    } else {
+      const badges = (report.behaviorHighlights?.characterBadges || ['⭐ Berakhlak Mulia', '🤝 Gotong Royong']).join(' • ');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 64, 175);
+      doc.text('Lencana Karakter:', charX + 3, charTextY + 9.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(badges, charX + 3, charTextY + 13.2);
+    }
+
+    currentY += 28;
+
+    // 6. Teacher Notes & Recommendations Box
+    doc.setFillColor(254, 252, 232); // amber-50
+    doc.setDrawColor(251, 191, 36); // amber-400
+    doc.roundedRect(leftMargin, currentY, usableWidth, 14, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(180, 83, 9); // amber-700
+    doc.text('D. CATATAN & REKOMENDASI WALI KELAS UNTUK ORANG TUA:', leftMargin + 3, currentY + 4);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.2);
+    doc.setTextColor(51, 65, 85);
+    const noteText = report.teacherNotes || `Ananda ${report.siswaNama} menunjukkan semangat belajar yang baik. Mohon pendampingan rutin di rumah dalam literasi dan latihan soal mandiri.`;
+    const splitNote = doc.splitTextToSize(noteText, usableWidth - 6);
+    doc.text(splitNote, leftMargin + 3, currentY + 8);
+
+    currentY += 17;
+
+    // 7. QR Verification & Signature Block
+    try {
+      const qrPayload = `SDNTNG6-COMPREHENSIVE-${report.siswaId}-${report.kelas}-${report.nilaiAkhir}`;
+      const qrDataUrl = await qrService.generateQRCode(qrPayload, 120);
+      doc.addImage(qrDataUrl, 'PNG', leftMargin, currentY, 15, 15);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Dokumen Resmi Terverifikasi Sah', leftMargin + 17, currentY + 4);
+      doc.text(`Kode: ${qrPayload}`, leftMargin + 17, currentY + 8);
+      doc.text('UPT SD Negeri Tangerang 6', leftMargin + 17, currentY + 12);
+    } catch {}
+
+    // Signature Columns
+    const sigColWidth = (usableWidth - 20) / 3;
+    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+
+    // Signer 1: Orang Tua / Wali
+    const s1X = leftMargin + 20 + sigColWidth / 2;
+    doc.text('Mengetahui,', s1X, currentY, { align: 'center' });
+    doc.text('Orang Tua / Wali Siswa', s1X, currentY + 3.8, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text('( ........................................ )', s1X, currentY + 15, { align: 'center' });
+
+    // Signer 2: Kepala Sekolah
+    const s2X = leftMargin + 20 + sigColWidth + sigColWidth / 2;
+    doc.setFont('helvetica', 'normal');
+    doc.text('Mengesahkan,', s2X, currentY, { align: 'center' });
+    doc.text('Kepala UPT SDN Tangerang 6', s2X, currentY + 3.8, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(kepsekName, s2X, currentY + 15, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text(`NIP. ${kepsekNip}`, s2X, currentY + 18.5, { align: 'center' });
+
+    // Signer 3: Wali Kelas
+    const s3X = leftMargin + 20 + sigColWidth * 2 + sigColWidth / 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(`Tangerang, ${dateStr}`, s3X, currentY, { align: 'center' });
+    doc.text('Wali Kelas / Guru Pengampu', s3X, currentY + 3.8, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(guruName, s3X, currentY + 15, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text(`NIP. ${guruNip}`, s3X, currentY + 18.5, { align: 'center' });
+
+    return doc;
+  }
+
+  /**
+   * Generates a comprehensive individual student report PDF and triggers download
+   */
+  public async generateIndividualStudentComprehensivePdf(
+    report: ComprehensiveStudentReportData,
+    guruName: string = 'Nurul Hidayah, S.Pd.',
+    guruNip: string = '19850412 201101 2 003',
+    kepsekName: string = 'Liestya Kusuma Sari, S.Pd., M.Pd.',
+    kepsekNip: string = '19740520 199803 2 004'
+  ): Promise<void> {
+    const doc = await this.createIndividualStudentComprehensiveDoc(report, guruName, guruNip, kepsekName, kepsekNip);
+    const nisSafe = (report.nip || report.siswaId || 'NIS').replace(/[^a-zA-Z0-9_-]/g, '');
+    const filename = `Laporan_Komprehensif_${nisSafe}_${report.siswaNama.replace(/\s+/g, '_')}_${report.kelas.replace(/\s+/g, '_')}.pdf`;
+    doc.save(filename);
+  }
+
+  /**
    * Generates a beautifully styled Kemendikbud-standard P5 Project Report Card (Rapor P5) for a student and triggers download
    */
   public async generateStudentP5ReportPdf(
@@ -1948,7 +2249,8 @@ export class PdfService {
     reports: any[],
     targetClass: string,
     guruName: string = 'Nurul Hidayah, S.Pd.',
-    guruNip: string = '19850412 201101 2 003'
+    guruNip: string = '19850412 201101 2 003',
+    gradingPeriod: string = 'Semester Ganjil TA 2026/2027'
   ): void {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -1976,7 +2278,7 @@ export class PdfService {
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      `Semester Ganjil TA 2026/2027 • Guru Kelas: ${guruName} (NIP. ${guruNip}) • Total ${reports.length} Siswa`,
+      `Periode Penilaian: ${gradingPeriod} • Guru Kelas: ${guruName} (NIP. ${guruNip}) • Total ${reports.length} Siswa`,
       pageWidth / 2,
       currentY,
       { align: 'center' }
@@ -2051,6 +2353,200 @@ export class PdfService {
     });
 
     doc.save(`Rekapitulasi_Nilai_${targetClass.replace(/\s+/g, '_')}_SDN_Tangerang_6.pdf`);
+  }
+
+  /**
+   * Generates a PDF summary of student attendance for the current or selected month,
+   * including counts for Hadir, Sakit, Izin, and Alpa.
+   */
+  public generateMonthlyAttendanceSummaryPdf(options: {
+    targetClass: string;
+    monthYearLabel: string;
+    guruName?: string;
+    guruNip?: string;
+    studentStats: {
+      nis: string;
+      nama: string;
+      hadir: number;
+      sakit: number;
+      izin: number;
+      alpa: number;
+      total: number;
+      percentage: number;
+    }[];
+  }): void {
+    const { targetClass, monthYearLabel, guruName = 'Guru Kelas, S.Pd.', guruNip = '19850412 201101 2 003', studentStats } = options;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const config = db.getConfig();
+
+    this.addKopSurat(doc, pageWidth, {
+      show: true,
+      line1: 'PEMERINTAH KOTA TANGERANG',
+      line2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+      line3: config.SCHOOL_NAME || 'UPT SATUAN PENDIDIKAN SD NEGERI TANGERANG 6',
+      line4: `${config.ADDRESS || 'Jl. Nyi Mas Melati No. 02, RT 05 / RW 08, Kel. Sukarasa, Kec. Tangerang'} • Rombel: ${targetClass}`,
+    });
+
+    let currentY = 46;
+
+    // Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('REKAPITULASI PRESENSI & KEHADIRAN SISWA BULANAN', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      `Bulan: ${monthYearLabel} • Rombongan Belajar: ${targetClass} • Guru Kelas: ${guruName}`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+
+    currentY += 7;
+
+    // Aggregated Summary Statistics Box
+    const totalStudents = studentStats.length;
+    const sumHadir = studentStats.reduce((acc, s) => acc + s.hadir, 0);
+    const sumSakit = studentStats.reduce((acc, s) => acc + s.sakit, 0);
+    const sumIzin = studentStats.reduce((acc, s) => acc + s.izin, 0);
+    const sumAlpa = studentStats.reduce((acc, s) => acc + s.alpa, 0);
+    const avgKehadiran = totalStudents > 0
+      ? Math.round(studentStats.reduce((acc, s) => acc + s.percentage, 0) / totalStudents)
+      : 100;
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, currentY, pageWidth - 28, 14, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL SISWA', 22, currentY + 5);
+    doc.text('TOTAL HADIR', 58, currentY + 5);
+    doc.text('TOTAL SAKIT', 94, currentY + 5);
+    doc.text('TOTAL IZIN', 130, currentY + 5);
+    doc.text('TOTAL ALPA', 164, currentY + 5);
+
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${totalStudents} Siswa`, 22, currentY + 10.5);
+
+    doc.setTextColor(22, 101, 52); // Emerald
+    doc.text(`${sumHadir} Hari`, 58, currentY + 10.5);
+
+    doc.setTextColor(180, 83, 9); // Amber
+    doc.text(`${sumSakit} Hari`, 94, currentY + 10.5);
+
+    doc.setTextColor(30, 64, 175); // Blue
+    doc.text(`${sumIzin} Hari`, 130, currentY + 10.5);
+
+    doc.setTextColor(185, 28, 28); // Rose/Red
+    doc.text(`${sumAlpa} Hari (${avgKehadiran}%)`, 164, currentY + 10.5);
+
+    currentY += 18;
+
+    // Table Rows
+    const tableRows = studentStats.map((st, idx) => {
+      const predikat = st.percentage >= 95 ? 'Sangat Baik' : st.percentage >= 85 ? 'Baik' : st.percentage >= 75 ? 'Cukup' : 'Perlu Perhatian';
+      return [
+        idx + 1,
+        st.nis,
+        st.nama,
+        st.hadir,
+        st.sakit,
+        st.izin,
+        st.alpa,
+        `${st.percentage}%`,
+        predikat,
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [
+        [
+          'No',
+          'NIS/ID',
+          'Nama Lengkap Siswa',
+          'Hadir (H)',
+          'Sakit (S)',
+          'Izin (I)',
+          'Alpa (A)',
+          '% Hadir',
+          'Kategori Keaktifan',
+        ],
+      ],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [16, 185, 129], // Emerald green
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8.5,
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 8,
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        1: { halign: 'center', cellWidth: 22 },
+        2: { cellWidth: 55, fontStyle: 'bold' },
+        3: { halign: 'center', cellWidth: 16 },
+        4: { halign: 'center', cellWidth: 16 },
+        5: { halign: 'center', cellWidth: 16 },
+        6: { halign: 'center', cellWidth: 16 },
+        7: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+        8: { halign: 'center', cellWidth: 'auto', fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-expect-error autoTable finalY
+    let finalY = doc.lastAutoTable.finalY + 8;
+
+    if (finalY + 35 > doc.internal.pageSize.getHeight()) {
+      doc.addPage();
+      finalY = 20;
+    }
+
+    // Signatures
+    const kepsekName = config.HEADMASTER || 'Liestya Kusuma Sari, S.Pd., M.Pd.';
+    const kepsekNip = config.HEADMASTER_NIP || '19740520 199803 2 004';
+    const city = config.BA_DEFAULT_CITY || config.REPORT_SIGNATURE_CITY || 'Tangerang';
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+
+    doc.text('Mengetahui,', 24, finalY);
+    doc.text('Kepala UPT SDN Tangerang 6', 24, finalY + 4.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(kepsekName, 24, finalY + 22);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`NIP. ${kepsekNip}`, 24, finalY + 26);
+
+    const todayStr = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    doc.text(`${city}, ${todayStr}`, 130, finalY);
+    doc.text('Guru Kelas / Wali Kelas,', 130, finalY + 4.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(guruName, 130, finalY + 22);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`NIP. ${guruNip}`, 130, finalY + 26);
+
+    // Save PDF
+    const safeClass = targetClass.replace(/\s+/g, '_');
+    const safeMonth = monthYearLabel.replace(/\s+/g, '_');
+    doc.save(`Rekap_Presensi_Bulanan_${safeClass}_${safeMonth}.pdf`);
   }
 
   /**
@@ -3308,7 +3804,865 @@ export class PdfService {
     doc.save(fileName);
     return doc;
   }
+
+  /**
+   * Generates a high-fidelity Executive Summary Report PDF for the School Principal
+   * consolidating P5 Analytics, Subject Grade Trends, and KKM Target Evaluations.
+   */
+  public async generateExecutiveP5AndGradeTrendPdf(
+    options: ExecutiveP5AndGradeReportOptions = {}
+  ): Promise<jsPDF> {
+    const doc = new jsPDF('portrait', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const leftMargin = 14;
+    const rightMargin = pageWidth - 14;
+    const usableWidth = rightMargin - leftMargin;
+    const config = db.getConfig();
+
+    const targetClass = options.targetClass || 'Semua Kelas (Fase A - C)';
+    const academicYear = options.schoolYear || '2026/2027';
+    const semester = options.semester || 'Semester Ganjil';
+    const headmasterName = config.HEADMASTER || 'Liestya Kusuma Sari, S.Pd., M.Pd.';
+    const headmasterNip = config.HEADMASTER_NIP || '19740520 199803 2 004';
+    const coordinatorName = options.guruNama || 'Koordinator Kurikulum & P5';
+    const coordinatorNip = options.guruNip || '19820315 200801 1 007';
+
+    // 1. Kop Surat Resmi
+    let currentY = this.addKopSurat(doc, pageWidth, { show: true, alignment: 'dual_logo' });
+    currentY += 4;
+
+    // 2. Header & Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.5);
+    doc.setTextColor(22, 101, 52); // emerald-800
+    doc.text('LAPORAN RINGKASAN EKSEKUTIF KEPALA SEKOLAH', pageWidth / 2, currentY, { align: 'center' });
+    currentY += 5;
+
+    doc.setFontSize(9);
+    doc.setTextColor(30, 41, 59);
+    doc.text('ANALITIK KETERCAPAIAN P5 & TREN CAPAIAN NILAI AKADEMIK PER MAPEL', pageWidth / 2, currentY, { align: 'center' });
+    currentY += 4;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    const docNo = `Nomor: 421.2/EKS-P5-TREN/SDN6/${new Date().getFullYear()}`;
+    doc.text(docNo, pageWidth / 2, currentY, { align: 'center' });
+    currentY += 5;
+
+    // 3. Metadata Context Box
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(leftMargin, currentY, usableWidth, 12, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text('Rombel Sasaran:', leftMargin + 4, currentY + 4.5);
+    doc.text('Tahun Ajaran / Sem:', leftMargin + 4, currentY + 9);
+    doc.text('Tanggal Cetak:', leftMargin + 95, currentY + 4.5);
+    doc.text('Pengawas Pembina:', leftMargin + 95, currentY + 9);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(targetClass, leftMargin + 32, currentY + 4.5);
+    doc.text(`${academicYear} (${semester})`, leftMargin + 32, currentY + 9);
+    doc.text(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), leftMargin + 124, currentY + 4.5);
+    doc.text((config as any).SUPERVISOR_NAME || 'Pengawas Wilayah Binaan Kec. Tangerang', leftMargin + 124, currentY + 9);
+
+    currentY += 15;
+
+    // 4. Executive KPI Summary Cards
+    const cardWidth = (usableWidth - 9) / 4;
+    const cardHeight = 15;
+    const kpiCards = [
+      { label: 'Projek P5 Aktif', value: '6 Tema', sub: 'Rata-rata 64% Selesai', fill: [236, 253, 245], border: [167, 243, 208], text: [6, 95, 70] },
+      { label: 'Rata-rata Kelas', value: '81.4', sub: 'Skala Asesmen 0-100', fill: [239, 246, 255], border: [191, 219, 254], text: [30, 64, 175] },
+      { label: 'Ketuntasan KKM', value: '88.5%', sub: 'Target Minimum 75', fill: [240, 253, 244], border: [187, 247, 208], text: [21, 128, 61] },
+      { label: 'Prioritas Remedial', value: '3 Siswa', sub: 'Butuh Pendampingan', fill: [254, 242, 242], border: [254, 202, 202], text: [185, 28, 28] },
+    ];
+
+    kpiCards.forEach((card, idx) => {
+      const cardX = leftMargin + idx * (cardWidth + 3);
+      doc.setFillColor(card.fill[0], card.fill[1], card.fill[2]);
+      doc.setDrawColor(card.border[0], card.border[1], card.border[2]);
+      doc.roundedRect(cardX, currentY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(card.text[0], card.text[1], card.text[2]);
+      doc.text(card.label, cardX + 3, currentY + 4.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text(card.value, cardX + 3, currentY + 9.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(card.sub, cardX + 3, currentY + 13);
+    });
+
+    currentY += cardHeight + 5;
+
+    // 5. Section 1: Visual Analitik Projek Penguatan Profil Pelajar Pancasila (P5)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(22, 101, 52);
+    doc.text('I. PORTOFOLIO PROGRES PROJEK P5 PER TINGKAT ROMBEL', leftMargin, currentY);
+    currentY += 2;
+
+    const p5Projects = classroomService.getP5Projects();
+    const p5TableRows = p5Projects.map((p, i) => {
+      const activeStage = p.STAGES.find(s => s.STATUS === 'SEDANG_BERJALAN') || p.STAGES[p.STAGES.length - 1];
+      const stageName = activeStage ? activeStage.NAME.replace(/^Tahap \d+: /, '') : '-';
+      const statusLabel = p.PERCENTAGE >= 75 ? 'Optimal' : p.PERCENTAGE >= 40 ? 'Sesuai Rencana' : 'Awal Mulai';
+      return [
+        (i + 1).toString(),
+        p.KELAS,
+        p.TEMA,
+        p.JUDUL,
+        p.DIMENSI.slice(0, 2).join(', '),
+        stageName,
+        `${p.PERCENTAGE}%`,
+        statusLabel
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: leftMargin, right: 14 },
+      head: [['No', 'Kelas', 'Tema P5', 'Judul Projek', 'Dimensi Terlatih', 'Tahapan Berjalan', 'Progres', 'Status']],
+      body: p5TableRows,
+      theme: 'grid',
+      styles: {
+        font: 'helvetica',
+        fontSize: 6.5,
+        cellPadding: 1.8,
+        lineColor: [226, 232, 240],
+        lineWidth: 0.15,
+        textColor: [30, 41, 59],
+      },
+      headStyles: {
+        fillColor: [22, 101, 52],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 6.8,
+        halign: 'center',
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 7 },
+        1: { halign: 'center', cellWidth: 15, fontStyle: 'bold' },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 50 },
+        4: { cellWidth: 32 },
+        5: { cellWidth: 26 },
+        6: { halign: 'center', cellWidth: 13, fontStyle: 'bold' },
+        7: { halign: 'center', cellWidth: 13 },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 6) {
+          const val = parseInt(data.cell.raw as string, 10);
+          if (val >= 60) {
+            data.cell.styles.textColor = [22, 101, 52];
+          } else {
+            data.cell.styles.textColor = [194, 65, 12];
+          }
+        }
+      }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 5;
+
+    // Check page overflow before Section 2
+    if (currentY > pageHeight - 75) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    // 6. Section 2: Matriks Tren Nilai Akademik & Target KKM Mapel
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(22, 101, 52);
+    doc.text('II. MATRIKS TREN NILAI AKADEMIK & TARGET KKM PER MATA PELAJARAN', leftMargin, currentY);
+    currentY += 2;
+
+    const kkmTargets = classroomService.getSubjectKkmTargets();
+    const targetKelasSample = options.targetClass && options.targetClass !== 'Semua' ? options.targetClass : 'Kelas 5A';
+    
+    const subjectList = Object.keys(kkmTargets);
+    const gradeTableRows = subjectList.map((subject, idx) => {
+      const targetKkm = kkmTargets[subject] || 75;
+      const classAvg = classroomService.getSubjectClassAverage(targetKelasSample, subject);
+      const delta = classAvg - targetKkm;
+      const deltaSign = delta > 0 ? `+${delta}` : `${delta}`;
+      const trend = delta >= 4 ? '↗ Meningkat' : delta >= 0 ? '→ Stabil' : '↘ Perlu Atensi';
+      const statusKkm = classAvg >= targetKkm ? 'Tuntas' : 'Di Bawah Target';
+      const tindakLanjut = classAvg >= targetKkm
+        ? 'Pertahankan capaian, lakukan pengayaan materi'
+        : 'Intervensi bimbingan terfokus & asesmen diagnostik';
+
+      return [
+        (idx + 1).toString(),
+        subject,
+        targetKkm.toString(),
+        classAvg.toString(),
+        deltaSign,
+        trend,
+        statusKkm,
+        tindakLanjut
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: leftMargin, right: 14 },
+      head: [['No', 'Mata Pelajaran', 'Target KKM', 'Rata-rata', 'Selisih', 'Tren Kinerja', 'Status Ketuntasan', 'Rekomendasi Tindak Lanjut']],
+      body: gradeTableRows,
+      theme: 'grid',
+      styles: {
+        font: 'helvetica',
+        fontSize: 6.5,
+        cellPadding: 1.8,
+        lineColor: [226, 232, 240],
+        lineWidth: 0.15,
+        textColor: [30, 41, 59],
+      },
+      headStyles: {
+        fillColor: [30, 58, 138], // navy blue header
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 6.8,
+        halign: 'center',
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 7 },
+        1: { cellWidth: 32, fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: 16 },
+        3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+        4: { halign: 'center', cellWidth: 14 },
+        5: { halign: 'center', cellWidth: 22 },
+        6: { halign: 'center', cellWidth: 23 },
+        7: { cellWidth: 52 },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          if (data.column.index === 4) {
+            const rawVal = data.cell.raw as string;
+            if (rawVal.startsWith('+')) {
+              data.cell.styles.textColor = [22, 101, 52];
+              data.cell.styles.fontStyle = 'bold';
+            } else if (rawVal.startsWith('-')) {
+              data.cell.styles.textColor = [220, 38, 38];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+          if (data.column.index === 6) {
+            const rawVal = data.cell.raw as string;
+            if (rawVal === 'Di Bawah Target') {
+              data.cell.styles.textColor = [220, 38, 38];
+              data.cell.styles.fontStyle = 'bold';
+            } else {
+              data.cell.styles.textColor = [22, 101, 52];
+            }
+          }
+        }
+      }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 4;
+
+    // Check page overflow before Notes & Signatures
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    // 7. Catatan Supervisi Strategis Kepala Sekolah
+    doc.setFillColor(254, 252, 232); // amber-50
+    doc.setDrawColor(254, 240, 138); // amber-200
+    doc.roundedRect(leftMargin, currentY, usableWidth, 14, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(161, 98, 7);
+    doc.text('CATATAN SUPERVISI MANAJERIAL KEPALA SEKOLAH:', leftMargin + 3, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(51, 65, 85);
+    const catText = '1. Seluruh guru kelas diinstruksikan menjaga ritme gelar karya P5 agar tuntas sesuai jadwal akademik semester.\n2. Mata pelajaran dengan capaian di bawah target KKM wajib ditindaklanjuti dengan klinik belajar remedial dan penyediaan variasi LKPD berdiferensiasi.';
+    doc.text(catText, leftMargin + 3, currentY + 8);
+
+    currentY += 18;
+
+    // 8. Signatures Block with Digital QR Endorsement
+    const city = config.BA_DEFAULT_CITY || config.REPORT_SIGNATURE_CITY || 'Tangerang';
+    const todayFormatted = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const leftSigX = leftMargin + 25;
+    const rightSigX = rightMargin - 25;
+    const centerSigX = pageWidth / 2;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Mengetahui / Memeriksa,', leftSigX, currentY, { align: 'center' });
+    doc.text('Koordinator Kurikulum & P5,', leftSigX, currentY + 4, { align: 'center' });
+
+    doc.text(`${city}, ${todayFormatted}`, rightSigX, currentY, { align: 'center' });
+    doc.text('Kepala UPT Satuan Pendidikan,', rightSigX, currentY + 4, { align: 'center' });
+
+    // Official Digital QR Validation
+    try {
+      const qrPayload = `SDN6-EKSEKUTIF-P5-TREN-2026-${Date.now().toString().slice(-6)}`;
+      const qrDataUrl = await qrService.generateQRCode(qrPayload, 110);
+      if (qrDataUrl) {
+        doc.addImage(qrDataUrl, 'PNG', centerSigX - 8, currentY - 1, 16, 16);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(22, 101, 52);
+        doc.text('VALIDASI DIGITAL RESMI', centerSigX, currentY + 17, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(4.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Sistem Informasi SDN Tangerang 6', centerSigX, currentY + 19.5, { align: 'center' });
+      }
+    } catch {
+      // ignore
+    }
+
+    // Signer Names
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(coordinatorName, leftSigX, currentY + 22, { align: 'center' });
+    doc.line(leftSigX - 22, currentY + 23, leftSigX + 22, currentY + 23);
+
+    doc.text(headmasterName, rightSigX, currentY + 22, { align: 'center' });
+    doc.line(rightSigX - 22, currentY + 23, rightSigX + 22, currentY + 23);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`NIP. ${coordinatorNip}`, leftSigX, currentY + 26.5, { align: 'center' });
+    doc.text(`NIP. ${headmasterNip}`, rightSigX, currentY + 26.5, { align: 'center' });
+
+    // 9. Running Page Numbers & Document Footer on All Pages
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, pageHeight - 9, rightMargin, pageHeight - 9);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.2);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Laporan Eksekutif P5 & Tren KKM • UPT SDN Tangerang 6 • Dicetak: ${new Date().toLocaleString('id-ID')}`,
+        leftMargin,
+        pageHeight - 5.5
+      );
+      doc.text(`Halaman ${i} dari ${totalPages}`, rightMargin, pageHeight - 5.5, { align: 'right' });
+    }
+
+    const safeDate = new Date().toISOString().slice(0, 10);
+    const fileName = `Laporan_Eksekutif_P5_dan_Tren_Nilai_SDN6_${safeDate}.pdf`;
+
+    if (options.autoPrint) {
+      doc.autoPrint();
+    }
+    doc.save(fileName);
+    return doc;
+  }
+
+  /**
+   * Generates a comprehensive Monthly Class Performance Executive Report PDF
+   * including grade trend visualizations, subject KKM matrix, and a dedicated roster
+   * of students requiring special intervention.
+   */
+  public async generateMonthlyClassPerformanceExecutivePdf(
+    options: MonthlyClassExecutivePdfOptions
+  ): Promise<jsPDF> {
+    const doc = new jsPDF('portrait', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const leftMargin = 14;
+    const rightMargin = pageWidth - 14;
+    const usableWidth = rightMargin - leftMargin;
+    const config = db.getConfig();
+
+    const targetClass = options.kelas || 'Kelas 4';
+    const monthPeriod = options.bulan || 'November 2026';
+    const academicYear = options.schoolYear || '2026/2027';
+    const semester = options.semester || 'Semester Ganjil';
+    const headmasterName = config.HEADMASTER || 'Liestya Kusuma Sari, S.Pd., M.Pd.';
+    const headmasterNip = config.HEADMASTER_NIP || '19740520 199803 2 004';
+    const waliKelasName = options.waliKelas || 'Dewi Lestari, S.Pd.SD.';
+    const waliKelasNip = options.waliKelasNip || '19850612 201001 2 015';
+
+    // 1. Kop Surat Resmi Dual-Logo
+    let currentY = this.addKopSurat(doc, pageWidth, { show: true, alignment: 'dual_logo' });
+    currentY += 4;
+
+    // 2. Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(22, 101, 52); // emerald-800
+    doc.text('LAPORAN RINGKASAN EKSEKUTIF PERFORMA KELAS BULANAN', pageWidth / 2, currentY, { align: 'center' });
+    currentY += 4.8;
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`EVALUASI CAPAIAN NILAI AKADEMIK, TREN KETUNTASAN & DAFTAR SISWA INTERVENSI KHUSUS`, pageWidth / 2, currentY, { align: 'center' });
+    currentY += 4.5;
+
+    // 3. Metadata Card
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(leftMargin, currentY, usableWidth, 12.5, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text('Rombongan Belajar:', leftMargin + 4, currentY + 4.5);
+    doc.text('Periode Evaluasi:', leftMargin + 4, currentY + 9);
+    doc.text('Wali Kelas:', leftMargin + 95, currentY + 4.5);
+    doc.text('Pengawas Wilayah:', leftMargin + 95, currentY + 9);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(targetClass, leftMargin + 32, currentY + 4.5);
+    doc.text(`${monthPeriod} • ${academicYear} (${semester})`, leftMargin + 32, currentY + 9);
+    doc.text(waliKelasName, leftMargin + 124, currentY + 4.5);
+    doc.text((config as any).SUPERVISOR_NAME || 'Pengawas Wilayah Binaan Kec. Tangerang', leftMargin + 124, currentY + 9);
+
+    currentY += 15.5;
+
+    // 4. Data retrieval
+    const specialStudents = classroomService.getSpecialInterventionStudents(targetClass);
+    const errorPatterns = classroomService.getAssignmentErrorPatterns(targetClass);
+    const weeklyTrends = classroomService.getWeeklyClassGradeTrends(targetClass);
+    const kkmTargets = classroomService.getSubjectKkmTargets();
+
+    // Calculate aggregated metrics
+    const subjects = ['Matematika', 'Bahasa Indonesia', 'IPAS', 'Pendidikan Pancasila', 'PJOK', 'Seni Budaya'];
+    const subjectAverages = subjects.map((subj) => {
+      const avg = classroomService.getSubjectClassAverage(targetClass, subj);
+      const targetKkm = kkmTargets[subj] || 75;
+      return {
+        subject: subj,
+        avg,
+        targetKkm,
+        diff: avg - targetKkm,
+        isPassed: avg >= targetKkm,
+      };
+    });
+
+    const classAvgOverall = Math.round(
+      subjectAverages.reduce((acc, curr) => acc + curr.avg, 0) / subjectAverages.length
+    );
+    const passedSubjectsCount = subjectAverages.filter((s) => s.isPassed).length;
+    const kkmPassRate = Math.round((passedSubjectsCount / subjectAverages.length) * 100);
+
+    // 5. Executive KPI Cards (4 Cards)
+    const cardWidth = (usableWidth - 9) / 4;
+    const cardHeight = 15;
+    const kpiCards = [
+      {
+        label: 'Rata-rata Kelas',
+        value: `${classAvgOverall}`,
+        sub: classAvgOverall >= 78 ? 'Target Tercapai (Baik)' : 'Di Bawah Standar KKM',
+        fill: classAvgOverall >= 78 ? [236, 253, 245] : [254, 242, 242],
+        border: classAvgOverall >= 78 ? [167, 243, 208] : [254, 202, 202],
+        text: classAvgOverall >= 78 ? [6, 95, 70] : [185, 28, 28],
+      },
+      {
+        label: 'Ketuntasan Mapel',
+        value: `${kkmPassRate}%`,
+        sub: `${passedSubjectsCount} dari ${subjectAverages.length} Mapel Tuntas`,
+        fill: [239, 246, 255],
+        border: [191, 219, 254],
+        text: [30, 64, 175],
+      },
+      {
+        label: 'Siswa Intervensi',
+        value: `${specialStudents.length} Siswa`,
+        sub: 'Butuh Bimbingan Khusus',
+        fill: [254, 242, 242],
+        border: [254, 202, 202],
+        text: [185, 28, 28],
+      },
+      {
+        label: 'Pola Miskonsepsi',
+        value: `${errorPatterns.length} Pola`,
+        sub: errorPatterns[0]?.category || 'Numerasi & Literasi',
+        fill: [255, 251, 235],
+        border: [254, 240, 138],
+        text: [161, 98, 7],
+      },
+    ];
+
+    kpiCards.forEach((card, idx) => {
+      const cardX = leftMargin + idx * (cardWidth + 3);
+      doc.setFillColor(card.fill[0], card.fill[1], card.fill[2]);
+      doc.setDrawColor(card.border[0], card.border[1], card.border[2]);
+      doc.roundedRect(cardX, currentY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(card.text[0], card.text[1], card.text[2]);
+      doc.text(card.label, cardX + 3, currentY + 4.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text(card.value, cardX + 3, currentY + 9.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(card.sub, cardX + 3, currentY + 13);
+    });
+
+    currentY += cardHeight + 5;
+
+    // 6. Section I: Visualisasi Tren Nilai Mingguan & Matriks Capaian Mapel
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(22, 101, 52);
+    doc.text('I. VISUALISASI TREN PERFORMA MINGGUAN & CAPAIAN MATA PELAJARAN', leftMargin, currentY);
+    currentY += 3;
+
+    // Visual Trend Bar Chart Representation (Pekan 1 s/d 4)
+    const trendBoxWidth = usableWidth;
+    const trendBoxHeight = 22;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(leftMargin, currentY, trendBoxWidth, trendBoxHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Grafik Tren Nilai Gabungan Pekan 1 s/d Pekan 4 (Garis Ambang KKM = 75):', leftMargin + 4, currentY + 4);
+
+    const weeksToShow = weeklyTrends.slice(0, 4);
+    const barSpacing = (trendBoxWidth - 16) / weeksToShow.length;
+
+    weeksToShow.forEach((week, wIdx) => {
+      const baseX = leftMargin + 8 + wIdx * barSpacing;
+      const barW = barSpacing - 12;
+      const score = week.rataRataGabungan;
+      const barH = Math.max(3, ((score - 50) / 50) * 11);
+      const barY = currentY + 18 - barH;
+
+      // Draw background bar
+      doc.setFillColor(226, 232, 240);
+      doc.rect(baseX, currentY + 7, barW, 11, 'F');
+
+      // Draw filled score bar
+      if (score >= 75) {
+        doc.setFillColor(34, 197, 94); // emerald-500
+      } else {
+        doc.setFillColor(239, 68, 68); // red-500
+      }
+      doc.roundedRect(baseX, barY, barW, barH, 0.8, 0.8, 'F');
+
+      // Score text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${score}`, baseX + barW / 2, barY - 1, { align: 'center' });
+
+      // Week label
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(week.minggu, baseX + barW / 2, currentY + 20.5, { align: 'center' });
+    });
+
+    currentY += trendBoxHeight + 3.5;
+
+    // Subject Performance Table
+    const subjectTableRows = subjectAverages.map((s) => [
+      s.subject,
+      `${s.targetKkm}`,
+      `${s.avg}`,
+      s.diff >= 0 ? `+${s.diff}` : `${s.diff}`,
+      s.isPassed ? 'TUNTAS' : 'BELUM TUNTAS',
+      s.isPassed
+        ? 'Memenuhi Standar Kurikulum Merdeka'
+        : 'Perlu Penguatan Materi & Remedial Terstruktur',
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: leftMargin, right: 14 },
+      head: [['Mata Pelajaran', 'KKM Target', 'Rerata Kelas', 'Deviasi', 'Status', 'Catatan Evaluasi Guru']],
+      body: subjectTableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [22, 101, 52],
+        textColor: [255, 255, 255],
+        fontSize: 6.8,
+        fontStyle: 'bold',
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 6.3,
+        textColor: [30, 41, 59],
+        cellPadding: 1.8,
+      },
+      columnStyles: {
+        0: { cellWidth: 38, fontStyle: 'bold' },
+        1: { cellWidth: 20, halign: 'center' },
+        2: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+        3: { cellWidth: 18, halign: 'center' },
+        4: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
+        5: { cellWidth: 'auto' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          if (data.column.index === 3) {
+            const raw = String(data.cell.raw);
+            if (raw.startsWith('+')) {
+              data.cell.styles.textColor = [22, 101, 52];
+            } else if (raw.startsWith('-')) {
+              data.cell.styles.textColor = [220, 38, 38];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+          if (data.column.index === 4) {
+            const raw = String(data.cell.raw);
+            if (raw === 'BELUM TUNTAS') {
+              data.cell.styles.textColor = [220, 38, 38];
+              data.cell.styles.fillColor = [254, 242, 242];
+            } else {
+              data.cell.styles.textColor = [22, 101, 52];
+            }
+          }
+        }
+      },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 5;
+
+    // Check if we need a new page for Special Intervention Roster
+    if (currentY > pageHeight - 75) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    // 7. Section II: Daftar Siswa yang Memerlukan Intervensi Khusus (Mandatory User Requirement)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(185, 28, 28); // red-700
+    doc.text('II. DAFTAR SISWA MEMERLUKAN INTERVENSI KHUSUS & REKOMENDASI REMEDIAL', leftMargin, currentY);
+    currentY += 3;
+
+    const interventionRows = specialStudents.length > 0
+      ? specialStudents.map((st, sIdx) => [
+          `${sIdx + 1}`,
+          `${st.siswaNama}\nNISN: ${st.nisn}`,
+          `${st.averageScore}\n(KKM: 75)`,
+          st.criticalSubjects.join(', ') || 'Matematika / IPAS',
+          st.frequentErrorPatterns.join('; ') || 'Pemahaman Nilai Tempat & Pecahan',
+          st.interventionStrategy,
+          st.status === 'SEDANG_REMEDIAL' ? 'Sedang Remedial' : 'Perlu Pendampingan',
+        ])
+      : [
+          [
+            '1',
+            'Seluruh Siswa Memenuhi Target KKM',
+            '82',
+            '-',
+            'Tidak ada miskonsepsi kritis terdeteksi',
+            'Pertahankan program pengayaan bertingkat (enrichment)',
+            'Tuntas',
+          ],
+        ];
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: leftMargin, right: 14 },
+      head: [
+        [
+          'No',
+          'Nama Siswa & NISN',
+          'Rerata',
+          'Mapel Kritis',
+          'Pola Kesalahan / Miskonsepsi Utama',
+          'Rencana Tindak Lanjut & Modul Rekomendasi',
+          'Status',
+        ],
+      ],
+      body: interventionRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [185, 28, 28], // red-700
+        textColor: [255, 255, 255],
+        fontSize: 6.5,
+        fontStyle: 'bold',
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 6,
+        textColor: [30, 41, 59],
+        cellPadding: 1.8,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 32, fontStyle: 'bold' },
+        2: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 38 },
+        5: { cellWidth: 'auto' },
+        6: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          if (data.column.index === 2) {
+            data.cell.styles.textColor = [220, 38, 38];
+          }
+          if (data.column.index === 6) {
+            const raw = String(data.cell.raw);
+            if (raw === 'Perlu Pendampingan') {
+              data.cell.styles.textColor = [185, 28, 28];
+              data.cell.styles.fillColor = [254, 242, 242];
+            } else {
+              data.cell.styles.textColor = [30, 64, 175];
+              data.cell.styles.fillColor = [239, 246, 255];
+            }
+          }
+        }
+      },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 4;
+
+    // Check overflow before Supervisory Notes & Signatures
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    // 8. Section III: Catatan Arahan Kepala Sekolah & Komitmen Wali Kelas
+    doc.setFillColor(254, 252, 232); // amber-50
+    doc.setDrawColor(254, 240, 138); // amber-200
+    doc.roundedRect(leftMargin, currentY, usableWidth, 14, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(161, 98, 7);
+    doc.text('ARAHAN SUPERVISI KEPALA SEKOLAH & TINDAK LANJUT GURU KELAS:', leftMargin + 3, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(51, 65, 85);
+    const notesText =
+      '1. Siswa pada daftar intervensi khusus wajib diberikan bimbingan modul scaffolding terjadwal 2x seminggu.\n2. Guru kelas mengintegrasikan asesmen formatif adaptif dan melaporkan progres mingguan kepada wali murid.';
+    doc.text(notesText, leftMargin + 3, currentY + 8);
+
+    currentY += 18;
+
+    // 9. Signatures Block with Digital QR Validation
+    const city = config.BA_DEFAULT_CITY || config.REPORT_SIGNATURE_CITY || 'Tangerang';
+    const todayFormatted = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const leftSigX = leftMargin + 25;
+    const rightSigX = rightMargin - 25;
+    const centerSigX = pageWidth / 2;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Mengetahui / Mengesahkan,', leftSigX, currentY, { align: 'center' });
+    doc.text('Guru / Wali Kelas,', leftSigX, currentY + 4, { align: 'center' });
+
+    doc.text(`${city}, ${todayFormatted}`, rightSigX, currentY, { align: 'center' });
+    doc.text('Kepala UPT Satuan Pendidikan,', rightSigX, currentY + 4, { align: 'center' });
+
+    // Embed Verification QR
+    try {
+      const qrPayload = `SDN6-EKSEKUTIF-BULANAN-${targetClass.replace(/\s+/g, '')}-${monthPeriod.replace(/\s+/g, '')}-${Date.now().toString().slice(-6)}`;
+      const qrDataUrl = await qrService.generateQRCode(qrPayload, 110);
+      if (qrDataUrl) {
+        doc.addImage(qrDataUrl, 'PNG', centerSigX - 8, currentY - 1, 16, 16);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(22, 101, 52);
+        doc.text('VALIDASI DIGITAL RESMI', centerSigX, currentY + 17, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(4.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Sistem Informasi SDN Tangerang 6', centerSigX, currentY + 19.5, { align: 'center' });
+      }
+    } catch {
+      // ignore
+    }
+
+    // Signatures
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(waliKelasName, leftSigX, currentY + 22, { align: 'center' });
+    doc.line(leftSigX - 22, currentY + 23, leftSigX + 22, currentY + 23);
+
+    doc.text(headmasterName, rightSigX, currentY + 22, { align: 'center' });
+    doc.line(rightSigX - 22, currentY + 23, rightSigX + 22, currentY + 23);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`NIP. ${waliKelasNip}`, leftSigX, currentY + 26.5, { align: 'center' });
+    doc.text(`NIP. ${headmasterNip}`, rightSigX, currentY + 26.5, { align: 'center' });
+
+    // 10. Running Page Numbers on all pages
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, pageHeight - 9, rightMargin, pageHeight - 9);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.2);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Laporan Eksekutif Bulanan • ${targetClass} • SDN Tangerang 6 • Dicetak: ${new Date().toLocaleString('id-ID')}`,
+        leftMargin,
+        pageHeight - 5.5
+      );
+      doc.text(`Halaman ${i} dari ${totalPages}`, rightMargin, pageHeight - 5.5, { align: 'right' });
+    }
+
+    const safeClass = targetClass.replace(/\s+/g, '_');
+    const safeMonth = monthPeriod.replace(/\s+/g, '_');
+    const fileName = `Laporan_Eksekutif_Bulanan_${safeClass}_${safeMonth}.pdf`;
+
+    doc.save(fileName);
+    return doc;
+  }
 }
+
+export interface ExecutiveP5AndGradeReportOptions {
+  targetClass?: string;
+  schoolYear?: string;
+  semester?: string;
+  guruNama?: string;
+  guruNip?: string;
+  autoPrint?: boolean;
+}
+
 
 export interface QRScanLogItem {
   id: string;

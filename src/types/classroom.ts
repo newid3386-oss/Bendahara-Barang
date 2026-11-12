@@ -69,6 +69,21 @@ export interface ClassroomAssignment {
   IS_PRIORITY?: boolean;
 }
 
+export interface GradeChangeLog {
+  ID: string;
+  SISWA_ID: string;
+  SISWA_NAMA?: string;
+  SUBMISSION_ID?: string;
+  ASSIGNMENT_ID?: string;
+  ASSIGNMENT_TITLE?: string;
+  OLD_NILAI?: number;
+  NEW_NILAI: number;
+  DIFF?: number;
+  CHANGED_AT: string;
+  CHANGED_BY: string;
+  REASON?: string;
+}
+
 export interface ClassroomSubmission {
   ID: string;
   ASSIGNMENT_ID: string;
@@ -84,6 +99,7 @@ export interface ClassroomSubmission {
   VOICE_NOTE?: string;
   GRADED_BY?: string;
   GRADED_AT?: string;
+  GRADE_HISTORY?: GradeChangeLog[];
 }
 
 export interface ClassroomReport {
@@ -214,6 +230,30 @@ export interface ClassScheduleItem {
   RUANGAN: string;
 }
 
+// 5b. Sesi & Jadwal Bimbingan Remedial Khusus (Terintegrasi dengan Kalender Kelas)
+export type RemedialSessionStatus = 'TERJADWAL' | 'SELESAI' | 'DIBATALKAN';
+
+export interface RemedialGuidanceSession {
+  ID: string;
+  SISWA_ID: string;
+  SISWA_NAMA: string;
+  KELAS: string;
+  MAPEL: string;
+  TOPIK: string;
+  TANGGAL: string; // "YYYY-MM-DD"
+  HARI: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu';
+  JAM_MULAI: string; // "13:00"
+  JAM_SELESAI: string; // "14:00"
+  RUANGAN: string;
+  GURU_ID: string;
+  GURU_NAMA: string;
+  CATATAN?: string;
+  TARGET_KOMPETENSI?: string;
+  STATUS: RemedialSessionStatus;
+  SCHEDULE_ID?: string; // ID item ClassScheduleItem di kalender kelas
+  CREATED_AT: string;
+}
+
 // 6. Media Pembelajaran Interaktif (Guru buat, Siswa kerjakan, Kepsek monitor)
 export type MediaType = 'VIDEO' | 'MODUL_EBOOK' | 'INTERAKTIF' | 'INFOGRAFIS' | 'AUDIO';
 
@@ -269,7 +309,7 @@ export interface ClassroomNotification {
   KELAS?: string;
   TITLE: string;
   MESSAGE: string;
-  TYPE: 'DEADLINE' | 'LIVE_CLASS' | 'GRADE' | 'FORUM' | 'MATERIAL';
+  TYPE: 'DEADLINE' | 'LIVE_CLASS' | 'GRADE' | 'FORUM' | 'MATERIAL' | 'SYSTEM' | 'KKM_ALERT';
   LINK_PAGE?: string; // target view tab
   CREATED_AT: string;
   IS_READ: boolean;
@@ -332,6 +372,7 @@ export interface P5Project {
   DIMENSI: string[];
   STAGES: P5ProjectStage[];
   PERCENTAGE: number;
+  DEADLINE?: string;
   UPDATED_AT: string;
   UPDATED_BY: string;
 }
@@ -358,4 +399,202 @@ export interface P5ProjectDailyLog {
   CREATED_AT: string;
   UPDATED_AT: string;
 }
+
+// 13. Subject KKM Configuration & Alert
+export interface SubjectKkmAlert {
+  subject: string;
+  kelas: string;
+  classAvg: number;
+  targetKkm: number;
+  shortfall: number;
+  status: 'BELUM_TUNTAS' | 'PERINGATAN';
+}
+
+// 14. Error Pattern Analysis & Adaptive Remedial Modules
+export type ErrorCategory = 'NUMERASI' | 'LITERASI' | 'IPAS_SAINS' | 'PENDIDIKAN_PANCASILA' | 'PJOK' | 'SENI_BUDAYA' | 'UMUM';
+
+export interface AffectedStudentInfo {
+  id: string;
+  nama: string;
+  score: number;
+  nisn?: string;
+  kelas?: string;
+}
+
+export interface AssignmentErrorPattern {
+  id: string;
+  category: ErrorCategory;
+  topic: string;
+  subject: string;
+  errorRatePercent: number;
+  severity: 'TINGGI' | 'SEDANG' | 'RENDAH';
+  frequencyCount: number;
+  misconceptionDetails: string;
+  affectedStudents: AffectedStudentInfo[];
+  recommendedModuleId: string;
+  suggestedRemedialStrategy: string;
+}
+
+export interface RemedialPracticeQuestion {
+  question: string;
+  hint: string;
+  answerKey: string;
+}
+
+export interface RemedialModule {
+  id: string;
+  title: string;
+  subject: string;
+  category: ErrorCategory;
+  targetCompetency: string;
+  format: 'LKPD' | 'BACAAN' | 'INTERAKTIF' | 'LATIHAN_BERTINGKAT' | 'SCAFFOLDING';
+  difficulty: 'DASAR' | 'MENENGAH' | 'PENGUATAN';
+  estimatedMinutes: number;
+  contentOutline: string[];
+  guideSteps: string[];
+  practiceQuestions: RemedialPracticeQuestion[];
+  isAssignedToClass?: boolean;
+  assignedStudentIds?: string[];
+  assignedAt?: string;
+}
+
+export interface SpecialInterventionStudent {
+  siswaId: string;
+  siswaNama: string;
+  nisn: string;
+  kelas: string;
+  averageScore: number;
+  criticalSubjects: string[];
+  frequentErrorPatterns: string[];
+  interventionStrategy: string;
+  assignedRemedialModuleIds: string[];
+  status: 'PERLU_PENDAMPINGAN' | 'SEDANG_REMEDIAL' | 'TUNTAS_REMEDIAL';
+}
+
+export interface MonthlyClassExecutivePdfOptions {
+  kelas: string;
+  bulan?: string;
+  waliKelas?: string;
+  waliKelasNip?: string;
+  schoolYear?: string;
+  semester?: string;
+  customNotes?: string;
+  includeInterventionList?: boolean;
+  includeWeeklyTrend?: boolean;
+}
+
+// 15. Student Character & Behavior Analysis Models
+export type BehaviorCategory =
+  | 'KEDISIPLINAN'
+  | 'GOTONG_ROYONG'
+  | 'KEJUJURAN'
+  | 'TANGGUNG_JAWAB'
+  | 'KESANTUNAN'
+  | 'KEMANDIRIAN'
+  | 'KEPEMIMPINAN';
+
+export type BehaviorType = 'POSITIF' | 'PERLU_PERHATIAN';
+
+export interface StudentBehaviorLog {
+  ID: string;
+  SISWA_ID: string;
+  SISWA_NAMA: string;
+  NISN?: string;
+  KELAS: string;
+  TANGGAL: string; // YYYY-MM-DD
+  KATEGORI: BehaviorCategory;
+  TIPE: BehaviorType;
+  POIN: number; // e.g. +10 or -5
+  JUDUL: string;
+  CATATAN: string;
+  GURU_ID: string;
+  GURU_NAMA: string;
+  TINDAK_LANJUT?: string;
+  STATUS_TINDAK_LANJUT?: 'SELESAI' | 'DALAM_PANTAUAN' | 'PERLU_KONSULTASI_ORTU';
+  CREATED_AT: string;
+}
+
+export interface BehaviorAnalysisInsight {
+  totalLogs: number;
+  positiveCount: number;
+  needsAttentionCount: number;
+  positiveRatio: number;
+  topPositiveStudents: Array<{
+    siswaId: string;
+    siswaNama: string;
+    kelas: string;
+    positiveCount: number;
+    totalScore: number;
+    badges: string[];
+    recentHighlight: string;
+  }>;
+  studentsNeedingAttention: Array<{
+    siswaId: string;
+    siswaNama: string;
+    kelas: string;
+    attentionCount: number;
+    criticalCategories: BehaviorCategory[];
+    urgency: 'TINGGI' | 'SEDANG' | 'RINGAN';
+    recommendedAction: string;
+    lastLogDate: string;
+  }>;
+  categoryBreakdown: Array<{
+    category: BehaviorCategory;
+    label: string;
+    positive: number;
+    needsAttention: number;
+    total: number;
+  }>;
+  weeklyTrends: Array<{
+    weekLabel: string;
+    positive: number;
+    needsAttention: number;
+  }>;
+}
+
+// 16. Comprehensive Individual Student Report Model (Kop Sekolah, Nilai, Kehadiran, Catatan Guru & Karakter)
+export interface ComprehensiveStudentSubjectGrade {
+  no: number;
+  mapel: string;
+  kkm: number;
+  tugas: number;
+  kuis: number;
+  nilaiAkhir: number;
+  predikat: string;
+  deskripsi: string;
+  status: 'TUNTAS' | 'BELUM_TUNTAS';
+}
+
+export interface ComprehensiveStudentReportData {
+  siswaId: string;
+  siswaNama: string;
+  nisn?: string;
+  nip?: string;
+  kelas: string;
+  semester?: string;
+  tahunPelajaran?: string;
+  nilaiTugas: number;
+  nilaiKuis: number;
+  presensiPct: number;
+  nilaiAkhir: number;
+  predikat: string;
+  kkmStatus: string;
+  teacherNotes?: string;
+  attendanceBreakdown?: {
+    hadir: number;
+    sakit: number;
+    izin: number;
+    alpa: number;
+    totalHari: number;
+  };
+  subjectGrades?: ComprehensiveStudentSubjectGrade[];
+  behaviorHighlights?: {
+    positiveNotes: string[];
+    needsAttentionNotes: string[];
+    characterBadges: string[];
+    overallCharacterGrade: 'SANGAT_BAIK' | 'BAIK' | 'CUKUP';
+  };
+}
+
+
 

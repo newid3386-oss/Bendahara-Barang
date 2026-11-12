@@ -4,14 +4,24 @@ import {
   TrendingUp, BarChart2, Users, AlertTriangle, CheckCircle2, ChevronRight,
   Search, BookOpen, Download, Printer, RefreshCw, Sparkles, Plus, Award,
   X, HelpCircle, FileText, Send, Flame, ShieldAlert, GraduationCap, ArrowRight, Save, Filter,
-  Compass, Target, Eye, Layers
+  Compass, Target, Eye, Layers, Check, SlidersHorizontal, Bell, FileDown, Brain, Lightbulb,
+  CheckCheck, Clock, HeartHandshake
 } from 'lucide-react';
-import { Account, ClassroomSubmission } from '../../types/classroom';
+import {
+  Account,
+  ClassroomSubmission,
+  SubjectKkmAlert,
+  AssignmentErrorPattern,
+  RemedialModule,
+  SpecialInterventionStudent,
+} from '../../types/classroom';
 import { ResponsiveContainer, BarChart, AreaChart, RadarChart, ComposedChart, PieChart, Area, Line, Bar, Radar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell, Pie } from 'recharts';
-import { classroomService } from '../../services/classroomService';
+import { classroomService, DEFAULT_SUBJECT_KKM } from '../../services/classroomService';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
+import { pdfService } from '../../services/pdfService';
 import { P5RadarChartWidget } from './P5RadarChartWidget';
 import { P5DailyLogModal } from './P5DailyLogModal';
+import { BehaviorAnalysisWidget } from './BehaviorAnalysisWidget';
 
 interface DashboardAnalitikGuruProps {
   account: Account;
@@ -24,7 +34,7 @@ export const DashboardAnalitikGuru: React.FC<DashboardAnalitikGuruProps> = ({ ac
   const isSiswa = account.ROLE === 'SISWA';
 
   // State management
-  const [activeMainTab, setActiveMainTab] = useState<'AKADEMIK' | 'P5_PROGRESS' | 'PROFIL_PANCASILA'>('AKADEMIK');
+  const [activeMainTab, setActiveMainTab] = useState<'AKADEMIK' | 'POLA_KESALAHAN' | 'ANALISIS_PERILAKU' | 'P5_PROGRESS' | 'PROFIL_PANCASILA'>('AKADEMIK');
   const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 1');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -81,10 +91,132 @@ export const DashboardAnalitikGuru: React.FC<DashboardAnalitikGuruProps> = ({ ac
   // Load and refresh counts
   const [dataVersion, setDataVersion] = useState(0);
 
+  // Subject KKM Target & Executive Report States
+  const [showSubjectKkmModal, setShowSubjectKkmModal] = useState<boolean>(false);
+  const [kkmTargets, setKkmTargets] = useState<Record<string, number>>(() => classroomService.getSubjectKkmTargets());
+  const [subjectAlerts, setSubjectAlerts] = useState<SubjectKkmAlert[]>([]);
+  const [dismissAlertBanner, setDismissAlertBanner] = useState<boolean>(false);
+  const [isGeneratingExecutivePdf, setIsGeneratingExecutivePdf] = useState<boolean>(false);
+  const [executivePdfFeedback, setExecutivePdfFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    const alerts = classroomService.checkSubjectKkmAlerts(selectedKelas, true);
+    setSubjectAlerts(alerts);
+    setKkmTargets(classroomService.getSubjectKkmTargets());
+  }, [selectedKelas, dataVersion]);
+
+  const handleDownloadExecutivePdf = async () => {
+    try {
+      setIsGeneratingExecutivePdf(true);
+      await pdfService.generateExecutiveP5AndGradeTrendPdf({
+        targetClass: selectedKelas,
+        schoolYear: '2026/2027',
+        semester: 'Semester Ganjil',
+        guruNama: account.NAMA,
+        guruNip: account.NIP || '19820315 200801 1 007',
+      });
+      setExecutivePdfFeedback('Laporan Ringkasan Eksekutif P5 & Tren Nilai berhasil diunduh dalam format PDF.');
+      setTimeout(() => setExecutivePdfFeedback(null), 5000);
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menghasilkan PDF Eksekutif. Silakan coba kembali.');
+    } finally {
+      setIsGeneratingExecutivePdf(false);
+    }
+  };
+
+  const handleSaveKkmTargets = (updatedTargets: Record<string, number>) => {
+    classroomService.saveSubjectKkmTargets(updatedTargets);
+    setKkmTargets(updatedTargets);
+    const alerts = classroomService.checkSubjectKkmAlerts(selectedKelas, true);
+    setSubjectAlerts(alerts);
+    setShowSubjectKkmModal(false);
+    forceUpdate();
+  };
+
+  // Error Pattern Analysis & Adaptive Remedial Module States
+  const [selectedErrorSubjectFilter, setSelectedErrorSubjectFilter] = useState<string>('Semua');
+  const [selectedErrorCategoryFilter, setSelectedErrorCategoryFilter] = useState<string>('ALL');
+  const [previewRemedialModule, setPreviewRemedialModule] = useState<RemedialModule | null>(null);
+  const [showPracticeHints, setShowPracticeHints] = useState<Record<number, boolean>>({});
+  const [showPracticeAnswers, setShowPracticeAnswers] = useState<Record<number, boolean>>({});
+  const [showMonthlyExecutivePdfModal, setShowMonthlyExecutivePdfModal] = useState<boolean>(false);
+  const [monthlyPdfMonth, setMonthlyPdfMonth] = useState<string>('November 2026');
+  const [isGeneratingMonthlyPdf, setIsGeneratingMonthlyPdf] = useState<boolean>(false);
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const [interventionSearchQuery, setInterventionSearchQuery] = useState<string>('');
+
+  const handleDownloadMonthlyExecutivePdf = async (month: string = monthlyPdfMonth) => {
+    try {
+      setIsGeneratingMonthlyPdf(true);
+      await pdfService.generateMonthlyClassPerformanceExecutivePdf({
+        kelas: selectedKelas,
+        bulan: month,
+        waliKelas: account.NAMA,
+        waliKelasNip: account.NIP || '19850612 201001 2 015',
+        schoolYear: '2026/2027',
+        semester: 'Semester Ganjil',
+      });
+      setShowMonthlyExecutivePdfModal(false);
+      setExecutivePdfFeedback(`Laporan Eksekutif Performa Kelas Bulanan (${month}) untuk ${selectedKelas} berhasil diunduh dalam format PDF.`);
+      setTimeout(() => setExecutivePdfFeedback(null), 5000);
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menghasilkan Laporan Eksekutif Bulanan. Silakan coba kembali.');
+    } finally {
+      setIsGeneratingMonthlyPdf(false);
+    }
+  };
+
+  const handleAssignPatternModule = (pattern: AssignmentErrorPattern) => {
+    const studentIds = pattern.affectedStudents.map(s => s.id);
+    if (studentIds.length === 0) {
+      alert('Tidak ada siswa di bawah KKM pada pola kesalahan ini.');
+      return;
+    }
+    const res = classroomService.assignRemedialModule(pattern.recommendedModuleId, studentIds, selectedKelas, pattern.topic);
+    setActionToast(res.message);
+    setTimeout(() => setActionToast(null), 4500);
+    forceUpdate();
+  };
+
+  const handleAssignDirectModule = (moduleId: string, studentIds: string[]) => {
+    const res = classroomService.assignRemedialModule(moduleId, studentIds, selectedKelas);
+    setActionToast(res.message);
+    setTimeout(() => setActionToast(null), 4500);
+    forceUpdate();
+  };
+
   const forceUpdate = () => {
     setDataVersion(prev => prev + 1);
     if (onRefresh) onRefresh();
   };
+
+  // Error patterns computed
+  const errorPatterns = useMemo(() => {
+    return classroomService.getAssignmentErrorPatterns(selectedKelas, selectedErrorSubjectFilter);
+  }, [selectedKelas, selectedErrorSubjectFilter, dataVersion]);
+
+  const filteredErrorPatterns = useMemo(() => {
+    if (selectedErrorCategoryFilter === 'ALL') return errorPatterns;
+    return errorPatterns.filter(p => p.category === selectedErrorCategoryFilter);
+  }, [errorPatterns, selectedErrorCategoryFilter]);
+
+  const specialInterventionStudents = useMemo(() => {
+    return classroomService.getSpecialInterventionStudents(selectedKelas);
+  }, [selectedKelas, dataVersion]);
+
+  const filteredInterventionStudents = useMemo(() => {
+    if (!interventionSearchQuery.trim()) return specialInterventionStudents;
+    const q = interventionSearchQuery.toLowerCase();
+    return specialInterventionStudents.filter(
+      s => s.siswaNama.toLowerCase().includes(q) || s.nisn.includes(q) || s.criticalSubjects.some(cs => cs.toLowerCase().includes(q))
+    );
+  }, [specialInterventionStudents, interventionSearchQuery]);
+
+  const remedialCatalog = useMemo(() => {
+    return classroomService.getRemedialModuleCatalog();
+  }, [dataVersion]);
 
   // 1. Get students lists based on role/selected class
   const students = useMemo(() => {
@@ -681,6 +813,52 @@ Di kawasan **Pasar Lama Tangerang**, terdapat sebuah gapura bertuliskan angka **
           )}
 
           <button
+            onClick={() => setShowSubjectKkmModal(true)}
+            className="relative px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-slate-700 hover:text-amber-700 hover:bg-amber-50 border border-slate-200 bg-white rounded-xl flex items-center gap-1.5 transition-all shadow-2xs"
+            title="Kelola Target KKM Per Mata Pelajaran"
+          >
+            <Target size={14} className="text-amber-600" />
+            <span className="hidden sm:inline">Target KKM Mapel</span>
+            {subjectAlerts.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full animate-pulse">
+                {subjectAlerts.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setShowMonthlyExecutivePdfModal(true)}
+            disabled={isGeneratingMonthlyPdf}
+            className="px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+            title="Unduh Laporan Ringkasan Eksekutif Bulanan Performa Kelas & Roster Intervensi Khusus (PDF)"
+          >
+            {isGeneratingMonthlyPdf ? (
+              <RefreshCw size={14} className="animate-spin text-blue-700" />
+            ) : (
+              <FileDown size={14} className="text-blue-700" />
+            )}
+            <span className="hidden sm:inline">
+              {isGeneratingMonthlyPdf ? 'Menyusun...' : 'Laporan Bulanan (PDF)'}
+            </span>
+          </button>
+
+          <button
+            onClick={handleDownloadExecutivePdf}
+            disabled={isGeneratingExecutivePdf}
+            className="px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
+            title="Unduh Ringkasan Visual Analitik P5 & Tren Nilai Format PDF Eksekutif Kepala Sekolah"
+          >
+            {isGeneratingExecutivePdf ? (
+              <RefreshCw size={14} className="animate-spin text-emerald-700" />
+            ) : (
+              <FileText size={14} className="text-emerald-700" />
+            )}
+            <span className="hidden sm:inline">
+              {isGeneratingExecutivePdf ? 'Menyusun PDF...' : 'Laporan P5 & Tren (PDF)'}
+            </span>
+          </button>
+
+          <button
             onClick={downloadCSVReport}
             className="p-2 sm:px-3.5 sm:py-2 text-xs font-bold text-slate-700 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 bg-white rounded-xl flex items-center gap-1.5 transition-all shadow-2xs"
             title="Ekspor laporan analisa kelas ke format CSV"
@@ -699,8 +877,129 @@ Di kawasan **Pasar Lama Tangerang**, terdapat sebuah gapura bertuliskan angka **
         </div>
       </div>
 
+      {/* PDF Generation Success Feedback */}
+      <AnimatePresence>
+        {executivePdfFeedback && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 flex items-center justify-between gap-3 text-emerald-900 shadow-2xs"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="p-1 rounded-lg bg-emerald-100 text-emerald-700">
+                <CheckCircle2 size={16} />
+              </span>
+              <span className="text-xs font-bold">{executivePdfFeedback}</span>
+            </div>
+            <button
+              onClick={() => setExecutivePdfFeedback(null)}
+              className="p-1 rounded-md text-emerald-700 hover:bg-emerald-100/60"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+
+        {actionToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="rounded-xl border border-blue-200 bg-blue-50 p-3.5 flex items-center justify-between gap-3 text-blue-900 shadow-2xs"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="p-1 rounded-lg bg-blue-100 text-blue-700">
+                <CheckCheck size={16} />
+              </span>
+              <span className="text-xs font-bold">{actionToast}</span>
+            </div>
+            <button
+              onClick={() => setActionToast(null)}
+              className="p-1 rounded-md text-blue-700 hover:bg-blue-100/60"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Real-time Alert Banner: Ambang Batas KKM Per Mata Pelajaran Turun */}
+      <AnimatePresence>
+        {!dismissAlertBanner && subjectAlerts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="rounded-2xl border border-red-200 bg-linear-to-r from-red-50/95 via-amber-50/70 to-red-50/95 p-4 shadow-xs"
+          >
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-red-100 text-red-700 mt-0.5 shrink-0">
+                  <ShieldAlert size={20} />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-black text-slate-900">
+                      Peringatan Target KKM: Rata-Rata Kelas Turun di Bawah Ambang
+                    </h3>
+                    <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 rounded-md">
+                      {subjectAlerts.length} Mata Pelajaran Perlu Intervensi
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Rata-rata capaian belajar kelas <span className="font-bold text-slate-900">{selectedKelas}</span> untuk beberapa mata pelajaran berada di bawah target KKM yang telah Anda tetapkan. Perlu bimbingan remedial atau penyesuaian target KKM.
+                  </p>
+
+                  {/* Pills of low performing subjects */}
+                  <div className="flex items-center gap-2 flex-wrap pt-1.5">
+                    {subjectAlerts.map((alt) => (
+                      <div
+                        key={alt.subject}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-white/90 border border-red-200 rounded-lg text-xs shadow-2xs"
+                      >
+                        <span className="font-bold text-slate-800">{alt.subject}:</span>
+                        <span className="font-black text-red-600">{alt.classAvg}</span>
+                        <span className="text-[10px] text-slate-400">/ Target KKM {alt.targetKkm}</span>
+                        <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.2 rounded">
+                          (-{alt.shortfall} poin)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                <button
+                  onClick={() => setShowSubjectKkmModal(true)}
+                  className="px-3 py-1.5 text-xs font-bold bg-white text-slate-700 hover:text-amber-800 hover:bg-amber-50 border border-slate-200 rounded-xl transition-all shadow-2xs flex items-center gap-1"
+                >
+                  <Target size={13} className="text-amber-600" />
+                  Sesuaikan Target
+                </button>
+                <button
+                  onClick={handleDownloadExecutivePdf}
+                  className="px-3 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all shadow-2xs flex items-center gap-1"
+                >
+                  <FileText size={13} />
+                  Laporan Kepsek
+                </button>
+                <button
+                  onClick={() => setDismissAlertBanner(true)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50"
+                  title="Tutup banner peringatan"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Tab Navigasi Utama */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 flex-wrap">
         <button
           onClick={() => setActiveMainTab('AKADEMIK')}
           className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer ${
@@ -710,6 +1009,33 @@ Di kawasan **Pasar Lama Tangerang**, terdapat sebuah gapura bertuliskan angka **
           }`}
         >
           Analitik Akademik & Remedial
+        </button>
+        <button
+          onClick={() => setActiveMainTab('POLA_KESALAHAN')}
+          className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeMainTab === 'POLA_KESALAHAN'
+              ? 'border-indigo-600 text-indigo-700 font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Brain size={14} className="text-indigo-600" />
+          Pola Kesalahan & Modul Remedial
+          {errorPatterns.length > 0 && (
+            <span className="px-1.5 py-0.2 text-[10px] font-black rounded-full bg-indigo-100 text-indigo-700">
+              {errorPatterns.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveMainTab('ANALISIS_PERILAKU')}
+          className={`px-4 py-2.5 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeMainTab === 'ANALISIS_PERILAKU'
+              ? 'border-teal-600 text-teal-700 font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <HeartHandshake size={14} className="text-teal-600" />
+          Widget Analisis Perilaku & Karakter
         </button>
         <button
           onClick={() => setActiveMainTab('P5_PROGRESS')}
@@ -1240,6 +1566,400 @@ Di kawasan **Pasar Lama Tangerang**, terdapat sebuah gapura bertuliskan angka **
         </div>
       </div>
         </>
+      ) : activeMainTab === 'POLA_KESALAHAN' ? (
+        /* ==================== TAB ANALISIS POLA KESALAHAN & MODUL REMEDIAL ADAPTIF ==================== */
+        <div className="space-y-6" id="analisis-pola-kesalahan-section">
+          {/* Top Banner Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-indigo-800/60 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 text-[11px] font-black uppercase tracking-wider">
+                  <Brain size={14} className="text-indigo-300 animate-pulse" />
+                  Analisis Pola Kesalahan Tugas & Remedial Adaptif • Kurikulum Merdeka
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  Diagnostik Miskonsepsi & Rekomendasi Modul Ajar ({selectedKelas})
+                </h2>
+                <p className="text-xs sm:text-sm text-indigo-200/80 max-w-2xl leading-relaxed">
+                  Sistem secara otomatis menganalisis riwayat pengumpulan tugas, kuis CBT, dan rubrik asesmen harian siswa. Mengelompokkan materi yang paling sering salah, membedah miskonsepsi konsep dasar, serta menyarankan modul remedial adaptif siap ditugaskan.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={() => setShowMonthlyExecutivePdfModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <FileDown size={15} />
+                  <span>Unduh Laporan Bulanan (PDF)</span>
+                </button>
+                <button
+                  onClick={() => setShowSubjectKkmModal(true)}
+                  className="px-3.5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Target size={14} className="text-amber-400" />
+                  <span>Target KKM ({Object.keys(kkmTargets).length} Mapel)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick KPI Cards inside Banner */}
+            <div className="mt-5 pt-4 border-t border-indigo-800/60 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 backdrop-blur-xs">
+                <span className="text-[10px] font-black text-indigo-300 uppercase block tracking-wider">Pola Terdeteksi</span>
+                <span className="text-2xl font-black text-white mt-0.5 block">{errorPatterns.length} Pola</span>
+                <span className="text-[10px] text-indigo-200/70 mt-0.5 block">{errorPatterns.filter(p => p.severity === 'TINGGI').length} Tingkat Kritis Tinggi</span>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 backdrop-blur-xs">
+                <span className="text-[10px] font-black text-indigo-300 uppercase block tracking-wider">Kategori Dominan</span>
+                <span className="text-2xl font-black text-amber-300 mt-0.5 block truncate">
+                  {errorPatterns[0]?.category.replace('_', ' ') || 'Numerasi'}
+                </span>
+                <span className="text-[10px] text-indigo-200/70 mt-0.5 block">Tingkat Kesalahan {errorPatterns[0]?.errorRatePercent || 0}%</span>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 backdrop-blur-xs">
+                <span className="text-[10px] font-black text-indigo-300 uppercase block tracking-wider">Intervensi Khusus</span>
+                <span className="text-2xl font-black text-rose-300 mt-0.5 block">{specialInterventionStudents.length} Siswa</span>
+                <span className="text-[10px] text-indigo-200/70 mt-0.5 block">Di Bawah Standar KKM 75</span>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 backdrop-blur-xs">
+                <span className="text-[10px] font-black text-indigo-300 uppercase block tracking-wider">Katalog Modul</span>
+                <span className="text-2xl font-black text-emerald-300 mt-0.5 block">{remedialCatalog.length} Modul</span>
+                <span className="text-[10px] text-indigo-200/70 mt-0.5 block">Kurikulum Merdeka Banten</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                <Filter size={13} /> Filter Mapel:
+              </span>
+              {['Semua', 'Matematika', 'Bahasa Indonesia', 'IPAS', 'Pendidikan Pancasila'].map((subj) => (
+                <button
+                  key={subj}
+                  onClick={() => setSelectedErrorSubjectFilter(subj)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    selectedErrorSubjectFilter === subj
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {subj}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase">Kategori:</span>
+              <select
+                value={selectedErrorCategoryFilter}
+                onChange={(e) => setSelectedErrorCategoryFilter(e.target.value)}
+                className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-hidden cursor-pointer"
+              >
+                <option value="ALL">Semua Kategori</option>
+                <option value="NUMERASI">Numerasi</option>
+                <option value="LITERASI">Literasi</option>
+                <option value="IPAS_SAINS">IPAS Sains</option>
+                <option value="PENDIDIKAN_PANCASILA">Pendidikan Pancasila</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Grid of Error Patterns and Matching Remedial Learning Modules */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <AlertTriangle size={18} className="text-amber-500" />
+                  Daftar Pola Kesalahan Tugas & Rekomendasi Modul Ajar Remedial
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Dianalisis dari riwayat pengumpulan tugas, kuis, dan lembar kerja formatif rombel {selectedKelas}.
+                </p>
+              </div>
+              <span className="text-xs font-bold text-slate-400">
+                Menampilkan {filteredErrorPatterns.length} Pola
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {filteredErrorPatterns.map((pattern) => {
+                const matchingMod = remedialCatalog.find((m) => m.id === pattern.recommendedModuleId);
+
+                return (
+                  <div
+                    key={pattern.id}
+                    className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      {/* Card Header: Subject, Category, Severity */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                              {pattern.subject}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700">
+                              {pattern.category.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-black text-slate-900 leading-snug">
+                            {pattern.topic}
+                          </h4>
+                        </div>
+
+                        {/* Severity Badge */}
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                              pattern.severity === 'TINGGI'
+                                ? 'bg-red-100 text-red-700 border border-red-200 animate-pulse'
+                                : pattern.severity === 'SEDANG'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                pattern.severity === 'TINGGI'
+                                  ? 'bg-red-600'
+                                  : pattern.severity === 'SEDANG'
+                                  ? 'bg-amber-600'
+                                  : 'bg-emerald-600'
+                              }`}
+                            />
+                            {pattern.severity === 'TINGGI' ? 'Tingkat Kritis' : pattern.severity} ({pattern.errorRatePercent}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Misconception Analysis Details */}
+                      <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-amber-900">
+                          <Lightbulb size={14} className="text-amber-600" />
+                          <span>Akar Miskonsepsi Siswa:</span>
+                        </div>
+                        <p className="text-xs text-amber-950/80 leading-relaxed">
+                          {pattern.misconceptionDetails}
+                        </p>
+                      </div>
+
+                      {/* Affected Students list */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <span className="flex items-center gap-1.5">
+                            <Users size={13} className="text-slate-500" />
+                            Siswa Terdampak ({pattern.affectedStudents.length} Siswa di Bawah KKM 75):
+                          </span>
+                          <span className="text-[10px] text-slate-400">Skor Diagnostik</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {pattern.affectedStudents.map((aff) => (
+                            <span
+                              key={aff.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-medium text-slate-800"
+                            >
+                              <span>{aff.nama}</span>
+                              <span className="px-1.5 py-0.2 rounded font-black text-[10px] bg-red-100 text-red-700">
+                                {aff.score}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Matching Recommended Remedial Module Banner */}
+                      {matchingMod && (
+                        <div className="bg-indigo-50/60 border border-indigo-200 rounded-2xl p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 flex items-center gap-1">
+                              <BookOpen size={12} /> Modul Ajar Remedial Direkomendasikan
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                              {matchingMod.format} • {matchingMod.estimatedMinutes} Menit
+                            </span>
+                          </div>
+                          <h5 className="text-xs font-black text-slate-900">
+                            {matchingMod.title}
+                          </h5>
+                          <p className="text-[11px] text-slate-600 leading-relaxed line-clamp-2">
+                            {matchingMod.targetCompetency}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                      <button
+                        onClick={() => {
+                          if (matchingMod) setPreviewRemedialModule(matchingMod);
+                        }}
+                        className="px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 bg-white border border-slate-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Eye size={13} /> Pratinjau Modul LKPD
+                      </button>
+
+                      <button
+                        onClick={() => handleAssignPatternModule(pattern)}
+                        className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Send size={13} /> Tugaskan ke Siswa ({pattern.affectedStudents.length})
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section: Dedicated Special Intervention Roster Table */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-red-100 text-red-700">
+                    <ShieldAlert size={16} />
+                  </span>
+                  <h3 className="text-base font-black text-slate-900">
+                    Daftar Siswa Memerlukan Intervensi Khusus (Special Intervention Roster)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Daftar siswa yang memerlukan pendampingan klinik remedial individual berdasarkan agregasi riwayat tugas di bawah KKM 75.
+                </p>
+              </div>
+
+              {/* Search Bar */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={interventionSearchQuery}
+                    onChange={(e) => setInterventionSearchQuery(e.target.value)}
+                    placeholder="Cari siswa atau NISN..."
+                    className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 w-48 sm:w-60"
+                  />
+                </div>
+                <button
+                  onClick={() => setShowMonthlyExecutivePdfModal(true)}
+                  className="px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-1 cursor-pointer"
+                >
+                  <Printer size={13} /> Cetak Roster
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-black uppercase text-slate-400 bg-slate-50/70">
+                    <th className="p-3">No</th>
+                    <th className="p-3">Siswa & NISN</th>
+                    <th className="p-3 text-center">Rata-rata Nilai</th>
+                    <th className="p-3">Mapel Kritis</th>
+                    <th className="p-3">Pola Miskonsepsi Terdeteksi</th>
+                    <th className="p-3">Rencana Strategi Pendampingan</th>
+                    <th className="p-3 text-center">Status Remedial</th>
+                    <th className="p-3 text-right">Aksi Tindak Lanjut</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {filteredInterventionStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-6 text-center text-slate-400">
+                        Tidak ada siswa yang memerlukan intervensi khusus. Seluruh capaian berada di atas target KKM.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredInterventionStudents.map((st, idx) => (
+                      <tr key={st.siswaId} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="p-3 font-bold text-slate-400 text-center">{idx + 1}</td>
+                        <td className="p-3">
+                          <div className="font-black text-slate-900">{st.siswaNama}</div>
+                          <div className="text-[10px] text-slate-400">NISN: {st.nisn} • {st.kelas}</div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="px-2 py-0.5 rounded-md font-black text-red-700 bg-red-100 text-xs">
+                            {st.averageScore}
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5">KKM: 75</span>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {st.criticalSubjects.map((cs) => (
+                              <span key={cs} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                {cs}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="p-3 max-w-xs">
+                          <div className="text-[11px] text-slate-700 font-medium line-clamp-2">
+                            {st.frequentErrorPatterns.join(', ') || 'Pemahaman Konsep Nilai Tempat'}
+                          </div>
+                        </td>
+                        <td className="p-3 max-w-xs">
+                          <div className="text-[11px] text-slate-600 leading-relaxed">
+                            {st.interventionStrategy}
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              st.status === 'SEDANG_REMEDIAL'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {st.status === 'SEDANG_REMEDIAL' ? 'Sedang Remedial' : 'Perlu Pendampingan'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                handleGenerateWorksheet(st.siswaNama, st.averageScore);
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all cursor-pointer"
+                              title="Buat Lembar Remedial AI"
+                            >
+                              Buat LKPD
+                            </button>
+                            <button
+                              onClick={() => {
+                                setReEvalStudent({ id: st.siswaId, nama: st.siswaNama, currentScore: st.averageScore });
+                                setNewScore(80);
+                                setReEvalModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-all cursor-pointer"
+                              title="Evaluasi Ulang Pasca Bimbingan"
+                            >
+                              Re-Evaluasi
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : activeMainTab === 'ANALISIS_PERILAKU' ? (
+        <div className="space-y-6">
+          <BehaviorAnalysisWidget
+            currentClass={selectedKelas}
+            currentUser={account}
+          />
+        </div>
       ) : activeMainTab === 'P5_PROGRESS' ? (
         <div className="space-y-6">
           {/* Interactive D3.js P5 Radar Chart Widget */}
@@ -2042,6 +2762,455 @@ Di kawasan **Pasar Lama Tangerang**, terdapat sebuah gapura bertuliskan angka **
         initialKelas={selectedKelas}
         project={displayedP5Project}
       />
+
+      {/* ==================== SUBJECT KKM TARGET CONFIGURATION MODAL ==================== */}
+      <AnimatePresence>
+        {showSubjectKkmModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 border border-slate-100 max-h-[90vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-xl bg-amber-100 text-amber-700">
+                    <Target size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Kelola Target KKM Per Mata Pelajaran
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Atur ambang batas minimum capaian KKM per mapel untuk rombel {selectedKelas}.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSubjectKkmModal(false)}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 leading-relaxed">
+                  <span className="font-bold">Sistem Notifikasi Pintar:</span> Jika rata-rata nilai kelas untuk mata pelajaran turun di bawah target KKM yang ditetapkan, sistem otomatis menyalakan peringatan intervensi remedial di dashboard serta mencatat notifikasi tindak lanjut.
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Object.keys(kkmTargets).map((subject) => {
+                    const currentAvg = classroomService.getSubjectClassAverage(selectedKelas, subject);
+                    const targetVal = kkmTargets[subject] ?? 75;
+                    const isBelow = currentAvg < targetVal;
+                    const delta = currentAvg - targetVal;
+
+                    return (
+                      <div
+                        key={subject}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isBelow
+                            ? 'bg-red-50/60 border-red-200 shadow-2xs'
+                            : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900">{subject}</h4>
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                              <span>Rata-rata:</span>
+                              <span className={`font-black ${isBelow ? 'text-red-600' : 'text-emerald-700'}`}>
+                                {currentAvg}
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                isBelow ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                              }`}>
+                                {isBelow ? `(-${targetVal - currentAvg})` : `(+${delta})`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Target KKM</span>
+                            <span className="text-base font-black text-slate-900">{targetVal}</span>
+                          </div>
+                        </div>
+
+                        {/* Slider / Stepper */}
+                        <div className="space-y-1.5 pt-1">
+                          <input
+                            type="range"
+                            min="60"
+                            max="90"
+                            step="1"
+                            value={targetVal}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setKkmTargets(prev => ({ ...prev, [subject]: val }));
+                            }}
+                            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                          />
+                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-medium">
+                            <span>60</span>
+                            <div className="flex gap-1">
+                              {[70, 75, 78, 80].map((preset) => (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => setKkmTargets(prev => ({ ...prev, [subject]: preset }))}
+                                  className={`px-1.5 py-0.5 text-[9px] rounded font-bold transition-all ${
+                                    targetVal === preset
+                                      ? 'bg-amber-200 text-amber-900 font-extrabold'
+                                      : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                            <span>90</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setKkmTargets(DEFAULT_SUBJECT_KKM)}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                >
+                  Kembalikan ke Standar Default
+                </button>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    onClick={() => {
+                      setKkmTargets(classroomService.getSubjectKkmTargets());
+                      setShowSubjectKkmModal(false);
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={() => handleSaveKkmTargets(kkmTargets)}
+                    className="px-5 py-2 text-xs font-black bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save size={14} /> Simpan Target KKM
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================== PREVIEW REMEDIAL LEARNING MODULE MODAL ==================== */}
+      <AnimatePresence>
+        {previewRemedialModule && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-4 border border-slate-100 max-h-[90vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-start gap-3">
+                  <span className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700 shrink-0 mt-0.5">
+                    <BookOpen size={20} />
+                  </span>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700">
+                        {previewRemedialModule.subject}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700">
+                        {previewRemedialModule.format}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
+                        Tingkat: {previewRemedialModule.difficulty}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 flex items-center gap-1">
+                        <Clock size={10} /> {previewRemedialModule.estimatedMinutes} Menit
+                      </span>
+                    </div>
+                    <h3 className="text-base font-black text-slate-900 leading-snug">
+                      {previewRemedialModule.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setPreviewRemedialModule(null);
+                    setShowPracticeHints({});
+                    setShowPracticeAnswers({});
+                  }}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-xs">
+                {/* Target Competency */}
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3.5 space-y-1">
+                  <div className="text-[11px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                    <Target size={13} /> Capaian Pembelajaran & Tujuan Remedial:
+                  </div>
+                  <p className="text-indigo-950/80 leading-relaxed font-medium">
+                    {previewRemedialModule.targetCompetency}
+                  </p>
+                </div>
+
+                {/* Step-by-Step Guidance */}
+                <div className="space-y-2">
+                  <h4 className="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                    <CheckCheck size={14} className="text-emerald-600" />
+                    Panduan Tahapan Bimbingan Guru (Scaffolding):
+                  </h4>
+                  <div className="space-y-1.5">
+                    {previewRemedialModule.guideSteps.map((step, sIdx) => (
+                      <div key={sIdx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-700 flex gap-2">
+                        <span className="font-black text-indigo-600 shrink-0">{sIdx + 1}.</span>
+                        <span className="leading-relaxed">{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Content Outline */}
+                <div className="space-y-2">
+                  <h4 className="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                    <Layers size={14} className="text-blue-600" />
+                    Garis Besar Materi & Aktivitas Siswa:
+                  </h4>
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {previewRemedialModule.contentOutline.map((item, cIdx) => (
+                      <li key={cIdx} className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-[11px]">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Adaptive Practice Questions with Interactive Hints & Answers */}
+                <div className="space-y-2.5 pt-1">
+                  <h4 className="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-amber-500" />
+                    Latihan Soal Adaptif Bergradasi & Kunci Jawaban:
+                  </h4>
+
+                  <div className="space-y-3">
+                    {previewRemedialModule.practiceQuestions.map((q, qIdx) => {
+                      const isHintOpen = !!showPracticeHints[qIdx];
+                      const isAnswerOpen = !!showPracticeAnswers[qIdx];
+
+                      return (
+                        <div key={qIdx} className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="px-2 py-0.5 rounded font-black text-[10px] bg-slate-100 text-slate-700">
+                              Soal #{qIdx + 1}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setShowPracticeHints(prev => ({ ...prev, [qIdx]: !prev[qIdx] }))}
+                                className={`px-2 py-0.8 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                  isHintOpen
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                {isHintOpen ? 'Tutup Hint' : '💡 Petunjuk (Hint)'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowPracticeAnswers(prev => ({ ...prev, [qIdx]: !prev[qIdx] }))}
+                                className={`px-2 py-0.8 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                  isAnswerOpen
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                {isAnswerOpen ? 'Sembunyikan Kunci' : '🔑 Kunci Jawaban'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-xs font-bold text-slate-900 leading-relaxed">
+                            {q.question}
+                          </p>
+
+                          {/* Collapsible Hint */}
+                          {isHintOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]"
+                            >
+                              <span className="font-bold">Petunjuk Belajar: </span>{q.hint}
+                            </motion.div>
+                          )}
+
+                          {/* Collapsible Answer Key */}
+                          {isAnswerOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px]"
+                            >
+                              <span className="font-bold">Kunci & Pembahasan: </span>{q.answerKey}
+                            </motion.div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Modul Terdaftar dalam Kurikulum Merdeka UPT SDN Tangerang 6
+                </span>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    onClick={() => {
+                      setPreviewRemedialModule(null);
+                      setShowPracticeHints({});
+                      setShowPracticeAnswers({});
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                  <button
+                    onClick={() => {
+                      const pattern = errorPatterns.find(p => p.recommendedModuleId === previewRemedialModule.id);
+                      if (pattern) {
+                        handleAssignPatternModule(pattern);
+                      } else {
+                        const lowStudentIds = specialInterventionStudents.map(s => s.siswaId);
+                        handleAssignDirectModule(previewRemedialModule.id, lowStudentIds);
+                      }
+                      setPreviewRemedialModule(null);
+                    }}
+                    className="px-5 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Send size={14} /> Tugaskan ke Siswa di Bawah KKM
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================== MONTHLY EXECUTIVE PDF DOWNLOAD MODAL ==================== */}
+      <AnimatePresence>
+        {showMonthlyExecutivePdfModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                    <FileDown size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Laporan Eksekutif Bulanan (PDF)
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Format resmi Kepala Sekolah & Pengawas Wilayah Binaan
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowMonthlyExecutivePdfModal(false)}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                {/* Period Selector */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 block">
+                    Pilih Periode Evaluasi Bulanan:
+                  </label>
+                  <select
+                    value={monthlyPdfMonth}
+                    onChange={(e) => setMonthlyPdfMonth(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="November 2026">November 2026 (Semester Ganjil 2026/2027)</option>
+                    <option value="Oktober 2026">Oktober 2026 (Semester Ganjil 2026/2027)</option>
+                    <option value="September 2026">September 2026 (Semester Ganjil 2026/2027)</option>
+                    <option value="Desember 2026">Desember 2026 (Evaluasi Akhir Semester)</option>
+                  </select>
+                </div>
+
+                {/* Scope Info */}
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 text-[11px] text-slate-600">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <CheckCircle2 size={13} className="text-blue-600" />
+                    Komponen Dokumen Resmi yang Dihasilkan:
+                  </div>
+                  <ul className="space-y-1 pl-4 list-disc text-slate-600">
+                    <li>Kop Surat Resmi Dual-Logo UPT SDN Tangerang 6</li>
+                    <li>Ringkasan Eksekutif KPI Mutu (Rata-rata, % Ketuntasan KKM, Siswa Intervensi)</li>
+                    <li>Visualisasi Tren Nilai Mingguan (Pekan 1 s/d 4) & Matriks Capaian Mapel</li>
+                    <li><strong>Daftar Lengkap Siswa Memerlukan Intervensi Khusus</strong> dengan Miskonsepsi & Rekomendasi Modul</li>
+                    <li>Pengesahan Tanda Tangan Wali Kelas, Pengawas & Kepala Sekolah (*Liestya Kusuma Sari, S.Pd., M.Pd.*)</li>
+                    <li>Validasi Digital QR Code Terotentikasi</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowMonthlyExecutivePdfModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadMonthlyExecutivePdf(monthlyPdfMonth)}
+                  disabled={isGeneratingMonthlyPdf}
+                  className="px-5 py-2 text-xs font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isGeneratingMonthlyPdf ? (
+                    <RefreshCw size={14} className="animate-spin text-white" />
+                  ) : (
+                    <FileDown size={14} />
+                  )}
+                  <span>{isGeneratingMonthlyPdf ? 'Membuat PDF...' : 'Unduh Laporan PDF'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -23,6 +23,7 @@ import { classroomService } from '../../services/classroomService';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
 import { pdfService } from '../../services/pdfService';
 import { SecureMaskedField } from '../common/SecureMaskedField';
+import { StudentAggregatedGradeSummaryTable, StudentAggregatedGradeItem } from './StudentAggregatedGradeSummaryTable';
 
 interface ClassroomGradebookViewProps {
   account: Account;
@@ -35,6 +36,7 @@ export const ClassroomGradebookView: React.FC<ClassroomGradebookViewProps> = ({ 
   const isKepsek = account.ROLE === 'KEPALA SEKOLAH';
 
   const [selectedKelas, setSelectedKelas] = useState<string>(account.KELAS || 'Kelas 1A');
+  const [selectedGradingPeriod, setSelectedGradingPeriod] = useState<string>('Semester Ganjil TA 2026/2027');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewRaporStudent, setPreviewRaporStudent] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'TABLE' | 'CHART' | 'KEPSEK_COMPARISON' | 'HEATMAP' | 'AI_INSIGHTS'>('CHART');
@@ -263,6 +265,30 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
     return true;
   });
 
+  // Aggregated grade summary per student formatted for table & PDF export
+  const aggregatedGradeSummaryList: StudentAggregatedGradeItem[] = filteredReports.map((r) => {
+    const studentAcc = students.find((s) => s.ID === r.siswaId);
+    const nis = studentAcc?.NIP || r.siswaId;
+    const kkmThreshold = 75;
+    const kkmStatus: 'TUNTAS' | 'BELUM TUNTAS' = r.nilaiAkhir >= kkmThreshold ? 'TUNTAS' : 'BELUM TUNTAS';
+
+    return {
+      siswaId: r.siswaId,
+      nis,
+      siswaNama: r.siswaNama,
+      kelas: r.kelas,
+      tugasCount: r.tugasCount,
+      nilaiTugas: r.nilaiTugas,
+      kuisCount: r.kuisCount,
+      nilaiKuis: r.nilaiKuis,
+      presensiPct: r.presensiPct,
+      nilaiAkhir: r.nilaiAkhir,
+      predikat: r.predikat,
+      kkmStatus,
+      kkmThreshold,
+    };
+  });
+
   // Data for Recharts Line Chart (Student Timeline)
   const timelineData = activeChartStudent
     ? classroomService.getStudentAcademicTimeline(
@@ -454,10 +480,12 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
                   pdfService.generateClassGradebookSummaryPdf(
                     filteredReports,
                     isSiswa || isGuru ? account.KELAS || 'Kelas 1A' : selectedKelas,
-                    account.NAMA
+                    account.NAMA,
+                    account.NIP || '19850412 201101 2 003',
+                    selectedGradingPeriod
                   )
                 }
-                title="Cetak PDF Rekapitulasi Nilai Kelas Rapi untuk Laporan Wali Murid"
+                title={`Cetak PDF Rekapitulasi Nilai Kelas Periode "${selectedGradingPeriod}" untuk Laporan Wali Murid`}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white font-bold text-xs shadow-xs transition active:scale-95 cursor-pointer"
               >
                 <Printer size={14} />
@@ -739,14 +767,41 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
       )}
 
       {/* ========================================================================= */}
-      {/* 3. TABEL BUKU NILAI LENGKAP & CETAK E-RAPOR */}
+      {/* 3. TABEL BUKU NILAI LENGKAP & REKAPITULASI AGREGAT SISWA CETAK PDF */}
       {/* ========================================================================= */}
       {activeTab === 'TABLE' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+        <div className="space-y-6">
+          {/* New Aggregated Grade Summary Table Formatted for PDF Export */}
+          <StudentAggregatedGradeSummaryTable
+            reports={aggregatedGradeSummaryList}
+            targetClass={isSiswa || isGuru ? account.KELAS || 'Kelas 1A' : selectedKelas}
+            guruNama={isGuru ? account.NAMA : 'Nurul Hidayah, S.Pd.'}
+            guruNip={isGuru ? (account.NIP || '19850412 201101 2 003') : '19850412 201101 2 003'}
+            kkmThreshold={75}
+            selectedGradingPeriod={selectedGradingPeriod}
+            onGradingPeriodChange={setSelectedGradingPeriod}
+            onSelectStudentChart={(studentId) => {
+              setSelectedChartStudentId(studentId);
+              setActiveTab('CHART');
+            }}
+            onPreviewErapor={(report) => setPreviewRaporStudent(report)}
+          />
+
+          {/* Detailed Breakdown Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <FileText size={14} className="text-blue-600" />
+                <span>Rincian Komponen Bobot Nilai Siswa (Tugas, Kuis, Kehadiran)</span>
+              </h4>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Total {filteredReports.length} Siswa Terdaftar
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/70 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
                   <th className="p-4 w-12 text-center">No</th>
                   <th className="p-4">Nama Siswa</th>
                   <th className="p-4">Kelas</th>
@@ -843,6 +898,7 @@ Di pusat kuliner Pasar Lama Tangerang, paman menjual 345 tusuk sate obong dalam 
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* ========================================================================= */}

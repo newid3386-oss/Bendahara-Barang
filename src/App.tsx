@@ -44,7 +44,7 @@ const ARKASSiPlahView = lazy(() => import('./components/ARKASSiPlahView').then(m
 const DepresiasiAsetView = lazy(() => import('./components/DepresiasiAsetView').then(module => ({ default: module.DepresiasiAsetView })));
 const MultiSchoolConsolidationView = lazy(() => import('./components/MultiSchoolConsolidationView').then(module => ({ default: module.MultiSchoolConsolidationView })));
 const ClassroomApp = lazy(() => import('./components/ClassroomApp').then(module => ({ default: module.ClassroomApp })));
-const AdminPanel = lazy(() => import('./components/AdminPanel').then(module => ({ default: module.AdminPanel || module.default })));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
 export default function App() {
   const { styles } = useTheme();

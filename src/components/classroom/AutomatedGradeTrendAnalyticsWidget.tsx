@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -20,7 +20,12 @@ import {
   Zap,
   GraduationCap,
   SlidersHorizontal,
-  Compass
+  Compass,
+  User,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  Download
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,11 +40,13 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  Cell
+  Cell,
+  ReferenceLine
 } from 'recharts';
 import { accountService, STANDARD_CLASSES } from '../../services/accountService';
 import { SecureMaskedField } from '../common/SecureMaskedField';
 import { classroomService } from '../../services/classroomService';
+import { pdfService } from '../../services/pdfService';
 import { Account } from '../../types/classroom';
 
 interface AutomatedGradeTrendAnalyticsWidgetProps {
@@ -79,6 +86,29 @@ interface StudentTrendSummary {
   mapelLemah: string;
 }
 
+export interface Comparison30dPoint {
+  date: string;
+  fullDate: string;
+  dayOffset: number;
+  assessmentName: string;
+  studentGrade: number;
+  classAverage: number;
+  delta: number;
+  kkm: number;
+}
+
+export interface Comparison30dStats {
+  studentAvg30d: number;
+  classAvg30d: number;
+  net30dDelta: number;
+  scoreGrowth: number;
+  latestDelta: number;
+  highestGrade: number;
+  lowestGrade: number;
+  currentStudentGrade: number;
+  currentClassAvg: number;
+}
+
 const SUBJECT_LIST = [
   'Semua Mapel',
   'Matematika',
@@ -95,9 +125,10 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
 }) => {
   const [selectedClass, setSelectedClass] = useState<string>('Kelas 5A');
   const [selectedSubject, setSelectedSubject] = useState<string>('Semua Mapel');
-  const [activeTab, setActiveTab] = useState<'TREND' | 'STUDENTS' | 'SUGGESTIONS'>('TREND');
+  const [activeTab, setActiveTab] = useState<'TREND' | 'COMPARISON_30D' | 'STUDENTS' | 'SUGGESTIONS'>('TREND');
   const [copiedSuggestionId, setCopiedSuggestionId] = useState<string | null>(null);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<StudentTrendSummary | null>(null);
+  const [selectedComparisonStudentId, setSelectedComparisonStudentId] = useState<string>('');
 
   // 1. Get students for selected class
   const classStudents = useMemo(() => {
@@ -271,10 +302,509 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
     };
   }, [classStudents, selectedClass, selectedSubject]);
 
+  // 3. Ensure a student is selected for 30-day comparison
+  useEffect(() => {
+    if (classStudents.length > 0) {
+      if (!selectedComparisonStudentId || !classStudents.some((s) => s.ID === selectedComparisonStudentId)) {
+        setSelectedComparisonStudentId(classStudents[0].ID);
+      }
+    }
+  }, [classStudents, selectedComparisonStudentId]);
+
+  const activeComparisonStudent = useMemo(() => {
+    return classStudents.find((s) => s.ID === selectedComparisonStudentId) || classStudents[0] || null;
+  }, [classStudents, selectedComparisonStudentId]);
+
+  // 4. Synthesize 30-Day Individual Student vs Class Average Trajectory Data
+  const comparison30dData = useMemo(() => {
+    if (!activeComparisonStudent) {
+      return { points: [] as Comparison30dPoint[], stats: null as Comparison30dStats | null };
+    }
+
+    // Deterministic pseudo-random score generation based on student name and seed
+    const getScore = (name: string, seed: number, minVal = 55, maxVal = 98) => {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        hash = (hash << 5) - hash + name.charCodeAt(i);
+        hash |= 0;
+      }
+      const val = Math.abs(hash + seed) % (maxVal - minVal + 1);
+      return minVal + val;
+    };
+
+    // 6 chronological assessment checkpoints across the last 30 days
+    const checkpoints = [
+      { dayOffset: -30, label: '12 Okt', full: '12 Oktober 2026', asg: 'Formatif 1: Diagnostik Awal' },
+      { dayOffset: -24, label: '18 Okt', full: '18 Oktober 2026', asg: 'Latihan Soal Terstruktur' },
+      { dayOffset: -18, label: '24 Okt', full: '24 Oktober 2026', asg: 'Formatif 2: Eksplorasi Konsep' },
+      { dayOffset: -12, label: '30 Okt', full: '30 Oktober 2026', asg: 'Kuis Terjadwal Mandiri' },
+      { dayOffset: -6,  label: '5 Nov',  full: '5 November 2026',  asg: 'Tugas Projek & Studi Kasus' },
+      { dayOffset: 0,   label: '11 Nov', full: '11 November 2026', asg: 'Asesmen Formatif Pekan Ini' },
+    ];
+
+    const studentBase = getScore(activeComparisonStudent.NAMA, 137, 62, 88);
+    const charMod = activeComparisonStudent.NAMA.length;
+
+    // Student score progression with realistic fluctuations
+    const varianceCurve = [
+      0,
+      ((charMod % 3) - 1) * 2 + 1,
+      ((charMod % 4) - 1) * 2 + 3,
+      ((charMod % 5) - 2) * 2 + 4,
+      ((charMod % 3) - 1) * 3 + 6,
+      ((charMod % 2) === 0 ? 8 : 7),
+    ];
+
+    // Class average trajectory over last 30 days
+    const classAvgCurve = [75.5, 77.0, 78.8, 80.2, 82.1, 84.0];
+
+    const points: Comparison30dPoint[] = checkpoints.map((cp, idx) => {
+      const studentGrade = Math.min(100, Math.max(50, Math.round(studentBase + varianceCurve[idx])));
+      const classAverage = classAvgCurve[idx];
+      const delta = Math.round((studentGrade - classAverage) * 10) / 10;
+
+      return {
+        date: cp.label,
+        fullDate: cp.full,
+        dayOffset: cp.dayOffset,
+        assessmentName: cp.asg,
+        studentGrade,
+        classAverage,
+        delta,
+        kkm: 75,
+      };
+    });
+
+    const studentAvg30d = Math.round(
+      (points.reduce((acc, p) => acc + p.studentGrade, 0) / points.length) * 10
+    ) / 10;
+    const classAvg30d = Math.round(
+      (points.reduce((acc, p) => acc + p.classAverage, 0) / points.length) * 10
+    ) / 10;
+    const net30dDelta = Math.round((studentAvg30d - classAvg30d) * 10) / 10;
+    const scoreGrowth = points[points.length - 1].studentGrade - points[0].studentGrade;
+    const latestDelta = points[points.length - 1].delta;
+    const highestGrade = Math.max(...points.map((p) => p.studentGrade));
+    const lowestGrade = Math.min(...points.map((p) => p.studentGrade));
+
+    const stats: Comparison30dStats = {
+      studentAvg30d,
+      classAvg30d,
+      net30dDelta,
+      scoreGrowth,
+      latestDelta,
+      highestGrade,
+      lowestGrade,
+      currentStudentGrade: points[points.length - 1].studentGrade,
+      currentClassAvg: points[points.length - 1].classAverage,
+    };
+
+    return { points, stats };
+  }, [activeComparisonStudent]);
+
   const handleCopySuggestion = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedSuggestionId(id);
     setTimeout(() => setCopiedSuggestionId(null), 2500);
+  };
+
+  const renderStudent30dComparisonChart = () => {
+    if (!activeComparisonStudent || !comparison30dData.stats) {
+      return (
+        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+          Memuat data komparasi 30 hari peserta didik...
+        </div>
+      );
+    }
+
+    const { points, stats } = comparison30dData;
+    const isAhead = stats.latestDelta >= 0;
+
+    return (
+      <div id="chart-comparison-student-vs-class-30d" className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
+        {/* Header & Student Switcher */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
+          <div>
+            <h4 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span>📉 Komparasi Tren Nilai Siswa vs Rata-Rata Kelas (30 Hari Terakhir)</span>
+            </h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Visualisasi komparatif trajektori performa individual ananda terhadap rata-rata capaian rombel {selectedClass} dalam rentang 30 hari terakhir.
+            </p>
+          </div>
+
+          {/* Student Selector Control */}
+          <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+            <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+              <User size={13} className="text-indigo-600" />
+              Pilih Siswa:
+            </span>
+            <select
+              id="select-student-30d-comparison"
+              value={selectedComparisonStudentId}
+              onChange={(e) => setSelectedComparisonStudentId(e.target.value)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white border border-slate-300 text-slate-800 focus:outline-indigo-600 shadow-2xs max-w-xs cursor-pointer"
+            >
+              {classStudents.map((stu) => (
+                <option key={stu.ID} value={stu.ID}>
+                  {stu.NAMA} (NIS: {stu.NIP || '-'})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Bento KPI Summary Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Card 1: Nilai Terkini vs Rata-Rata Kelas */}
+          <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nilai Terkini (Hari Ini)</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-black text-indigo-950">{stats.currentStudentGrade}</span>
+              <span className="text-xs font-bold text-slate-500">vs {stats.currentClassAvg} (Kelas)</span>
+            </div>
+            <div className={`text-[10px] font-black flex items-center gap-0.5 ${isAhead ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {isAhead ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+              {stats.latestDelta >= 0 ? `+${stats.latestDelta}` : stats.latestDelta} Poin vs Rata-Rata
+            </div>
+          </div>
+
+          {/* Card 2: Rata-Rata 30 Hari */}
+          <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rata-Rata 30 Hari</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-black text-slate-900">{stats.studentAvg30d}</span>
+              <span className="text-xs font-bold text-slate-500">vs {stats.classAvg30d} (Kelas)</span>
+            </div>
+            <div className={`text-[10px] font-black ${stats.net30dDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              Deviasi Net: {stats.net30dDelta >= 0 ? `+${stats.net30dDelta}` : stats.net30dDelta} Poin
+            </div>
+          </div>
+
+          {/* Card 3: Pertumbuhan Skor 30 Hari */}
+          <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pertumbuhan (Growth)</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-black text-slate-900">
+                {stats.scoreGrowth >= 0 ? `+${stats.scoreGrowth}` : stats.scoreGrowth}
+              </span>
+              <span className="text-xs font-bold text-slate-500">Poin (30 Hari)</span>
+            </div>
+            <div className="text-[10px] font-medium text-slate-500">
+              Awal: {points[0].studentGrade} › Akhir: {stats.currentStudentGrade}
+            </div>
+          </div>
+
+          {/* Card 4: Rentang & KKM */}
+          <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rentang Capaian & KKM</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-black text-emerald-700">{stats.highestGrade}</span>
+              <span className="text-xs text-slate-400 font-medium">Tertinggi / Min {stats.lowestGrade}</span>
+            </div>
+            <div className="text-[10px] font-bold text-slate-600">
+              Standar KKM: 75 ({stats.currentStudentGrade >= 75 ? '✅ Tuntas' : '⚠️ Remedial'})
+            </div>
+          </div>
+        </div>
+
+        {/* 30-Day Comparison Recharts Chart */}
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="h-64 sm:h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={points} margin={{ top: 12, right: 15, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="student30dGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis domain={[50, 100]} tick={{ fontSize: 11, fill: '#64748b' }} unit="p" />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload as Comparison30dPoint;
+                      const isAboveClass = data.delta >= 0;
+                      const isPass = data.studentGrade >= 75;
+
+                      return (
+                        <div className="bg-slate-900 border border-slate-700 p-3 rounded-2xl shadow-xl text-white text-xs space-y-1.5 max-w-xs">
+                          <div className="border-b border-slate-800 pb-1">
+                            <div className="font-black text-indigo-300">{data.fullDate}</div>
+                            <div className="text-[10px] text-slate-400">{data.assessmentName}</div>
+                          </div>
+                          <div className="space-y-1 text-[11px] pt-0.5">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-300 font-medium">Nilai {activeComparisonStudent.NAMA}:</span>
+                              <span className="font-black text-indigo-300">{data.studentGrade} Poin</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-300 font-medium">Rata-Rata {selectedClass}:</span>
+                              <span className="font-black text-emerald-400">{data.classAverage} Poin</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 border-t border-slate-800 pt-1">
+                              <span className="text-slate-400 font-medium">Deviasi vs Kelas:</span>
+                              <span className={`font-black ${isAboveClass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {data.delta > 0 ? `+${data.delta}` : data.delta} Poin
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-[10px]">
+                              <span className="text-slate-400">Batas Kelulusan KKM:</span>
+                              <span className={`font-bold ${isPass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                75 ({isPass ? 'Tuntas' : 'Perlu Remedial'})
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                <ReferenceLine
+                  y={75}
+                  stroke="#f43f5e"
+                  strokeDasharray="4 4"
+                  label={{ value: 'Batas KKM (75)', fill: '#e11d48', fontSize: 10, position: 'insideBottomRight' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="studentGrade"
+                  name={`Nilai Siswa: ${activeComparisonStudent.NAMA}`}
+                  stroke="#4f46e5"
+                  fillOpacity={1}
+                  fill="url(#student30dGrad)"
+                  strokeWidth={3}
+                  dot={{ r: 4.5, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+                  activeDot={{ r: 6.5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="classAverage"
+                  name={`Rata-Rata Kelas (${selectedClass})`}
+                  stroke="#059669"
+                  strokeWidth={2.5}
+                  strokeDasharray="5 5"
+                  dot={{ r: 4, fill: '#059669', strokeWidth: 1.5, stroke: '#fff' }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pedagogical Guidance Note */}
+        <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-100 flex items-start gap-2.5 text-xs text-indigo-950 leading-relaxed">
+          <Lightbulb size={16} className="text-amber-500 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <strong>Diagnosis Pedagogik 30 Hari ({activeComparisonStudent.NAMA}):</strong>
+            <p className="text-[11px] text-indigo-900/90">
+              {stats.net30dDelta >= 0
+                ? `Ananda ${activeComparisonStudent.NAMA} secara konsisten mempertahankan nilai di atas rata-rata rombel ${selectedClass} (+${stats.net30dDelta} poin) dalam 30 hari terakhir. Berikan apresiasi dan tantangan HOTS untuk memelihara motivasi berprestasi.`
+                : `Ananda ${activeComparisonStudent.NAMA} terpantau berada ${Math.abs(stats.net30dDelta)} poin di bawah rata-rata rombel ${selectedClass} dalam rentang 30 hari terakhir. Disarankan pendampingan remedial bertahap (scaffolding) dan latihan mandiri terarah.`}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const [csvDownloadSuccess, setCsvDownloadSuccess] = useState<boolean>(false);
+
+  const handleDownloadCSV = () => {
+    try {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const cleanClass = selectedClass.replace(/\s+/g, '_');
+      const filename = `Tren_Nilai_${cleanClass}_${activeTab}_${dateStr}.csv`;
+
+      const rows: string[][] = [];
+
+      if (activeTab === 'TREND') {
+        rows.push(['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6 (NPSN: 20606498)']);
+        rows.push(['# LAPORAN ANALISIS TREN PERFORMA NILAI KELAS']);
+        rows.push([`# Kelas: ${selectedClass}`]);
+        rows.push([`# Mata Pelajaran: ${selectedSubject}`]);
+        rows.push([`# Rata-Rata Kelas Saat Ini: ${kpiStats.currentAvg} Poin`]);
+        rows.push([`# Ketuntasan Belajar (KKM >= 75): ${kpiStats.passRate}%`]);
+        rows.push([`# Tanggal Unduh: ${now.toLocaleString('id-ID')}`]);
+        rows.push([]);
+        rows.push(['TABEL 1: PERKEMBANGAN RATA-RATA NILAI 4 PEKAN']);
+        rows.push([
+          'Periode Minggu',
+          'Label Pekan',
+          'Rata-Rata Kelas',
+          'Nilai Tertinggi',
+          'Nilai Terendah',
+          'Ketuntasan (%)',
+          'Jumlah Siswa Aktif',
+          'Batas KKM',
+          'Status Ketuntasan',
+        ]);
+        weeklyData.forEach((w) => {
+          rows.push([
+            w.minggu,
+            w.label,
+            String(w.rataRata),
+            String(w.tertinggi),
+            String(w.terendah),
+            `${w.tuntasPersen}%`,
+            String(w.siswaAktif),
+            '75',
+            w.rataRata >= 75 ? 'Tuntas' : 'Perlu Bimbingan',
+          ]);
+        });
+        rows.push([]);
+        rows.push(['TABEL 2: PERKEMBANGAN PER MATA PELAJARAN']);
+        rows.push([
+          'Mata Pelajaran',
+          'Skor Minggu Lalu',
+          'Skor Minggu Ini',
+          'Perubahan (Delta)',
+          'Status Tren',
+          'Kategori',
+        ]);
+        subjectTrends.forEach((s) => {
+          rows.push([
+            s.subject,
+            String(s.mingguLalu),
+            String(s.mingguIni),
+            s.delta >= 0 ? `+${s.delta}` : String(s.delta),
+            s.status,
+            s.kategori,
+          ]);
+        });
+      } else if (activeTab === 'COMPARISON_30D') {
+        const sName = activeComparisonStudent?.NAMA || 'Siswa';
+        const sNis = activeComparisonStudent?.ID || activeComparisonStudent?.USERNAME || '-';
+        rows.push(['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6 (NPSN: 20606498)']);
+        rows.push(['# LAPORAN KOMPARASI INDIVIDUAL SISWA VS RATA-RATA KELAS (30 HARI)']);
+        rows.push([`# Nama Siswa: ${sName}`]);
+        rows.push([`# NIS / ID: ${sNis}`]);
+        rows.push([`# Kelas: ${selectedClass}`]);
+        rows.push([`# Rata-Rata Siswa 30 Hari: ${comparison30dData.stats?.studentAvg30d || '-'}`]);
+        rows.push([`# Rata-Rata Kelas 30 Hari: ${comparison30dData.stats?.classAvg30d || '-'}`]);
+        rows.push([`# Pertumbuhan Skor (Growth): ${comparison30dData.stats?.scoreGrowth || 0} Poin`]);
+        rows.push([`# Tanggal Unduh: ${now.toLocaleString('id-ID')}`]);
+        rows.push([]);
+        rows.push([
+          'No',
+          'Tanggal Penilaian',
+          'Nama Tugas / Penilaian',
+          `Nilai Siswa (${sName})`,
+          'Rata-Rata Kelas',
+          'Selisih (Delta)',
+          'Batas KKM',
+          'Status Capaian Siswa',
+        ]);
+        comparison30dData.points.forEach((p, idx) => {
+          rows.push([
+            String(idx + 1),
+            p.fullDate,
+            p.assessmentName,
+            String(p.studentGrade),
+            String(p.classAverage),
+            p.delta >= 0 ? `+${p.delta}` : String(p.delta),
+            String(p.kkm),
+            p.studentGrade >= p.kkm ? 'Tuntas KKM' : 'Remedial (< 75)',
+          ]);
+        });
+      } else if (activeTab === 'STUDENTS') {
+        rows.push(['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6 (NPSN: 20606498)']);
+        rows.push(['# DAFTAR TREN PERFORMA NILAI SISWA & STATUS REMEDIAL']);
+        rows.push([`# Kelas: ${selectedClass}`]);
+        rows.push([`# Total Siswa: ${studentTrends.length}`]);
+        rows.push([`# Jumlah Perlu Remedial (<75): ${kpiStats.remedialCount} Siswa`]);
+        rows.push([`# Tanggal Unduh: ${now.toLocaleString('id-ID')}`]);
+        rows.push([]);
+        rows.push([
+          'No',
+          'NIS',
+          'Nama Siswa',
+          'Kelas',
+          'Nilai Minggu Lalu',
+          'Nilai Minggu Ini',
+          'Delta Perkembangan',
+          'Status Performa',
+          'Perlu Remedial (< 75)',
+          'Mata Pelajaran Perlu Bimbingan',
+        ]);
+        studentTrends.forEach((st, idx) => {
+          rows.push([
+            String(idx + 1),
+            st.nis,
+            st.nama,
+            st.kelas,
+            String(st.skorMingguLalu),
+            String(st.skorMingguIni),
+            st.delta >= 0 ? `+${st.delta}` : String(st.delta),
+            st.status,
+            st.perluRemedial ? 'YA (Remedial)' : 'Tidak (Tuntas)',
+            st.mapelLemah,
+          ]);
+        });
+      } else if (activeTab === 'SUGGESTIONS') {
+        rows.push(['# SISTEM INFORMASI AKADEMIK SD NEGERI TANGERANG 6 (NPSN: 20606498)']);
+        rows.push(['# REKOMENDASI PERBAIKAN PEDAGOGIK OTOMATIS BERDASARKAN TREN NILAI']);
+        rows.push([`# Kelas: ${selectedClass}`]);
+        rows.push([`# Tanggal Unduh: ${now.toLocaleString('id-ID')}`]);
+        rows.push([]);
+        rows.push([
+          'ID Rekomendasi',
+          'Kategori',
+          'Prioritas',
+          'Judul Strategi',
+          'Deskripsi Analisis',
+          'Sasaran Intervensi',
+          'Langkah Tindak Lanjut',
+        ]);
+        automatedSuggestions.forEach((sug) => {
+          rows.push([
+            sug.id,
+            sug.tag,
+            sug.severity,
+            sug.title,
+            sug.description,
+            sug.targetSiswa,
+            sug.rekomendasi.join(' | '),
+          ]);
+        });
+      }
+
+      // Convert to UTF-8 BOM CSV (Excel Compatible)
+      const csvContent =
+        '\uFEFF' +
+        rows
+          .map((row) =>
+            row
+              .map((cell) => {
+                const str = cell === undefined || cell === null ? '' : String(cell);
+                if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes(';')) {
+                  return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+              })
+              .join(',')
+          )
+          .join('\r\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setCsvDownloadSuccess(true);
+      setTimeout(() => setCsvDownloadSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error downloading CSV in AutomatedGradeTrendAnalyticsWidget:', err);
+    }
   };
 
   return (
@@ -327,6 +857,40 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
               ))}
             </select>
           </div>
+
+          <button
+            type="button"
+            id="btn-download-csv-grade-trend"
+            onClick={handleDownloadCSV}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
+              csvDownloadSuccess
+                ? 'bg-emerald-600 text-white border-emerald-500'
+                : 'text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border-indigo-200'
+            }`}
+            title="Download CSV: Ekspor Data Tren Nilai Saat Ini ke Format Excel (CSV)"
+          >
+            {csvDownloadSuccess ? (
+              <>
+                <Check size={13} className="text-white" />
+                <span>CSV Diunduh!</span>
+              </>
+            ) : (
+              <>
+                <Download size={13} className="text-indigo-700" />
+                <span>Download CSV</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => pdfService.generateExecutiveP5AndGradeTrendPdf({ targetClass: selectedClass })}
+            className="px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="Unduh Laporan Ringkasan Eksekutif P5 & Tren Nilai untuk Kepala Sekolah"
+          >
+            <FileText size={13} className="text-emerald-700" />
+            <span className="hidden sm:inline">Laporan Eksekutif (PDF)</span>
+          </button>
         </div>
       </div>
 
@@ -407,11 +971,11 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
       </div>
 
       {/* ─── Navigation Sub-Tabs ─────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('TREND')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
             activeTab === 'TREND'
               ? 'bg-slate-900 text-white shadow-sm'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -423,8 +987,22 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
 
         <button
           type="button"
+          id="tab-btn-komparasi-30d"
+          onClick={() => setActiveTab('COMPARISON_30D')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+            activeTab === 'COMPARISON_30D'
+              ? 'bg-indigo-700 text-white shadow-sm'
+              : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200'
+          }`}
+        >
+          <TrendingUp size={14} />
+          <span>Komparasi Siswa vs Kelas (30 Hari)</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('SUGGESTIONS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative shrink-0 ${
             activeTab === 'SUGGESTIONS'
               ? 'bg-indigo-700 text-white shadow-sm'
               : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200'
@@ -438,7 +1016,7 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
         <button
           type="button"
           onClick={() => setActiveTab('STUDENTS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
             activeTab === 'STUDENTS'
               ? 'bg-slate-900 text-white shadow-sm'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -541,6 +1119,16 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
               </div>
             </div>
           </div>
+
+          {/* New 30-Day Individual Student vs Class Average Comparison Chart */}
+          {renderStudent30dComparisonChart()}
+        </div>
+      )}
+
+      {/* ─── TAB: KOMPARASI SISWA VS RATA-RATA KELAS (30 HARI) ──── */}
+      {activeTab === 'COMPARISON_30D' && (
+        <div className="space-y-4">
+          {renderStudent30dComparisonChart()}
         </div>
       )}
 
@@ -711,9 +1299,37 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedComparisonStudentId(s.id);
+                        setActiveTab('COMPARISON_30D');
+                      }}
+                      className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center gap-1 transition"
+                      title="Bandingkan tren nilai ananda vs rata-rata kelas 30 hari"
+                    >
+                      <TrendingUp size={11} />
+                      <span className="hidden sm:inline">Tren 30 Hari</span>
+                    </button>
                     <div className="text-right">
-                      <div className="text-xs font-black text-slate-900">{s.skorMingguIni} Poin</div>
+                      <div className="text-xs font-black text-slate-900 flex items-center justify-end gap-1">
+                        {s.perluRemedial && (
+                          <span
+                            className="relative inline-flex items-center justify-center shrink-0 cursor-help"
+                            title={`⚠️ Peringatan Remedial: Nilai pekan ini ${s.skorMingguIni} di bawah KKM 75! Butuh prioritas bimbingan.`}
+                          >
+                            <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-rose-400 opacity-75" />
+                            <span className="relative inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-100 text-rose-600 border border-rose-300">
+                              <AlertTriangle size={8} className="stroke-[3] text-rose-600 animate-pulse" />
+                            </span>
+                          </span>
+                        )}
+                        <span className={s.perluRemedial ? 'text-rose-700' : 'text-slate-900'}>
+                          {s.skorMingguIni} Poin
+                        </span>
+                      </div>
                       <div className="text-[10px] text-slate-400">Lalu: {s.skorMingguLalu}</div>
                     </div>
                     <ChevronRight size={14} className="text-slate-400" />
@@ -794,11 +1410,23 @@ export const AutomatedGradeTrendAnalyticsWidget: React.FC<AutomatedGradeTrendAna
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-2">
+            <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedComparisonStudentId(selectedStudentDetail.id);
+                  setActiveTab('COMPARISON_30D');
+                  setSelectedStudentDetail(null);
+                }}
+                className="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <TrendingUp size={13} />
+                <span>Lihat Tren Komparasi 30 Hari</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedStudentDetail(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs"
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
               >
                 Tutup
               </button>
